@@ -1,0 +1,1609 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ultimate Arena v2 - Full-HD, Maus, Touch & Computer-Gegner</title>
+    <style>
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background-color: #121218; overflow: hidden;
+            font-family: 'Arial', sans-serif; 
+            /* Blockiert natives Wischen, Zoomen und Textmarkieren */
+            user-select: none; -webkit-user-select: none;
+            touch-action: none;
+        }
+        canvas {
+            display: block;
+            position: absolute;
+        }
+    </style>
+</head>
+<body style="background-color: #121218; margin: 0; padding: 0; overflow: hidden; touch-action: none;">
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+// ============================================================
+//  ULTIMATE ARENA v2  -  HTML5 Canvas Version (Bugfixes & Touch)
+// ============================================================
+
+// --- NOTFALL-FEHLERANZEIGE (Verhindert den "weißen Bildschirm") ---
+window.onerror = function(msg, url, line, col, error) {
+    const canvas = document.getElementById('gameCanvas');
+    if(canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#121218';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = 'red';
+        ctx.font = '24px Arial';
+        ctx.fillText("FEHLER: " + msg, 50, 100);
+        ctx.fillText("Zeile: " + line, 50, 140);
+        ctx.fillStyle = 'white';
+        ctx.fillText("Bitte mach einen Screenshot hiervon!", 50, 200);
+    }
+    return false;
+};
+
+// --- Globale Blocker gegen Kontextmenüs & Markierungen ---
+window.addEventListener('contextmenu', e => e.preventDefault());
+window.addEventListener('selectstart', e => e.preventDefault());
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+const WIDTH = 1920, HEIGHT = 1080;
+canvas.width = WIDTH; canvas.height = HEIGHT;
+
+const BOSS_TEST_MODUS = false;
+
+// --- Harte JS-Skalierung für pixelgenaue Touch/Maus-Eingaben ---
+function resize() {
+    let scale = Math.min(window.innerWidth / WIDTH, window.innerHeight / HEIGHT);
+    let cWidth = WIDTH * scale;
+    let cHeight = HEIGHT * scale;
+    canvas.style.width = cWidth + 'px';
+    canvas.style.height = cHeight + 'px';
+    canvas.style.left = (window.innerWidth - cWidth) / 2 + 'px';
+    canvas.style.top = (window.innerHeight - cHeight) / 2 + 'px';
+}
+window.addEventListener('resize', resize);
+resize(); // Direkt beim Start aufrufen
+
+// --- Eigene Rect-Klasse ---
+class Rect {
+    constructor(x, y, w, h) { this.x = x; this.y = y; this.w = Math.max(0, w); this.h = Math.max(0, h); }
+    get left() { return this.x; }
+    get right() { return this.x + this.w; }
+    get top() { return this.y; }
+    get bottom() { return this.y + this.h; }
+    get centerx() { return this.x + this.w/2; }
+    get centery() { return this.y + this.h/2; }
+    collidepoint(px, py) { return px >= this.left && px <= this.right && py >= this.top && py <= this.bottom; }
+    inflate(dw, dh) { return new Rect(this.x - dw/2, this.y - dh/2, this.w + dw, this.h + dh); }
+    collidelist(rects) {
+        for(let i=0; i<rects.length; i++){
+            let r = rects[i];
+            if(Math.max(this.left, r.left) < Math.min(this.right, r.right) && Math.max(this.top, r.top) < Math.min(this.bottom, r.bottom)) return i;
+        }
+        return -1;
+    }
+}
+
+// Farben
+const WHITE = [255, 255, 255], BLACK = [18, 18, 24], RED = [255, 60, 70];
+const ZOMBIE_GREEN = [60, 190, 90], ACID_GREEN = [110, 255, 120];
+const YELLOW = [255, 215, 40], CYAN = [0, 235, 235], ICE_BLUE = [150, 205, 255];
+const PURPLE = [185, 90, 255], MAGENTA = [255, 80, 230], ORANGE = [255, 140, 40];
+const LIME = [160, 255, 80], GHOST_WHITE = [225, 225, 235, 150];
+const NEUTRAL_COLOR = [150, 150, 160];
+const WALL_COLOR = [56, 58, 74], WALL_TOP = [88, 92, 116], WALL_EDGE = [128, 132, 160];
+const BG_TOP = [14, 15, 24], BG_BOTTOM = [32, 34, 50], GRID_COLOR = [42, 45, 62];
+const BOSS_COLOR = [165, 30, 60], GOLD = [255, 210, 60], PANEL_BG = [14, 14, 22];
+
+const COLORS = [
+    ["Blau", [70, 160, 255]], ["Grün", [70, 225, 120]], ["Orange", [255, 160, 60]],
+    ["Pink", [255, 110, 200]], ["Gelb", [240, 210, 50]], ["Türkis", [0, 230, 230]],
+    ["Weiß", [240, 240, 245]], ["Limette", [160, 255, 60]]
+];
+const SKINS = ["Kreis", "Quadrat", "Diamant", "Sechseck", "Dreieck", "Stern", "Kreuz"];
+const MODES = ["1 vs 1 Fangen", "1-Spieler Zombie-Überleben", "2-Spieler Koop-Überleben", "1-Spieler Bosskampf", "2-Spieler Bosskampf"];
+
+// --- Maps ---
+const MAPS = [
+    {name: "Klassisch", walls: [new Rect(910, 230, 100, 230), new Rect(910, 620, 100, 230), new Rect(380, 480, 240, 70), new Rect(1300, 480, 240, 70)]},
+    {name: "Labyrinth", walls: [new Rect(280, 240, 480, 70), new Rect(1160, 240, 480, 70), new Rect(280, 780, 480, 70), new Rect(1160, 780, 480, 70), new Rect(570, 400, 70, 300), new Rect(1280, 400, 70, 300)]},
+    {name: "Offenes Feld", walls: []},
+    {name: "Kreuzung", walls: [new Rect(895, 340, 130, 400), new Rect(660, 505, 600, 70)]},
+    {name: "Festung", walls: [new Rect(660, 330, 600, 60), new Rect(660, 690, 600, 60), new Rect(660, 390, 60, 90), new Rect(660, 600, 60, 90), new Rect(1200, 390, 60, 90), new Rect(1200, 600, 60, 90)]},
+    {name: "Säulenhalle", walls: [new Rect(430, 300, 90, 90), new Rect(915, 300, 90, 90), new Rect(1400, 300, 90, 90), new Rect(430, 690, 90, 90), new Rect(915, 690, 90, 90), new Rect(1400, 690, 90, 90), new Rect(672, 495, 90, 90), new Rect(1158, 495, 90, 90)]},
+    {name: "Zickzack", walls: [new Rect(300, 260, 500, 60), new Rect(1120, 430, 500, 60), new Rect(300, 600, 500, 60), new Rect(1120, 770, 500, 60)]},
+    {name: "Vier Kammern", walls: [new Rect(930, 150, 60, 270), new Rect(930, 660, 60, 270), new Rect(300, 510, 460, 60), new Rect(1160, 510, 460, 60)]}
+];
+
+const ACHIEVEMENTS = [
+    {id: "play_1", name: "Erste Schritte", desc: "Spiele deine erste Runde", req_key: "games_played", req_val: 1},
+    {id: "play_10", name: "Veteran", desc: "Spiele 10 Runden insgesamt", req_key: "games_played", req_val: 10},
+    {id: "play_50", name: "Süchtig", desc: "Spiele 50 Runden insgesamt", req_key: "games_played", req_val: 50},
+    {id: "play_coop", name: "Teamwork", desc: "Spiele 5 Runden im Co-op", req_key: "coop_played", req_val: 5},
+    {id: "survive_60", name: "Überlebenskünstler", desc: "Überlebe 60 Sekunden", req_key: "max_survived", req_val: 60},
+    {id: "survive_120", name: "Marathonläufer", desc: "Überlebe 120 Sekunden", req_key: "max_survived", req_val: 120},
+    {id: "catch_10", name: "Jäger", desc: "Fange 10 Mal einen Spieler", req_key: "catches", req_val: 10},
+    {id: "pu_10", name: "Power-Junkie", desc: "Sammle 10 Powerups", req_key: "powerups", req_val: 10},
+    {id: "pu_50", name: "Sammler", desc: "Sammle 50 Powerups", req_key: "powerups", req_val: 50},
+    {id: "wep_10", name: "Waffennarr", desc: "Sammle 10 Waffen", req_key: "weapons", req_val: 10},
+    {id: "wep_50", name: "Arsenal", desc: "Sammle 50 Waffen", req_key: "weapons", req_val: 50},
+    {id: "boss_1", name: "Boss-Killer", desc: "Besiege den Wächter", req_key: "bosses_killed", req_val: 1},
+    {id: "boss_5", name: "Boss-Schlächter", desc: "Besiege den Wächter 5 Mal", req_key: "bosses_killed", req_val: 5},
+    {id: "boss_10", name: "Wächter-Albtraum", desc: "Besiege den Wächter 10 Mal", req_key: "bosses_killed", req_val: 10},
+    {id: "revive_5", name: "Unsterblich", desc: "Werde 5 Mal wiederbelebt", req_key: "revives", req_val: 5},
+    {id: "speed_10", name: "Raser", desc: "Sammle 10 Speed-Powerups", req_key: "speed_pu", req_val: 10},
+    {id: "shield_10", name: "Schildwache", desc: "Sammle 10 Schild-Powerups", req_key: "shield_pu", req_val: 10},
+    {id: "ghost_10", name: "Geist", desc: "Sammle 10 Geist-Powerups", req_key: "ghost_pu", req_val: 10},
+    {id: "freeze_10", name: "Eiszeit", desc: "Sammle 10 Freeze-Powerups", req_key: "freeze_pu", req_val: 10},
+    {id: "shrink_10", name: "Ameise", desc: "Sammle 10 Schrumpf-Powerups", req_key: "shrink_pu", req_val: 10},
+    {id: "bot_win_1", name: "Maschinenstürmer", desc: "Gewinne 1 Mal gegen den Computer", req_key: "bot_wins", req_val: 1},
+    {id: "bot_win_10", name: "Unbesiegbar", desc: "Gewinne 10 Mal gegen den Computer", req_key: "bot_wins", req_val: 10}
+];
+
+const FPS = 60;
+const GAME_TIME = 5 * 60;
+const TIME_STEP = 1000 / FPS;
+
+// Input & State
+let keys = {};
+let mousePos = {x: 0, y: 0};
+let mouseButtons = {left: false};
+let clickTriggered = false;
+let vjoys = { fid1: null, fid2: null, p1: null, p2: null, base1: [0,0], base2: [0,0] };
+let lastTouchY = null;
+const pauseBtnRect = new Rect(WIDTH - 120, 20, 80, 80);
+
+function getEventPos(e) {
+    let rect = canvas.getBoundingClientRect();
+    let cx = e.clientX || (e.touches && e.touches.length > 0 ? e.touches[0].clientX : 0);
+    let cy = e.clientY || (e.touches && e.touches.length > 0 ? e.touches[0].clientY : 0);
+    return {
+        x: (cx - rect.left) * (WIDTH / rect.width),
+        y: (cy - rect.top) * (HEIGHT / rect.height)
+    };
+}
+
+window.addEventListener('keydown', e => {
+    keys[e.code] = true;
+    if (state === "MENU") {
+        if(e.code==='Digit1' || e.code==='Numpad1' || e.code==='KeyM') mode_idx = (mode_idx + 1) % MODES.length;
+        if(e.code==='Digit2' || e.code==='Numpad2' || e.code==='KeyN') map_idx = (map_idx + 1) % MAPS.length;
+        if(e.code==='KeyB') boss_enabled = !boss_enabled;
+        if(e.code==='KeyP') { p2_is_bot=!p2_is_bot; stats.p2_bot=p2_is_bot; save_stats(stats); }
+        if(e.code==='KeyA') p1_skin_idx = (p1_skin_idx-1+SKINS.length)%SKINS.length;
+        if(e.code==='KeyD') p1_skin_idx = (p1_skin_idx+1)%SKINS.length;
+        if(e.code==='KeyW') p1_color_idx = (p1_color_idx+1)%COLORS.length;
+        if(e.code==='KeyS') p1_color_idx = (p1_color_idx-1+COLORS.length)%COLORS.length;
+        if(![1,3].includes(mode_idx)) {
+            if(e.code==='ArrowLeft') p2_skin_idx = (p2_skin_idx-1+SKINS.length)%SKINS.length;
+            if(e.code==='ArrowRight') p2_skin_idx = (p2_skin_idx+1)%SKINS.length;
+            if(e.code==='ArrowUp') p2_color_idx = (p2_color_idx+1)%COLORS.length;
+            if(e.code==='ArrowDown') p2_color_idx = (p2_color_idx-1+COLORS.length)%COLORS.length;
+        }
+        if(e.code==='Space') clickTriggered = true;
+    } else if(["HIGHSCORES","TUTORIAL","ACHIEVEMENTS","CREDITS","SETTINGS"].includes(state) && (e.code==='Escape'||e.code==='Space')) {
+        state="MENU";
+    } else if(state === "ACHIEVEMENTS") {
+        if(e.code==='ArrowUp') scroll_y += 50;
+        if(e.code==='ArrowDown') scroll_y -= 50;
+    } else if(state === "PLAYING" && e.code==='Escape') {
+        state="PAUSED"; pause_start_tick = Date.now();
+    } else if(state === "PAUSED" && (e.code==='Escape'||e.code==='Space')) {
+        state="PLAYING"; paused_time_total += Date.now() - pause_start_tick;
+    } else if(state === "GAME_OVER" && e.code==='Space') {
+        state="MENU";
+    }
+});
+window.addEventListener('keyup', e => keys[e.code] = false);
+
+window.addEventListener('mousemove', e => mousePos = getEventPos(e));
+window.addEventListener('mousedown', e => { 
+    if(e.button === 0) { mouseButtons.left = true; clickTriggered = true; mousePos = getEventPos(e); } 
+});
+window.addEventListener('mouseup', e => { if(e.button === 0) mouseButtons.left = false; });
+
+// --- Robuste Touch-Steuerung ---
+window.addEventListener('touchstart', e => {
+    e.preventDefault();
+    stats.touch_ctrl = true; 
+    save_stats(stats);
+    
+    let rect = canvas.getBoundingClientRect();
+    for(let i=0; i<e.changedTouches.length; i++) {
+        let t = e.changedTouches[i];
+        let lx = (t.clientX - rect.left) * (WIDTH / rect.width);
+        let ly = (t.clientY - rect.top) * (HEIGHT / rect.height);
+        
+        if (state === "PLAYING") {
+            if (pauseBtnRect.collidepoint(lx, ly)) {
+                state = "PAUSED"; pause_start_tick = Date.now();
+            } else {
+                if (lx < WIDTH/2 && vjoys.fid1 === null) {
+                    vjoys.fid1 = t.identifier; vjoys.base1 = [lx, ly]; vjoys.p1 = [lx, ly];
+                } else if (lx >= WIDTH/2 && vjoys.fid2 === null) {
+                    vjoys.fid2 = t.identifier; vjoys.base2 = [lx, ly]; vjoys.p2 = [lx, ly];
+                }
+            }
+        } else {
+            mousePos = {x: lx, y: ly};
+            clickTriggered = true;
+            lastTouchY = ly;
+        }
+    }
+}, {passive: false});
+
+window.addEventListener('touchmove', e => {
+    e.preventDefault();
+    let rect = canvas.getBoundingClientRect();
+    for(let i=0; i<e.changedTouches.length; i++) {
+        let t = e.changedTouches[i];
+        let lx = (t.clientX - rect.left) * (WIDTH / rect.width);
+        let ly = (t.clientY - rect.top) * (HEIGHT / rect.height);
+        
+        if (state === "ACHIEVEMENTS" && lastTouchY !== null) {
+            scroll_y += (ly - lastTouchY);
+            lastTouchY = ly;
+        }
+        if (state !== "PLAYING") { mousePos = {x: lx, y: ly}; }
+
+        if (t.identifier === vjoys.fid1) vjoys.p1 = [lx, ly];
+        else if (t.identifier === vjoys.fid2) vjoys.p2 = [lx, ly];
+    }
+}, {passive: false});
+
+window.addEventListener('touchend', e => {
+    e.preventDefault();
+    for(let i=0; i<e.changedTouches.length; i++) {
+        let t = e.changedTouches[i];
+        if (t.identifier === vjoys.fid1) { vjoys.fid1 = null; vjoys.p1 = null; }
+        else if (t.identifier === vjoys.fid2) { vjoys.fid2 = null; vjoys.p2 = null; }
+    }
+    if (e.touches.length === 0) lastTouchY = null;
+}, {passive: false});
+
+window.addEventListener('wheel', e => { if(state === "ACHIEVEMENTS") { scroll_y += (e.deltaY > 0 ? -40 : 40); }});
+
+// ============================================================
+//  RENDER HELPER
+// ============================================================
+
+function toRGB(c, alpha=1) { return `rgba(${c[0]},${c[1]},${c[2]},${alpha})`; }
+
+const BACKGROUND = document.createElement('canvas');
+BACKGROUND.width = WIDTH; BACKGROUND.height = HEIGHT;
+const VIGNETTE = document.createElement('canvas');
+VIGNETTE.width = WIDTH; VIGNETTE.height = HEIGHT;
+
+function initStatics() {
+    let bCtx = BACKGROUND.getContext('2d');
+    let grad = bCtx.createLinearGradient(0, 0, 0, HEIGHT);
+    grad.addColorStop(0, toRGB(BG_TOP));
+    grad.addColorStop(1, toRGB(BG_BOTTOM));
+    bCtx.fillStyle = grad;
+    bCtx.fillRect(0, 0, WIDTH, HEIGHT);
+    
+    bCtx.strokeStyle = toRGB(GRID_COLOR);
+    bCtx.beginPath();
+    for (let x=0; x<WIDTH; x+=60) { bCtx.moveTo(x, 0); bCtx.lineTo(x, HEIGHT); }
+    for (let y=0; y<HEIGHT; y+=60) { bCtx.moveTo(0, y); bCtx.lineTo(WIDTH, y); }
+    bCtx.stroke();
+    
+    bCtx.globalCompositeOperation = 'lighter';
+    bCtx.drawImage(getGlow(520, [60,90,180], 22), -180, -220);
+    bCtx.drawImage(getGlow(560, [150,60,130], 18), WIDTH-820, HEIGHT-780);
+    bCtx.globalCompositeOperation = 'source-over';
+
+    let vCtx = VIGNETTE.getContext('2d');
+    let vGrad = vCtx.createRadialGradient(WIDTH/2, HEIGHT/2, HEIGHT*0.4, WIDTH/2, HEIGHT/2, Math.hypot(WIDTH,HEIGHT)/2);
+    vGrad.addColorStop(0, "rgba(0,0,0,0)");
+    vGrad.addColorStop(1, "rgba(0,0,0,0.85)");
+    vCtx.fillStyle = vGrad;
+    vCtx.fillRect(0,0,WIDTH,HEIGHT);
+}
+
+const _glowCache = {};
+function getGlow(radius, color, max_alpha=70, layers=10) {
+    radius = Math.max(2, Math.floor(radius));
+    let key = `${radius},${color.join('.')},${max_alpha}`;
+    if (_glowCache[key]) return _glowCache[key];
+    
+    let c = document.createElement('canvas');
+    c.width = radius*2; c.height = radius*2;
+    let cx = c.getContext('2d');
+    
+    for (let i=layers; i>0; i--) {
+        let alpha = max_alpha * Math.pow((layers-i+1)/layers, 2) / 255;
+        let r = radius * i / layers;
+        cx.beginPath();
+        cx.arc(radius, radius, r, 0, Math.PI*2);
+        cx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},${alpha})`;
+        cx.fill();
+    }
+    _glowCache[key] = c;
+    return c;
+}
+
+function blitGlow(context, x, y, radius, color, max_alpha=70) {
+    let g = getGlow(radius, color, max_alpha);
+    context.drawImage(g, Math.floor(x - g.width/2), Math.floor(y - g.height/2));
+}
+
+function drawSoftShadow(context, x, y, radius) {
+    let g = getGlow(Math.floor(radius*1.15), BLACK, 150, 7);
+    context.drawImage(g, Math.floor(x - g.width/2 + 6), Math.floor(y - g.height/2 + 9));
+}
+
+function roundRect(context, x, y, w, h, r) {
+    context.beginPath();
+    context.moveTo(x + r, y);
+    context.lineTo(x + w - r, y); context.quadraticCurveTo(x + w, y, x + w, y + r);
+    context.lineTo(x + w, y + h - r); context.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    context.lineTo(x + r, y + h); context.quadraticCurveTo(x, y + h, x, y + h - r);
+    context.lineTo(x, y + r); context.quadraticCurveTo(x, y, x + r, y);
+    context.closePath();
+}
+
+function drawPanel(context, rect, alpha=195, radius=16, border=true) {
+    context.fillStyle = toRGB(PANEL_BG, alpha/255);
+    roundRect(context, rect.x, rect.y, rect.w, rect.h, radius);
+    context.fill();
+    if (border) {
+        context.lineWidth = 2;
+        context.strokeStyle = "rgba(255,255,255,0.15)";
+        context.stroke();
+    }
+}
+
+function drawWall(context, rect) {
+    context.fillStyle = "rgba(0,0,0,0.43)";
+    roundRect(context, rect.x + 7, rect.y + 10, rect.w, rect.h, 12);
+    context.fill();
+    
+    context.fillStyle = toRGB(WALL_COLOR);
+    roundRect(context, rect.x, rect.y, rect.w, rect.h, 12);
+    context.fill();
+    
+    context.fillStyle = toRGB(WALL_TOP);
+    roundRect(context, rect.x + 3, rect.y + 3, rect.w - 6, Math.max(6, rect.h/5), 9);
+    context.fill();
+    
+    context.lineWidth = 2;
+    context.strokeStyle = toRGB(WALL_EDGE);
+    roundRect(context, rect.x, rect.y, rect.w, rect.h, 12);
+    context.stroke();
+}
+
+function textCenter(context, text, font, color, cx, y) {
+    context.font = font; context.fillStyle = color;
+    context.textAlign = "center"; context.textBaseline = "top";
+    context.fillText(text, cx, y);
+}
+function drawText(context, text, font, color, x, y) {
+    context.font = font; context.fillStyle = color;
+    context.textAlign = "left"; context.textBaseline = "top";
+    context.fillText(text, x, y);
+}
+
+let particles = [];
+function addParticle(x, y, color, speed, size=5, count=10) {
+    for(let i=0; i<count; i++) {
+        let vx = (Math.random()-0.5)*2*speed;
+        let vy = (Math.random()-0.5)*2*speed;
+        let life = 20 + Math.random()*20;
+        particles.push({x:x, y:y, vx:vx, vy:vy, size:size, color:color, life:life, maxLife:life});
+    }
+}
+function drawParticles(context) {
+    for(let i = particles.length-1; i>=0; i--) {
+        let p = particles[i];
+        p.x += p.vx; p.y += p.vy; p.life--;
+        if(p.life <= 0) { particles.splice(i, 1); continue; }
+        context.beginPath();
+        let s = Math.max(0, p.size * (p.life/p.maxLife));
+        context.arc(p.x, p.y, s, 0, Math.PI*2);
+        context.fillStyle = toRGB(p.color, p.color.length===4 ? p.color[3] : 1);
+        context.fill();
+    }
+}
+
+function drawSkinShape(context, x, y, radius, color, skinName, width=0) {
+    context.beginPath();
+    if(skinName === "Kreis") context.arc(x, y, radius, 0, Math.PI*2);
+    else if(skinName === "Quadrat") { let s=radius*0.85; context.rect(x-s, y-s, s*2, s*2); }
+    else if(skinName === "Diamant") { context.moveTo(x, y-radius-2); context.lineTo(x+radius+2, y); context.lineTo(x, y+radius+2); context.lineTo(x-radius-2, y); context.closePath(); }
+    else if(skinName === "Sechseck") {
+        for(let i=0; i<6; i++) {
+            let px = x + Math.cos(i*Math.PI/3)*(radius+2);
+            let py = y + Math.sin(i*Math.PI/3)*(radius+2);
+            if(i===0) context.moveTo(px,py); else context.lineTo(px,py);
+        } context.closePath();
+    }
+    else if(skinName === "Dreieck") { context.moveTo(x, y-radius-2); context.lineTo(x+radius+4, y+radius); context.lineTo(x-radius-4, y+radius); context.closePath(); }
+    else if(skinName === "Stern") {
+        for(let i=0; i<10; i++) {
+            let r = i%2===0 ? radius+4 : Math.floor(radius/2);
+            let px = x + Math.cos((i*36-90)*Math.PI/180)*r;
+            let py = y + Math.sin((i*36-90)*Math.PI/180)*r;
+            if(i===0) context.moveTo(px,py); else context.lineTo(px,py);
+        } context.closePath();
+    }
+    else if(skinName === "Kreuz") {
+        let w = radius/2.5, r = radius+2;
+        let pts = [[x-w,y-r],[x+w,y-r],[x+w,y-w],[x+r,y-w],[x+r,y+w],[x+w,y+w],[x+w,y+r],[x-w,y+r],[x-w,y+w],[x-r,y+w],[x-r,y-w],[x-w,y-w]];
+        context.moveTo(pts[0][0], pts[0][1]);
+        for(let i=1; i<pts.length; i++) context.lineTo(pts[i][0], pts[i][1]);
+        context.closePath();
+    }
+    
+    if(width>0) { context.lineWidth = width; context.strokeStyle = toRGB(color, color[3]||1); context.stroke(); }
+    else { context.fillStyle = toRGB(color, color[3]||1); context.fill(); }
+}
+
+// ============================================================
+//  SPIELKLASSEN
+// ============================================================
+
+class Player {
+    constructor(x, y, color, controls, name, skin, joy_id=null, is_bot=false) {
+        this.x = x; this.y = y; this.base_radius = 30; this.alive = true;
+        this.radius = 30; this.speed = 8; this.normal_speed = 8;
+        this.base_color = color; this.controls = controls; this.skin = skin; this.name = name;
+        this.joy_id = joy_id; this.is_bot = is_bot; this.bot_speed_factor = 1.0;
+        this.times_caught = 0; this.speed_timer = 0; this.freeze_timer = 0; this.ghost_timer = 0; this.shrink_timer = 0;
+        this.has_shield = false; this.revive_timer = 0; this.rampage_timer = 0; this.score = 0;
+    }
+
+    get_wall_penetration(px, py, obstacles) {
+        let pen = 0;
+        for(let obs of obstacles) {
+            let cx = Math.max(obs.left, Math.min(px, obs.right));
+            let cy = Math.max(obs.top, Math.min(py, obs.bottom));
+            let dist_sq = (px - cx)**2 + (py - cy)**2;
+            if(dist_sq < this.radius**2) {
+                let dist = Math.sqrt(dist_sq);
+                if(dist === 0) pen += this.radius + Math.min(px - obs.left, obs.right - px, py - obs.top, obs.bottom - py);
+                else pen += this.radius - dist;
+            }
+        }
+        return pen;
+    }
+
+    move(obstacles, is_catcher=false, vjoy_dir=[0,0], mouse_target=null) {
+        if(!this.alive) { if(this.revive_timer > 0) this.revive_timer--; return; }
+        if(this.freeze_timer > 0) { this.freeze_timer--; return; }
+
+        if(this.shrink_timer > 0) { this.shrink_timer--; this.radius = 15; this.speed = this.normal_speed * 1.3; }
+        else { this.radius = this.base_radius; this.speed = this.normal_speed; }
+
+        if(is_catcher) this.speed *= 1.05;
+        if(this.is_bot) this.speed *= this.bot_speed_factor;
+        
+        if(this.speed_timer > 0) { this.speed_timer--; this.speed *= 1.6; addParticle(this.x, this.y, YELLOW, 1, 3, 1); }
+        if(this.rampage_timer > 0) { this.rampage_timer--; addParticle(this.x, this.y, RED, 1, 4, 1); }
+        if(this.ghost_timer > 0) { this.ghost_timer--; addParticle(this.x, this.y, WHITE, 0.5, 2, 1); }
+
+        let dx=0, dy=0;
+        if(vjoy_dir[0]!==0 || vjoy_dir[1]!==0) { dx += vjoy_dir[0]*this.speed; dy += vjoy_dir[1]*this.speed; }
+
+        if(mouse_target !== null && !this.is_bot && !stats.touch_ctrl) {
+            let tx = mouse_target.x, ty = mouse_target.y;
+            let ddx = tx - this.x, ddy = ty - this.y;
+            let d = Math.hypot(ddx, ddy);
+            if(d > this.radius * 0.5) { dx += (ddx/d)*this.speed; dy += (ddy/d)*this.speed; }
+        }
+
+        if(!this.is_bot) {
+            if(keys[this.controls.left]) dx -= this.speed;
+            if(keys[this.controls.right]) dx += this.speed;
+            if(keys[this.controls.up]) dy -= this.speed;
+            if(keys[this.controls.down]) dy += this.speed;
+
+            let gps = (navigator.getGamepads && typeof navigator.getGamepads === 'function') ? navigator.getGamepads() : [];
+            if(this.joy_id !== null && gps[this.joy_id]) {
+                let gp = gps[this.joy_id];
+                if(gp && gp.axes.length >= 2) {
+                    if(Math.abs(gp.axes[0]) > 0.2) dx += gp.axes[0]*this.speed;
+                    if(Math.abs(gp.axes[1]) > 0.2) dy += gp.axes[1]*this.speed;
+                }
+            }
+        }
+
+        if(dx > this.speed) dx = this.speed; else if(dx < -this.speed) dx = -this.speed;
+        if(dy > this.speed) dy = this.speed; else if(dy < -this.speed) dy = -this.speed;
+
+        if(dx !== 0) {
+            let pen_old = this.get_wall_penetration(this.x, this.y, obstacles);
+            this.x += dx;
+            if(this.x - this.radius < 0 || this.x + this.radius > WIDTH) this.x -= dx;
+            else if(this.ghost_timer === 0) {
+                let pen_new = this.get_wall_penetration(this.x, this.y, obstacles);
+                if((pen_old===0 && pen_new>0) || (pen_old>0 && pen_new>=pen_old)) this.x -= dx;
+            }
+        }
+        if(dy !== 0) {
+            let pen_old = this.get_wall_penetration(this.x, this.y, obstacles);
+            this.y += dy;
+            if(this.y - this.radius < 0 || this.y + this.radius > HEIGHT) this.y -= dy;
+            else if(this.ghost_timer === 0) {
+                let pen_new = this.get_wall_penetration(this.x, this.y, obstacles);
+                if((pen_old===0 && pen_new>0) || (pen_old>0 && pen_new>=pen_old)) this.y -= dy;
+            }
+        }
+    }
+
+    draw(ctx, status) {
+        if(!this.alive) return;
+        let color = status===-1 ? NEUTRAL_COLOR : (status===0 ? RED : this.base_color);
+        drawSoftShadow(ctx, this.x, this.y, this.radius);
+        if(this.ghost_timer > 0) {
+            drawSkinShape(ctx, this.x, this.y, this.radius, GHOST_WHITE, this.skin); return;
+        }
+
+        blitGlow(ctx, this.x, this.y, this.radius*2.2, color, 80);
+
+        if(this.freeze_timer > 0) {
+            blitGlow(ctx, this.x, this.y, this.radius*2.6, ICE_BLUE, 120);
+            drawSkinShape(ctx, this.x, this.y, this.radius+10, ICE_BLUE, this.skin);
+        }
+        if(this.rampage_timer > 0) drawSkinShape(ctx, this.x, this.y, this.radius+9, RED, this.skin, 5);
+        if(this.has_shield) drawSkinShape(ctx, this.x, this.y, this.radius+9, CYAN, this.skin, 4);
+        if(this.speed_timer > 0) drawSkinShape(ctx, this.x, this.y, this.radius+7, YELLOW, this.skin, 2);
+
+        drawSkinShape(ctx, this.x, this.y, this.radius, color, this.skin);
+        
+        let hl = getGlow(this.radius*0.55, [255,255,255], 90, 6);
+        ctx.drawImage(hl, Math.floor(this.x - this.radius*0.75), Math.floor(this.y - this.radius*0.85));
+        drawSkinShape(ctx, this.x, this.y, this.radius, WHITE, this.skin, 3);
+    }
+}
+
+class Zombie {
+    constructor(x, y) { this.x=x; this.y=y; this.radius=27; this.speed=2.5; this.freeze_timer=0; }
+    move_towards(p1, p2, obstacles) {
+        if(this.freeze_timer > 0) { this.freeze_timer--; return; }
+        let t = null, min_d = Infinity;
+        if(p1 && p1.alive) { min_d = Math.hypot(p1.x-this.x, p1.y-this.y); t = p1; }
+        if(p2 && p2.alive && Math.hypot(p2.x-this.x, p2.y-this.y) < min_d) t = p2;
+        if(!t) return;
+        let dist = Math.hypot(t.x-this.x, t.y-this.y);
+        if(dist > 0) {
+            let vx = ((t.x-this.x)/dist)*this.speed, vy = ((t.y-this.y)/dist)*this.speed;
+            this.x += vx;
+            if(obstacles.some(o => Math.pow(this.x - Math.max(o.left, Math.min(this.x, o.right)),2) + Math.pow(this.y - Math.max(o.top, Math.min(this.y, o.bottom)),2) < this.radius**2)) this.x -= vx;
+            this.y += vy;
+            if(obstacles.some(o => Math.pow(this.x - Math.max(o.left, Math.min(this.x, o.right)),2) + Math.pow(this.y - Math.max(o.top, Math.min(this.y, o.bottom)),2) < this.radius**2)) this.y -= vy;
+        }
+    }
+    draw(ctx) {
+        drawSoftShadow(ctx, this.x, this.y, this.radius);
+        blitGlow(ctx, this.x, this.y, this.radius*1.9, ZOMBIE_GREEN, 60);
+        if(this.freeze_timer > 0) {
+            ctx.beginPath(); ctx.arc(this.x, this.y, this.radius+6, 0, Math.PI*2); ctx.fillStyle=toRGB(ICE_BLUE); ctx.fill();
+        }
+        ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); ctx.fillStyle=toRGB(ZOMBIE_GREEN); ctx.fill();
+        ctx.lineWidth=3; ctx.strokeStyle=toRGB([25,90,45]); ctx.stroke();
+        ctx.beginPath(); ctx.arc(this.x-8, this.y-6, 5, 0, Math.PI*2); ctx.fillStyle=toRGB([200,30,30]); ctx.fill();
+        ctx.beginPath(); ctx.arc(this.x+8, this.y-6, 5, 0, Math.PI*2); ctx.fill();
+    }
+}
+
+class Boss {
+    constructor(x, y) {
+        this.x=x; this.y=y; this.radius=70; this.hp=1000; this.max_hp=1000;
+        this.base_speed = 3.2; this.stun_timer=0; this.slow_timer=0; this.burn_timer=0;
+        this.state = 'shoot'; this.state_timer=0; this.dash_vx=0; this.dash_vy=0;
+    }
+    update(p1, p2, projectiles) {
+        let speed = this.base_speed;
+        if(this.stun_timer>0) { this.stun_timer--; speed = 0; }
+        else if(this.slow_timer>0) { this.slow_timer--; speed = this.base_speed * 0.4; }
+
+        if(this.burn_timer>0) {
+            this.burn_timer--;
+            if(this.burn_timer%10===0) { this.hp-=2; addParticle(this.x, this.y, ORANGE, 3, 5, 1); }
+        }
+
+        this.state_timer++;
+        if(this.state === 'shoot') {
+            if(speed > 0) {
+                let t=null, min_d=Infinity;
+                if(p1 && p1.alive) { min_d = Math.hypot(p1.x-this.x, p1.y-this.y); t=p1; }
+                if(p2 && p2.alive && Math.hypot(p2.x-this.x, p2.y-this.y) < min_d) t=p2;
+                if(t) {
+                    let d = Math.hypot(t.x-this.x, t.y-this.y);
+                    if(d>0) { this.x += ((t.x-this.x)/d)*speed; this.y += ((t.y-this.y)/d)*speed; }
+                }
+            }
+            if(this.state_timer > 180) { this.state = 'nova'; this.state_timer = 0; }
+            else if(this.state_timer%60===0 && speed>0) {
+                let t = (p1 && p1.alive && (!p2 || !p2.alive || Math.random()>0.5)) ? p1 : p2;
+                if(t && t.alive) {
+                    let d = Math.hypot(t.x-this.x, t.y-this.y);
+                    if(d>0) projectiles.push(new BossProjectile(this.x, this.y, ((t.x-this.x)/d)*6.5, ((t.y-this.y)/d)*6.5));
+                }
+            }
+        } else if(this.state === 'nova') {
+            if(this.state_timer === 30 && speed>0) {
+                for(let a=0; a<360; a+=45) {
+                    let rad = a * Math.PI/180;
+                    projectiles.push(new BossProjectile(this.x, this.y, Math.cos(rad)*7.5, Math.sin(rad)*7.5));
+                }
+            }
+            if(this.state_timer > 60) { this.state = 'dash_aim'; this.state_timer = 0; }
+        } else if(this.state === 'dash_aim') {
+            if(this.state_timer === 45 && speed>0) {
+                let t=null, min_d=Infinity;
+                if(p1 && p1.alive) { min_d = Math.hypot(p1.x-this.x, p1.y-this.y); t=p1; }
+                if(p2 && p2.alive && Math.hypot(p2.x-this.x, p2.y-this.y) < min_d) t=p2;
+                if(t) {
+                    let d = Math.hypot(t.x-this.x, t.y-this.y);
+                    if(d>0) { this.dash_vx = ((t.x-this.x)/d)*19; this.dash_vy = ((t.y-this.y)/d)*19; this.state='dash'; this.state_timer=0; }
+                }
+            } else if(this.state_timer > 45) { this.state='shoot'; this.state_timer=0; }
+        } else if(this.state === 'dash') {
+            if(speed>0) { this.x+=this.dash_vx; this.y+=this.dash_vy; addParticle(this.x, this.y, RED, 1, 8, 2); }
+            if(this.state_timer > 20) { this.state='shoot'; this.state_timer=0; }
+        }
+    }
+    draw(ctx) {
+        drawSoftShadow(ctx, this.x, this.y, this.radius);
+        blitGlow(ctx, this.x, this.y, this.radius*2.1, BOSS_COLOR, 90);
+        ctx.beginPath();
+        if(this.burn_timer>0) { ctx.arc(this.x, this.y, this.radius+10, 0, Math.PI*2); ctx.fillStyle=toRGB(ORANGE); ctx.fill(); ctx.beginPath(); }
+        if(this.slow_timer>0) { ctx.arc(this.x, this.y, this.radius+7, 0, Math.PI*2); ctx.fillStyle=toRGB(ICE_BLUE); ctx.fill(); ctx.beginPath(); }
+        if(this.stun_timer>0) { ctx.arc(this.x, this.y, this.radius+14, 0, Math.PI*2); ctx.strokeStyle=toRGB(PURPLE); ctx.lineWidth=6; ctx.stroke(); ctx.beginPath(); }
+        if(this.state==='dash_aim') { ctx.arc(this.x, this.y, this.radius+7+Math.sin(this.state_timer*0.5)*14, 0, Math.PI*2); ctx.fillStyle=toRGB(RED); ctx.fill(); ctx.beginPath(); }
+
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); ctx.fillStyle=toRGB(BOSS_COLOR); ctx.fill();
+        ctx.strokeStyle=toRGB([60,8,25]); ctx.lineWidth=6; ctx.stroke();
+        
+        ctx.beginPath(); ctx.arc(this.x-24, this.y-16, 12, 0, Math.PI*2); ctx.fillStyle=toRGB([255,230,90]); ctx.fill();
+        ctx.beginPath(); ctx.arc(this.x+24, this.y-16, 12, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(this.x-24, this.y-16, 5, 0, Math.PI*2); ctx.fillStyle=toRGB(BLACK); ctx.fill();
+        ctx.beginPath(); ctx.arc(this.x+24, this.y-16, 5, 0, Math.PI*2); ctx.fill();
+        
+        ctx.beginPath(); ctx.moveTo(this.x-32, this.y+16); ctx.lineTo(this.x+32, this.y+16); ctx.lineTo(this.x, this.y+40); ctx.closePath(); ctx.fill();
+    }
+}
+
+class BossProjectile {
+    constructor(x,y,vx,vy) { this.x=x; this.y=y; this.vx=vx; this.vy=vy; this.radius=18; }
+    update() { this.x+=this.vx; this.y+=this.vy; addParticle(this.x, this.y, ACID_GREEN, 1, 4, 1); }
+    draw(ctx) {
+        blitGlow(ctx, this.x, this.y, this.radius*2, ACID_GREEN, 110);
+        ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); ctx.fillStyle=toRGB(ACID_GREEN); ctx.fill();
+        ctx.lineWidth=3; ctx.strokeStyle=toRGB([30,110,45]); ctx.stroke();
+    }
+}
+
+class WeaponDrop {
+    constructor(obstacles) {
+        this.radius = 24;
+        let t = ['sword','bomb','ice','fire','shock'];
+        this.type = t[Math.floor(Math.random()*t.length)];
+        this.color = {sword:WHITE, bomb:ORANGE, ice:ICE_BLUE, fire:RED, shock:PURPLE}[this.type];
+        while(true) {
+            this.x = 80 + Math.random()*(WIDTH-160); this.y = 160 + Math.random()*(HEIGHT-240);
+            if(!obstacles.some(o => o.collidepoint(this.x, this.y))) break;
+        }
+    }
+    draw(ctx) {
+        drawSoftShadow(ctx, this.x, this.y, this.radius);
+        blitGlow(ctx, this.x, this.y, this.radius*2, this.color, 90);
+        ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); ctx.fillStyle=toRGB(this.color); ctx.fill();
+        ctx.lineWidth=3; ctx.strokeStyle=toRGB(BLACK); ctx.stroke();
+        let x=this.x, y=this.y;
+        ctx.beginPath();
+        if(this.type==='sword') { ctx.moveTo(x, y-12); ctx.lineTo(x, y+12); ctx.moveTo(x-8,y+6); ctx.lineTo(x+8,y+6); ctx.lineWidth=4; ctx.stroke(); }
+        else if(this.type==='bomb') { ctx.arc(x,y+3,9,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.moveTo(x,y-6); ctx.lineTo(x+6,y-12); ctx.strokeStyle=toRGB(WHITE); ctx.stroke(); }
+        else if(this.type==='ice') { ctx.moveTo(x-9,y-9); ctx.lineTo(x+9,y+9); ctx.moveTo(x-9,y+9); ctx.lineTo(x+9,y-9); ctx.moveTo(x,y-12); ctx.lineTo(x,y+12); ctx.strokeStyle=toRGB(WHITE); ctx.stroke(); }
+        else if(this.type==='fire') { ctx.moveTo(x,y-12); ctx.lineTo(x-9,y+9); ctx.lineTo(x+9,y+9); ctx.fillStyle=toRGB(WHITE); ctx.fill(); }
+        else if(this.type==='shock') { ctx.moveTo(x+3,y-9); ctx.lineTo(x-6,y+2); ctx.lineTo(x+2,y+2); ctx.lineTo(x-4,y+12); ctx.fillStyle=toRGB(WHITE); ctx.fill(); }
+    }
+}
+
+class PlayerAttack {
+    constructor(t, x, y) { this.type=t; this.x=x; this.y=y; this.timer=t==='bomb'?FPS*1.5:0; this.active=true; }
+    update(boss) {
+        if(!this.active || !boss) return;
+        if(this.type === 'bomb') {
+            this.timer--;
+            if(this.timer<=0) {
+                this.active=false; addParticle(this.x, this.y, ORANGE, 10, 12, 50);
+                if(Math.hypot(boss.x-this.x, boss.y-this.y) < 260) boss.hp-=150;
+            }
+        } else {
+            let d = Math.hypot(boss.x-this.x, boss.y-this.y);
+            if(d < boss.radius+14) {
+                this.active=false;
+                if(this.type==='ice') { boss.slow_timer=FPS*4; boss.hp-=20; }
+                else if(this.type==='fire') { boss.burn_timer=FPS*5; boss.hp-=10; }
+                else if(this.type==='shock') { boss.stun_timer=FPS*2; boss.hp-=30; }
+            } else {
+                this.x += ((boss.x-this.x)/d)*19; this.y += ((boss.y-this.y)/d)*19;
+                let c = this.type==='ice'?ICE_BLUE:(this.type==='fire'?RED:PURPLE);
+                addParticle(this.x, this.y, c, 2, 6, 2);
+            }
+        }
+    }
+    draw(ctx) {
+        if(!this.active) return;
+        if(this.type==='bomb') {
+            blitGlow(ctx, this.x, this.y, 46, ORANGE, 120);
+            ctx.beginPath(); ctx.arc(this.x, this.y, 22+Math.sin(this.timer*0.5)*7, 0, Math.PI*2); ctx.fillStyle=toRGB(ORANGE); ctx.fill();
+        } else {
+            let c = this.type==='ice'?ICE_BLUE:(this.type==='fire'?RED:PURPLE);
+            blitGlow(ctx, this.x, this.y, 34, c, 120);
+            ctx.beginPath(); ctx.arc(this.x, this.y, 14, 0, Math.PI*2); ctx.fillStyle=toRGB(c); ctx.fill();
+        }
+    }
+}
+
+class PowerUp {
+    constructor(obstacles, mode_idx) {
+        this.radius = 20; this.born = Date.now();
+        let types = ['speed', 'shield', 'freeze', 'ghost', 'teleport', 'shrink', 'bomb', 'rampage'];
+        if(mode_idx === 0) {
+            let w = [10, 1, 1, 1, 1, 1, 1, 1, 1]; let sum = 18;
+            let r = Math.random() * sum;
+            if(r < 10) this.type = 'point';
+            else this.type = types[Math.floor(r-10)];
+        } else this.type = types[Math.floor(Math.random()*types.length)];
+        
+        this.color = {point:GOLD, speed:YELLOW, shield:CYAN, freeze:ICE_BLUE, ghost:WHITE, teleport:MAGENTA, shrink:LIME, bomb:ORANGE, rampage:RED}[this.type];
+        while(true) {
+            this.x = 80 + Math.random()*(WIDTH-160); this.y = 160 + Math.random()*(HEIGHT-240);
+            if(!obstacles.some(o => o.collidepoint(this.x, this.y))) break;
+        }
+    }
+    draw(ctx) {
+        drawSoftShadow(ctx, this.x, this.y, this.radius);
+        let pulse = 1.0 + 0.18 * Math.sin((Date.now() - this.born)*0.006);
+        blitGlow(ctx, this.x, this.y, this.radius*2.2*pulse, this.color, 100);
+        ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); ctx.fillStyle=toRGB(this.color); ctx.fill();
+        if(this.type === 'point') {
+            ctx.beginPath(); ctx.arc(this.x, this.y, this.radius-4, 0, Math.PI*2); ctx.fillStyle=toRGB(YELLOW); ctx.fill();
+            textCenter(ctx, "+1", "bold 26px Arial", toRGB(BLACK), this.x, this.y-13);
+        } else {
+            ctx.beginPath(); ctx.arc(this.x, this.y, this.radius/2, 0, Math.PI*2); ctx.fillStyle=toRGB(WHITE); ctx.fill();
+        }
+        ctx.lineWidth=2; ctx.strokeStyle="rgb(255,255,255)"; ctx.stroke();
+    }
+}
+
+// ============================================================
+//  COMPUTER-GEGNER (KI)
+// ============================================================
+
+class BotController {
+    constructor(level=1) {
+        this.set_level(level);
+        this.dir = [0.0, 0.0]; this.timer = 0; this.jitter = [0.0, 0.0];
+        this.last_pos = null; this.stuck_timer = 0; this.unstuck_dir = [0.0, 0.0]; this.unstuck_frames = 0;
+    }
+    set_level(l) { this.cfg = BotController.LEVELS[Math.max(0, Math.min(2, Math.floor(l)))]; }
+    
+    _norm(vx, vy) {
+        let d = Math.hypot(vx, vy);
+        if(d < 0.0001) return [0.0, 0.0];
+        return [vx/d, vy/d];
+    }
+    _attract(bot, tx, ty, w) {
+        let d = Math.hypot(tx-bot.x, ty-bot.y);
+        if(d<1) return [0.0, 0.0];
+        return [(tx-bot.x)/d*w, (ty-bot.y)/d*w];
+    }
+    update(bot, human, mode_idx, catcher_idx, powerups, zombies, boss, boss_projs, weapons, orb_pos) {
+        if(!bot.alive || bot.freeze_timer>0) return [0.0, 0.0];
+        let c = this.cfg; this.timer--;
+
+        if(this.last_pos) {
+            let moved = Math.hypot(bot.x-this.last_pos[0], bot.y-this.last_pos[1]);
+            if(moved < 1.5 && (this.dir[0]!==0 || this.dir[1]!==0)) this.stuck_timer++;
+            else this.stuck_timer=0;
+        }
+        this.last_pos = [bot.x, bot.y];
+        if(this.stuck_timer > 18 && this.unstuck_frames <= 0) {
+            let side = Math.random()>0.5 ? 1 : -1;
+            this.unstuck_dir = [-this.dir[1]*side, this.dir[0]*side];
+            if(this.unstuck_dir[0]===0 && this.unstuck_dir[1]===0) this.unstuck_dir = [Math.random()>0.5?1:-1, Math.random()>0.5?1:-1];
+            this.unstuck_frames = 22; this.stuck_timer = 0;
+        }
+        if(this.unstuck_frames > 0) { this.unstuck_frames--; return this._norm(...this.unstuck_dir); }
+
+        if(this.timer <= 0) {
+            this.timer = c.react;
+            this.jitter = [(Math.random()*2-1)*c.err, (Math.random()*2-1)*c.err];
+            this.dir = this._decide(bot, human, mode_idx, catcher_idx, powerups, zombies, boss, boss_projs, weapons, orb_pos, c);
+        }
+        return this.dir;
+    }
+    _decide(bot, human, mode_idx, catcher_idx, powerups, zombies, boss, boss_projs, weapons, orb_pos, c) {
+        let vx=0.0, vy=0.0;
+        let m = 130;
+        if(bot.x < m) vx += (m-bot.x)/m * 1.3;
+        if(bot.x > WIDTH-m) vx -= (bot.x-(WIDTH-m))/m * 1.3;
+        if(bot.y < m+60) vy += (m+60-bot.y)/m * 1.3;
+        if(bot.y > HEIGHT-m) vy -= (bot.y-(HEIGHT-m))/m * 1.3;
+
+        if(mode_idx === 0) {
+            if(catcher_idx === -1 && orb_pos) {
+                let a = this._attract(bot, orb_pos[0], orb_pos[1], 1.4); vx+=a[0]; vy+=a[1];
+            } else if(catcher_idx === 1) {
+                let tx = human.x + this.jitter[0]*300, ty = human.y + this.jitter[1]*300;
+                let a = this._attract(bot, tx, ty, 1.8); vx+=a[0]; vy+=a[1];
+            } else {
+                let d = Math.hypot(human.x-bot.x, human.y-bot.y);
+                if(d < c.flee && d > 1) {
+                    let w = 1.2 + (1 - d/c.flee)*2.4;
+                    vx += (bot.x-human.x)/d*w; vy += (bot.y-human.y)/d*w;
+                }
+                let best=null, best_d=c.sense;
+                for(let p of powerups) {
+                    let pd = Math.hypot(p.x-bot.x, p.y-bot.y);
+                    if(pd<best_d && Math.hypot(p.x-human.x, p.y-human.y)>200) { best=p; best_d=pd; }
+                }
+                if(best) { let a = this._attract(bot, best.x, best.y, 1.0); vx+=a[0]; vy+=a[1]; }
+            }
+        } else {
+            for(let z of zombies) {
+                let zd = Math.hypot(z.x-bot.x, z.y-bot.y);
+                if(zd < c.sense && zd > 1) {
+                    let w = (1 - zd/c.sense)*2.6; vx += (bot.x-z.x)/zd*w; vy += (bot.y-z.y)/zd*w;
+                }
+            }
+            if(boss) {
+                let bd = Math.hypot(boss.x-bot.x, boss.y-bot.y);
+                if(bd < c.flee+160 && bd > 1) {
+                    let w = 2.8 * (1 - bd/(c.flee+160)); vx += (bot.x-boss.x)/bd*w; vy += (bot.y-boss.y)/bd*w;
+                }
+            }
+            for(let bp of boss_projs) {
+                let rd = Math.hypot(bot.x-bp.x, bot.y-bp.y);
+                if(rd < c.dodge && rd > 1) {
+                    let vlen = Math.hypot(bp.vx, bp.vy);
+                    if(vlen > 0.1) {
+                        let closing = (bp.vx*(bot.x-bp.x) + bp.vy*(bot.y-bp.y)) / (vlen*rd);
+                        if(closing > 0.5) {
+                            let px = -bp.vy/vlen, py = bp.vx/vlen;
+                            let sign = (px*(bot.x-bp.x) + py*(bot.y-bp.y)) >= 0 ? 1 : -1;
+                            let w = 3.2*(1 - rd/c.dodge); vx += px*sign*w; vy += py*sign*w;
+                        }
+                    }
+                }
+            }
+            if(Math.hypot(vx,vy) < 0.9) {
+                let targets = (boss && weapons.length>0) ? weapons : powerups;
+                let best=null, best_d=c.sense;
+                for(let t of targets) {
+                    let td = Math.hypot(t.x-bot.x, t.y-bot.y);
+                    if(td<best_d) { best=t; best_d=td; }
+                }
+                if(best) { let a = this._attract(bot, best.x, best.y, 1.0); vx+=a[0]; vy+=a[1]; }
+            }
+        }
+        vx += this.jitter[0]*0.5; vy += this.jitter[1]*0.5;
+        return this._norm(vx,vy);
+    }
+}
+BotController.LEVELS = [
+    {name: "Leicht", speed: 0.62, react: 32, err: 0.55, flee: 300, sense: 380, dodge: 160},
+    {name: "Mittel", speed: 0.82, react: 14, err: 0.28, flee: 430, sense: 560, dodge: 250},
+    {name: "Schwer", speed: 1.00, react: 5,  err: 0.08, flee: 560, sense: 850, dodge: 340}
+];
+
+// ============================================================
+//  SPEICHERN / LADEN (Try/Catch gegen Blockaden)
+// ============================================================
+
+function empty_highscore() { return {attempts: 0, best_score: null, best_text: "Noch kein Versuch"}; }
+
+function load_highscores() {
+    let hs = {}; MODES.forEach(m => hs[m] = empty_highscore());
+    try {
+        let saved = JSON.parse(localStorage.getItem("ua_highscores"));
+        if(saved) MODES.forEach(m => { if(saved[m]) hs[m] = saved[m]; });
+    } catch(e) {}
+    return hs;
+}
+function save_highscores(hs) { try { localStorage.setItem("ua_highscores", JSON.stringify(hs)); } catch(e) {} }
+
+function record_highscore(hs, mode_idx, score, text) {
+    let mode = MODES[mode_idx];
+    let entry = hs[mode];
+    entry.attempts++;
+    if(entry.best_score === null || score > entry.best_score) {
+        entry.best_score = score; entry.best_text = text; save_highscores(hs); return true;
+    }
+    save_highscores(hs); return false;
+}
+
+function load_stats() { try { return JSON.parse(localStorage.getItem("ua_stats")) || {}; } catch(e) { return {}; } }
+function save_stats(st) { try { localStorage.setItem("ua_stats", JSON.stringify(st)); } catch(e) {} }
+
+// ============================================================
+//  BEDIENELEMENTE & GUI
+// ============================================================
+
+function drawAnimatedButton(ctx, rect, label, mousePos, animVal, accent=null) {
+    let hover = rect.collidepoint(mousePos.x, mousePos.y);
+    animVal += ((hover ? 1 : 0) - animVal) * 0.18;
+    let inf = Math.floor(animVal * 8);
+    let aRect = rect.inflate(inf, inf);
+
+    let bc = [52,54,72], hc = [96,100,138];
+    if(label === "Beenden" || label === "Spiel Beenden") { bc = [110,40,44]; hc = [175,60,64]; }
+    if(accent === "start") { bc = [20,110,110]; hc = [0,170,170]; }
+    
+    let c = [ bc[0]+(hc[0]-bc[0])*animVal, bc[1]+(hc[1]-bc[1])*animVal, bc[2]+(hc[2]-bc[2])*animVal ];
+
+    if(hover) {
+        let gc = accent==="start" ? CYAN : [200,205,255];
+        ctx.fillStyle = toRGB(gc, 45*animVal/255);
+        roundRect(ctx, aRect.x-20, aRect.y-20, aRect.w+40, aRect.h+40, 18); ctx.fill();
+    }
+
+    ctx.fillStyle = toRGB(c); roundRect(ctx, aRect.x, aRect.y, aRect.w, aRect.h, 10); ctx.fill();
+    ctx.fillStyle = toRGB([Math.min(255, c[0]+28), Math.min(255, c[1]+28), Math.min(255, c[2]+30)]);
+    roundRect(ctx, aRect.x+3, aRect.y+3, aRect.w-6, Math.max(5, aRect.h/4), 8); ctx.fill();
+    
+    ctx.lineWidth = 2; ctx.strokeStyle = toRGB(WHITE); roundRect(ctx, aRect.x, aRect.y, aRect.w, aRect.h, 10); ctx.stroke();
+    
+    let fontStr = accent==="start" ? "bold 34px Arial" : "26px Arial";
+    let yOff = accent==="start" ? 17 : 13;
+    textCenter(ctx, label, fontStr, toRGB(WHITE), aRect.centerx, aRect.centery - yOff);
+    return animVal;
+}
+
+function drawArrowButton(ctx, rect, dir, mousePos) {
+    let hover = rect.collidepoint(mousePos.x, mousePos.y);
+    if(hover) {
+        ctx.fillStyle = "rgba(200,205,255,0.18)"; roundRect(ctx, rect.x-12, rect.y-12, rect.w+24, rect.h+24, 14); ctx.fill();
+    }
+    ctx.fillStyle = hover ? "rgb(100,104,140)" : "rgb(54,56,74)";
+    roundRect(ctx, rect.x, rect.y, rect.w, rect.h, 12); ctx.fill();
+    ctx.lineWidth=2; ctx.strokeStyle=toRGB(WHITE); ctx.stroke();
+    
+    let cx = rect.centerx, cy = rect.centery, s = Math.floor(rect.w/4);
+    ctx.beginPath();
+    if(dir==="left") { ctx.moveTo(cx-s, cy); ctx.lineTo(cx+s, cy-s); ctx.lineTo(cx+s, cy+s); }
+    else { ctx.moveTo(cx+s, cy); ctx.lineTo(cx-s, cy-s); ctx.lineTo(cx-s, cy+s); }
+    ctx.fillStyle = toRGB(WHITE); ctx.fill();
+}
+
+function drawSelectorRow(ctx, y, lbl, val, lRect, rRect, mousePos, valColor, cx=WIDTH/2) {
+    drawArrowButton(ctx, lRect, "left", mousePos); drawArrowButton(ctx, rRect, "right", mousePos);
+    textCenter(ctx, lbl, "26px Arial", "rgb(185,188,210)", cx, y-2);
+    textCenter(ctx, val, "bold 44px Arial", toRGB(valColor), cx, y+24);
+}
+
+function drawMapPreview(ctx, rect, mapData) {
+    drawPanel(ctx, rect, 225, 14);
+    let inn = rect.inflate(-32, -32);
+    ctx.fillStyle = "rgb(10,11,18)"; roundRect(ctx, inn.x, inn.y, inn.w, inn.h, 10); ctx.fill();
+    let sx = inn.w/WIDTH, sy = inn.h/HEIGHT;
+    ctx.fillStyle = "rgb(120,124,156)";
+    for(let w of mapData.walls) {
+        roundRect(ctx, inn.x + w.x*sx, inn.y + w.y*sy, Math.max(3, w.w*sx), Math.max(3, w.h*sy), 2); ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(inn.x + 260*sx, inn.y + 540*sy, 6, 0, Math.PI*2); ctx.fillStyle="rgb(70,160,255)"; ctx.fill();
+    ctx.beginPath(); ctx.arc(inn.x + 1660*sx, inn.y + 540*sy, 6, 0, Math.PI*2); ctx.fillStyle="rgb(70,225,120)"; ctx.fill();
+}
+
+function drawSmallSelector(ctx, pcx, y, text, lRect, rRect, mousePos) {
+    drawArrowButton(ctx, lRect, "left", mousePos); drawArrowButton(ctx, rRect, "right", mousePos);
+    textCenter(ctx, text, "26px Arial", toRGB(WHITE), pcx, y+10);
+}
+
+// ============================================================
+//  MAIN LOOP UND SPIEL-LOGIK
+// ============================================================
+
+let state = "MENU";
+let highscores = load_highscores();
+let stats = load_stats();
+if(stats.mouse_ctrl === undefined) stats.mouse_ctrl = true;
+
+const cx = WIDTH/2;
+const p1cx = 470, p2cx = WIDTH - 470;
+
+let btnState = { highscore:0, achievements:0, settings:0, tutorial:0, credits:0, back:0, quit:0, resume:0, menu_pause:0, quit_pause:0, fps:0, touch:0, mouse:0, bot:0, boss:0, start:0, p2type:0 };
+
+let sb_w=250, sb_h=54;
+let btns = {
+    hs: new Rect(30,180,sb_w,sb_h), ach: new Rect(30,246,sb_w,sb_h),
+    set: new Rect(30,312,sb_w,sb_h), tut: new Rect(30,378,sb_w,sb_h),
+    cred: new Rect(30,444,sb_w,sb_h), quit: new Rect(30,510,sb_w,sb_h), back: new Rect(30,30,190,56),
+    modeL: new Rect(cx-480,186,60,60), modeR: new Rect(cx+420,186,60,60),
+    mapL: new Rect(cx-480,262,60,60), mapR: new Rect(cx+420,262,60,60),
+    mapPrev: new Rect(cx-200,340,400,210), bossToggle: new Rect(cx-280,568,560,52), start: new Rect(cx-240,648,480,100),
+    p2type: new Rect(p2cx-200,766,400,46),
+    p1sL: new Rect(p1cx-190,952,48,48), p1sR: new Rect(p1cx+142,952,48,48), p1cL: new Rect(p1cx-190,1010,48,48), p1cR: new Rect(p1cx+142,1010,48,48),
+    p2sL: new Rect(p2cx-190,952,48,48), p2sR: new Rect(p2cx+142,952,48,48), p2cL: new Rect(p2cx-190,1010,48,48), p2cR: new Rect(p2cx+142,1010,48,48),
+    fps: new Rect(cx-280,590,560,62), touch: new Rect(cx-280,670,560,62), mouse: new Rect(cx-280,750,560,62), bot: new Rect(cx-280,830,560,62),
+    resume: new Rect(cx-150, HEIGHT/2-10, 300, 60), mPause: new Rect(cx-150, HEIGHT/2+66, 300, 60), qPause: new Rect(cx-150, HEIGHT/2+142, 300, 60)
+};
+
+let mode_idx=0, map_idx=0, p1_skin_idx=0, p1_color_idx=0, p2_skin_idx=0, p2_color_idx=1;
+let p2_is_bot = !!stats.p2_bot; 
+
+// Sicheres Laden des KI-Levels ohne Absturz
+let bot_level = stats.bot_level !== undefined ? parseInt(stats.bot_level) : 1;
+if(isNaN(bot_level)) bot_level = 1;
+
+let boss_enabled = true, scroll_y = 0;
+
+let player1, player2, boss, bot_ctrl = null;
+let obstacles=[], powerups=[], zombies=[], weapons=[], attacks=[], boss_projs=[];
+let timer_spawns=0, catcher_idx=0, tag_cooldown=0, screen_shake=0, start_ticks=0, paused_time_total=0;
+let pause_start_tick=0;
+let boss_active=false, boss_defeated=false, boss_spawn_time=120, survived_time=0, time_left=0;
+let current_mode_idx = 0, winner_text="", winner_color=WHITE, highscore_notice="";
+let start_orb_rect = new Rect(cx-26, HEIGHT/2-26, 52, 52);
+
+initStatics();
+
+let lastBtnState = {};
+let lastHatState = {};
+function pollGamepads() {
+    let gps = (navigator.getGamepads && typeof navigator.getGamepads === 'function') ? navigator.getGamepads() : [];
+    for(let i=0; i<gps.length; i++) {
+        let gp = gps[i]; if(!gp) continue;
+        if(!lastBtnState[i]) lastBtnState[i] = [];
+        if(!lastHatState[i]) lastHatState[i] = [0,0];
+
+        let b = gp.buttons;
+        let justPressed = (idx) => b[idx] && b[idx].pressed && !lastBtnState[i][idx];
+
+        if(state === "MENU") {
+            if(i===0) {
+                if(justPressed(0) || justPressed(7)) clickTriggered = true;
+                if(justPressed(3)) { scroll_y=0; state="ACHIEVEMENTS"; }
+                if(justPressed(2)) state="HIGHSCORES";
+                if(justPressed(6)) state="TUTORIAL";
+                if(justPressed(5)) mode_idx = (mode_idx+1)%MODES.length;
+                if(justPressed(4)) map_idx = (map_idx+1)%MAPS.length;
+                if(justPressed(8) || justPressed(9)) boss_enabled = !boss_enabled;
+            }
+            
+            let ax = Math.abs(gp.axes[0]) > 0.5 ? Math.sign(gp.axes[0]) : 0;
+            let ay = Math.abs(gp.axes[1]) > 0.5 ? Math.sign(gp.axes[1]) : 0;
+            
+            if(ax !== lastHatState[i][0] || ay !== lastHatState[i][1]) {
+                if(i===0) {
+                    if(ax === -1) p1_skin_idx = (p1_skin_idx-1+SKINS.length)%SKINS.length;
+                    if(ax === 1) p1_skin_idx = (p1_skin_idx+1)%SKINS.length;
+                    if(ay === 1) p1_color_idx = (p1_color_idx-1+COLORS.length)%COLORS.length;
+                    if(ay === -1) p1_color_idx = (p1_color_idx+1)%COLORS.length;
+                } else if(i===1 && ![1,3].includes(mode_idx)) {
+                    if(ax === -1) p2_skin_idx = (p2_skin_idx-1+SKINS.length)%SKINS.length;
+                    if(ax === 1) p2_skin_idx = (p2_skin_idx+1)%SKINS.length;
+                    if(ay === 1) p2_color_idx = (p2_color_idx-1+COLORS.length)%COLORS.length;
+                    if(ay === -1) p2_color_idx = (p2_color_idx+1)%COLORS.length;
+                }
+            }
+            lastHatState[i] = [ax, ay];
+        } else if(["HIGHSCORES","TUTORIAL","ACHIEVEMENTS","CREDITS","SETTINGS"].includes(state)) {
+            if(justPressed(0) || justPressed(1)) state="MENU";
+            if(state === "ACHIEVEMENTS" && i===0 && Math.abs(gp.axes[1]) > 0.2) scroll_y -= gp.axes[1]*18;
+        } else if (state === "PLAYING") {
+            if(justPressed(7)) { state="PAUSED"; pause_start_tick = Date.now(); }
+        } else if (state === "PAUSED") {
+            if(justPressed(0) || justPressed(7)) { state="PLAYING"; paused_time_total += Date.now() - pause_start_tick; }
+            if(justPressed(1)) state="MENU";
+        } else if (state === "GAME_OVER") {
+            if(justPressed(0) || justPressed(7)) state="MENU";
+        }
+
+        for(let j=0; j<b.length; j++) lastBtnState[i][j] = b[j].pressed;
+    }
+}
+
+function processUI() {
+    if(!clickTriggered) return false;
+    clickTriggered = false;
+    let lc = mousePos;
+
+    if(state === "MENU") {
+        if(btns.hs.collidepoint(lc.x, lc.y)) state = "HIGHSCORES";
+        else if(btns.ach.collidepoint(lc.x, lc.y)) { scroll_y=0; state="ACHIEVEMENTS"; }
+        else if(btns.set.collidepoint(lc.x, lc.y)) state="SETTINGS";
+        else if(btns.tut.collidepoint(lc.x, lc.y)) state="TUTORIAL";
+        else if(btns.cred.collidepoint(lc.x, lc.y)) state="CREDITS";
+        else if(btns.start.collidepoint(lc.x, lc.y) || keys['Space']) return true; 
+        else if(btns.modeL.collidepoint(lc.x, lc.y)) mode_idx = (mode_idx - 1 + MODES.length) % MODES.length;
+        else if(btns.modeR.collidepoint(lc.x, lc.y)) mode_idx = (mode_idx + 1) % MODES.length;
+        else if(btns.mapL.collidepoint(lc.x, lc.y)) map_idx = (map_idx - 1 + MAPS.length) % MAPS.length;
+        else if(btns.mapR.collidepoint(lc.x, lc.y) || btns.mapPrev.collidepoint(lc.x, lc.y)) map_idx = (map_idx + 1) % MAPS.length;
+        else if(btns.bossToggle.collidepoint(lc.x, lc.y)) boss_enabled = !boss_enabled;
+        else if(btns.p1sL.collidepoint(lc.x, lc.y)) p1_skin_idx = (p1_skin_idx-1+SKINS.length)%SKINS.length;
+        else if(btns.p1sR.collidepoint(lc.x, lc.y)) p1_skin_idx = (p1_skin_idx+1)%SKINS.length;
+        else if(btns.p1cL.collidepoint(lc.x, lc.y)) p1_color_idx = (p1_color_idx-1+COLORS.length)%COLORS.length;
+        else if(btns.p1cR.collidepoint(lc.x, lc.y)) p1_color_idx = (p1_color_idx+1)%COLORS.length;
+        else if(mode_idx !== 1 && mode_idx !== 3) {
+            if(btns.p2type.collidepoint(lc.x, lc.y)) { p2_is_bot=!p2_is_bot; stats.p2_bot=p2_is_bot; save_stats(stats); }
+            else if(btns.p2sL.collidepoint(lc.x, lc.y)) p2_skin_idx = (p2_skin_idx-1+SKINS.length)%SKINS.length;
+            else if(btns.p2sR.collidepoint(lc.x, lc.y)) p2_skin_idx = (p2_skin_idx+1)%SKINS.length;
+            else if(btns.p2cL.collidepoint(lc.x, lc.y)) p2_color_idx = (p2_color_idx-1+COLORS.length)%COLORS.length;
+            else if(btns.p2cR.collidepoint(lc.x, lc.y)) p2_color_idx = (p2_color_idx+1)%COLORS.length;
+        }
+    } else if(["HIGHSCORES","TUTORIAL","ACHIEVEMENTS","CREDITS","SETTINGS"].includes(state) && btns.back.collidepoint(lc.x,lc.y)) {
+        state = "MENU";
+    } else if(state === "SETTINGS") {
+        if(btns.fps.collidepoint(lc.x,lc.y)) { stats.show_fps = !stats.show_fps; save_stats(stats); }
+        else if(btns.touch.collidepoint(lc.x,lc.y)) { stats.touch_ctrl = !stats.touch_ctrl; save_stats(stats); }
+        else if(btns.mouse.collidepoint(lc.x,lc.y)) { stats.mouse_ctrl = !stats.mouse_ctrl; save_stats(stats); }
+        else if(btns.bot.collidepoint(lc.x,lc.y)) { bot_level = (bot_level+1)%3; stats.bot_level=bot_level; save_stats(stats); }
+    } else if(state === "PAUSED") {
+        if(btns.resume.collidepoint(lc.x,lc.y)) { state="PLAYING"; paused_time_total += Date.now() - pause_start_tick; }
+        else if(btns.mPause.collidepoint(lc.x,lc.y)) state="MENU";
+    } else if(state === "GAME_OVER") {
+        state = "MENU";
+    }
+    return false;
+}
+
+function startGame() {
+    current_mode_idx = mode_idx; highscore_notice = ""; state = "PLAYING";
+    boss_active = false; boss_defeated = false;
+    stats.games_played = (stats.games_played||0)+1;
+    if(mode_idx===2 || mode_idx===4) stats.coop_played = (stats.coop_played||0)+1;
+    save_stats(stats);
+
+    let p1c = {up:'KeyW', down:'KeyS', left:'KeyA', right:'KeyD'};
+    let p2c = {up:'ArrowUp', down:'ArrowDown', left:'ArrowLeft', right:'ArrowRight'};
+    let bot_round = p2_is_bot && [0,2,4].includes(mode_idx);
+
+    player1 = new Player(260, HEIGHT/2, COLORS[p1_color_idx][1], p1c, "P1", SKINS[p1_skin_idx], 0);
+    player2 = new Player(WIDTH-260, HEIGHT/2, COLORS[p2_color_idx][1], p2c, "P2", SKINS[p2_skin_idx], bot_round?null:1, bot_round);
+    
+    if(bot_round) { player2.bot_speed_factor = BotController.LEVELS[bot_level].speed; bot_ctrl = new BotController(bot_level); }
+    else bot_ctrl = null;
+
+    if(mode_idx===1 || mode_idx===3) { player2.alive=false; player2.revive_timer=-1; }
+
+    obstacles = MAPS[map_idx].walls.slice();
+    powerups=[]; zombies=[]; particles=[]; weapons=[]; attacks=[]; boss_projs=[]; boss=null;
+    catcher_idx = mode_idx===0 ? -1 : -2; tag_cooldown=0;
+    paused_time_total=0; survived_time=0; time_left=GAME_TIME; start_ticks=Date.now();
+    vjoys = {fid1:null, fid2:null, p1:null, p2:null, base1:[0,0], base2:[0,0]};
+}
+
+function update() {
+    let now = Date.now();
+    
+    if(state === "PLAYING") {
+        survived_time = Math.floor((now - start_ticks - paused_time_total)/1000);
+        time_left = Math.max(0, GAME_TIME - survived_time);
+        stats.max_survived = Math.max(stats.max_survived||0, survived_time);
+        boss_spawn_time = [3,4].includes(mode_idx) ? 0 : (BOSS_TEST_MODUS ? 3 : 120);
+
+        timer_spawns++;
+        if(timer_spawns >= FPS*4) {
+            timer_spawns = 0;
+            if(boss_active) { if(weapons.length<4) weapons.push(new WeaponDrop(obstacles)); }
+            else { if(catcher_idx !== -1 && powerups.length<4) powerups.push(new PowerUp(obstacles, mode_idx)); }
+        }
+
+        if([1,2].includes(mode_idx) && !boss_active && !boss_defeated && !BOSS_TEST_MODUS) {
+            let spawn_rate = Math.max(100, 240 - (survived_time*2));
+            if(timer_spawns % spawn_rate === 0) {
+                let edges = ['top','bottom','left','right'], edge = edges[Math.floor(Math.random()*4)];
+                let zx = ['top','bottom'].includes(edge) ? Math.random()*WIDTH : (edge==='left' ? -30 : WIDTH+30);
+                let zy = ['left','right'].includes(edge) ? Math.random()*HEIGHT : (edge==='top' ? -30 : HEIGHT+30);
+                zombies.push(new Zombie(zx, zy));
+            }
+        }
+
+        let can_spawn_boss = [3,4].includes(mode_idx) || (boss_enabled && [1,2].includes(mode_idx));
+        if(can_spawn_boss && survived_time >= boss_spawn_time && !boss_active && !boss_defeated) {
+            boss_active=true; zombies=[]; powerups=[]; boss=new Boss(WIDTH/2, -80); screen_shake=30;
+        }
+
+        [player1, player2].forEach(p => {
+            if(!p.alive && p.revive_timer === 1) {
+                stats.revives = (stats.revives||0)+1; p.alive=true; p.has_shield=true; p.ghost_timer=FPS*2;
+            }
+        });
+
+        let vj1_dir=[0,0], vj2_dir=[0,0];
+        if(stats.touch_ctrl) {
+            if(vjoys.p1) {
+                let vx = vjoys.p1[0]-vjoys.base1[0], vy = vjoys.p1[1]-vjoys.base1[1];
+                let dist = Math.hypot(vx,vy);
+                if(dist>0) vj1_dir = [(vx/dist)*Math.min(dist/90, 1), (vy/dist)*Math.min(dist/90, 1)];
+            }
+            if(vjoys.p2 && !player2.is_bot) {
+                let vx = vjoys.p2[0]-vjoys.base2[0], vy = vjoys.p2[1]-vjoys.base2[1];
+                let dist = Math.hypot(vx,vy);
+                if(dist>0) vj2_dir = [(vx/dist)*Math.min(dist/90, 1), (vy/dist)*Math.min(dist/90, 1)];
+            }
+        }
+
+        let m_target = (stats.mouse_ctrl && mouseButtons.left) ? mousePos : null;
+        
+        let bot_dir = [0,0];
+        if(player2.is_bot && bot_ctrl) {
+            let orb = (mode_idx===0 && catcher_idx===-1) ? [WIDTH/2, HEIGHT/2] : null;
+            bot_dir = bot_ctrl.update(player2, player1, mode_idx, catcher_idx, powerups, zombies, boss_active?boss:null, boss_projs, weapons, orb);
+        }
+
+        player1.move(obstacles, (mode_idx===0 && catcher_idx===0), vj1_dir, m_target);
+        player2.move(obstacles, (mode_idx===0 && catcher_idx===1), player2.is_bot?bot_dir:vj2_dir);
+
+        if(!boss_active) zombies.forEach(z => z.move_towards(player1, player2, obstacles));
+
+        if(boss_active && boss) {
+            boss.update(player1, player2, boss_projs);
+            if(boss.hp <= 0) {
+                boss_defeated=true; boss_active=false; boss=null; state="GAME_OVER";
+                stats.bosses_killed = (stats.bosses_killed||0)+1; save_stats(stats);
+                winner_text="BOSS BESIEGT! IHR GEWINNT!"; winner_color=YELLOW;
+                if(record_highscore(highscores, current_mode_idx, 100000-survived_time, `Boss besiegt nach ${survived_time}s`)) highscore_notice="NEUER HIGHSCORE!";
+            }
+            for(let i=boss_projs.length-1; i>=0; i--) {
+                let bp = boss_projs[i]; bp.update();
+                if(bp.x<0||bp.x>WIDTH||bp.y<0||bp.y>HEIGHT || obstacles.some(o => new Rect(bp.x-bp.radius, bp.y-bp.radius, bp.radius*2, bp.radius*2).collidepoint(o.left, o.top))) {
+                    if(bp.x>0&&bp.x<WIDTH&&bp.y>0&&bp.y<HEIGHT) addParticle(bp.x, bp.y, ACID_GREEN, 2, 5, 15);
+                    boss_projs.splice(i,1); continue;
+                }
+                for(let p of [player1, player2]) {
+                    if(p.alive && p.ghost_timer===0 && Math.hypot(p.x-bp.x, p.y-bp.y) < p.radius+bp.radius) {
+                        if(p.has_shield) { p.has_shield=false; boss_projs.splice(i,1); break; }
+                        else { p.alive=false; p.revive_timer=FPS*15; break; }
+                    }
+                }
+            }
+        }
+
+        for(let i=attacks.length-1; i>=0; i--) { attacks[i].update(boss); if(!attacks[i].active) attacks.splice(i,1); }
+        if(tag_cooldown>0) tag_cooldown--;
+        if(screen_shake>0) screen_shake--;
+
+        if(mode_idx===0 && catcher_idx===-1) {
+            let p = Math.sin(now*0.005)*8;
+            let orb = start_orb_rect.inflate(p,p);
+            if(orb.collidepoint(player1.x, player1.y)) { catcher_idx=1; tag_cooldown=FPS*1.5; screen_shake=10; addParticle(player1.x, player1.y, PURPLE, 6,10,30); }
+            else if(orb.collidepoint(player2.x, player2.y)) { catcher_idx=0; tag_cooldown=FPS*1.5; screen_shake=10; addParticle(player2.x, player2.y, PURPLE, 6,10,30); }
+        }
+
+        for(let i=powerups.length-1; i>=0; i--) {
+            let pu = powerups[i], c=null;
+            if(player1.alive && Math.hypot(player1.x-pu.x, player1.y-pu.y)<player1.radius+pu.radius) c=player1;
+            else if(player2.alive && Math.hypot(player2.x-pu.x, player2.y-pu.y)<player2.radius+pu.radius) c=player2;
+
+            if(c) {
+                if(pu.type === 'point') {
+                    if((c===player1 && catcher_idx===0) || (c===player2 && catcher_idx===1)) continue;
+                    c.score++; addParticle(pu.x,pu.y,GOLD,6,10,30); powerups.splice(i,1); continue;
+                }
+                stats.powerups = (stats.powerups||0)+1;
+                if(pu.type==='speed') stats.speed_pu=(stats.speed_pu||0)+1;
+                if(pu.type==='shield') stats.shield_pu=(stats.shield_pu||0)+1;
+                if(pu.type==='ghost') stats.ghost_pu=(stats.ghost_pu||0)+1;
+                if(pu.type==='freeze') stats.freeze_pu=(stats.freeze_pu||0)+1;
+                if(pu.type==='shrink') stats.shrink_pu=(stats.shrink_pu||0)+1;
+
+                addParticle(pu.x,pu.y,pu.color,5,8,20);
+                if(pu.type==='speed') c.speed_timer=FPS*5;
+                else if(pu.type==='shield') c.has_shield=true;
+                else if(pu.type==='ghost') c.ghost_timer=FPS*5;
+                else if(pu.type==='shrink') c.shrink_timer=FPS*8;
+                else if(pu.type==='teleport') { c.x = 80+Math.random()*(WIDTH-160); c.y = 160+Math.random()*(HEIGHT-240); }
+                else if(pu.type==='rampage') c.rampage_timer=FPS*6;
+                else if(pu.type==='bomb') { screen_shake=20; if(mode_idx===0) (c===player1?player2:player1).freeze_timer=FPS*4; else { zombies.forEach(z=>addParticle(z.x,z.y,ZOMBIE_GREEN,6,6,10)); zombies=[]; } }
+                else if(pu.type==='freeze') { if(mode_idx===0) (c===player1?player2:player1).freeze_timer=FPS*2; else zombies.forEach(z=>z.freeze_timer=FPS*3); }
+                powerups.splice(i,1);
+            }
+        }
+
+        for(let i=weapons.length-1; i>=0; i--) {
+            let w = weapons[i], c=null;
+            if(player1.alive && Math.hypot(player1.x-w.x, player1.y-w.y)<player1.radius+w.radius) c=player1;
+            else if(player2.alive && Math.hypot(player2.x-w.x, player2.y-w.y)<player2.radius+w.radius) c=player2;
+            if(c) {
+                stats.weapons = (stats.weapons||0)+1; addParticle(w.x, w.y, w.color, 6,10,20);
+                if(w.type==='sword') { if(boss) { boss.hp-=100; addParticle(boss.x, boss.y, WHITE, 10,6,30); } }
+                else attacks.push(new PlayerAttack(w.type, c.x, c.y));
+                weapons.splice(i,1);
+            }
+        }
+
+        if(mode_idx===0 && catcher_idx>=0 && tag_cooldown===0) {
+            if(Math.hypot(player1.x-player2.x, player1.y-player2.y) < player1.radius+player2.radius) {
+                stats.catches = (stats.catches||0)+1; screen_shake=15;
+                addParticle(player1.x+(player2.x-player1.x)/2, player1.y+(player2.y-player1.y)/2, RED, 10,8,40);
+                if(catcher_idx===0) { if(player2.has_shield){player2.has_shield=false; tag_cooldown=FPS*1.5;} else {catcher_idx=1; player2.times_caught++; tag_cooldown=FPS*2;} }
+                else { if(player1.has_shield){player1.has_shield=false; tag_cooldown=FPS*1.5;} else {catcher_idx=0; player1.times_caught++; tag_cooldown=FPS*2;} }
+            }
+        }
+
+        if(!boss_active) {
+            for(let i=zombies.length-1; i>=0; i--) {
+                let z = zombies[i], killed=false;
+                for(let p of [player1, player2]) {
+                    if(p.alive && p.ghost_timer===0 && Math.hypot(p.x-z.x, p.y-z.y) < p.radius+z.radius) {
+                        if(p.rampage_timer>0) { screen_shake=5; addParticle(z.x,z.y,ZOMBIE_GREEN,7,10,20); killed=true; break; }
+                        else if(p.has_shield) { p.has_shield=false; killed=true; break; }
+                        else { p.alive=false; p.revive_timer=FPS*15; break; }
+                    }
+                }
+                if(killed) zombies.splice(i,1);
+            }
+        } else if(boss) {
+            [player1, player2].forEach(p => {
+                if(p.alive && p.ghost_timer===0 && Math.hypot(p.x-boss.x, p.y-boss.y) < p.radius+boss.radius) { p.alive=false; p.revive_timer=FPS*15; }
+            });
+        }
+
+        if(mode_idx===0 && time_left<=0) {
+            state="GAME_OVER";
+            let p2name = player2.is_bot ? "Computer" : "Spieler 2";
+            if(player1.score > player2.score) { winner_text="Spieler 1 gewinnt!"; winner_color=player1.base_color; if(bot_round) stats.bot_wins=(stats.bot_wins||0)+1; }
+            else if(player2.score > player1.score) { winner_text=`${p2name} gewinnt!`; winner_color=player2.base_color; }
+            else { winner_text="Unentschieden!"; winner_color=WHITE; }
+            save_stats(stats);
+            let best = Math.max(player1.score, player2.score);
+            if(record_highscore(highscores, current_mode_idx, best, `Punkte-Runde: ${best} gesammelt`)) highscore_notice="NEUER HIGHSCORE!";
+        } else if(mode_idx!==0 && !player1.alive && !player2.alive) {
+            state="GAME_OVER"; winner_text=`Gestorben nach: ${survived_time}s`; winner_color=RED; save_stats(stats);
+            if(record_highscore(highscores, current_mode_idx, survived_time, `Überlebt ${survived_time}s`)) highscore_notice="NEUER HIGHSCORE!";
+        }
+    }
+}
+
+function draw() {
+    ctx.clearRect(0,0,WIDTH,HEIGHT);
+    let shx = screen_shake>0 ? (Math.random()*14-7) : 0;
+    let shy = screen_shake>0 ? (Math.random()*14-7) : 0;
+    ctx.save(); ctx.translate(shx, shy);
+
+    ctx.drawImage(BACKGROUND, 0, 0);
+
+    if(["PLAYING","PAUSED","GAME_OVER"].includes(state)) {
+        obstacles.forEach(o => drawWall(ctx, o));
+        
+        if(mode_idx===0 && catcher_idx===-1) {
+            let p = Math.sin(Date.now()*0.005)*8;
+            let orb = start_orb_rect.inflate(p,p);
+            blitGlow(ctx, cx, HEIGHT/2, 95, PURPLE, 110);
+            ctx.beginPath(); ctx.ellipse(orb.centerx, orb.centery, orb.w/2, orb.h/2, 0, 0, Math.PI*2); ctx.fillStyle=toRGB(PURPLE); ctx.fill();
+            ctx.lineWidth=3; ctx.strokeStyle=toRGB(WHITE); ctx.stroke();
+        }
+
+        powerups.forEach(p => p.draw(ctx)); weapons.forEach(w => w.draw(ctx)); zombies.forEach(z => z.draw(ctx));
+        boss_projs.forEach(bp => bp.draw(ctx)); attacks.forEach(a => a.draw(ctx));
+        if(boss) boss.draw(ctx);
+
+        let p1_stat = catcher_idx===-1 ? -1 : (mode_idx===0 ? (catcher_idx===0?0:1) : 1);
+        let p2_stat = catcher_idx===-1 ? -1 : (mode_idx===0 ? (catcher_idx===1?0:1) : 1);
+        player1.draw(ctx, p1_stat); player2.draw(ctx, p2_stat);
+
+        // --- DYNAMISCHE VIRTUAL JOYSTICKS ---
+        if(stats.touch_ctrl && state==="PLAYING") {
+            ctx.lineWidth=3; ctx.strokeStyle="rgba(255,255,255,0.25)";
+            if(vjoys.p1) {
+                ctx.beginPath(); ctx.arc(vjoys.base1[0], vjoys.base1[1], 90, 0, Math.PI*2); ctx.stroke();
+                let vx = vjoys.p1[0]-vjoys.base1[0], vy = vjoys.p1[1]-vjoys.base1[1];
+                let dist = Math.min(Math.hypot(vx,vy), 90), ang = Math.atan2(vy,vx);
+                ctx.beginPath(); ctx.arc(vjoys.base1[0]+Math.cos(ang)*dist, vjoys.base1[1]+Math.sin(ang)*dist, 34, 0, Math.PI*2); 
+                ctx.fillStyle="rgba(255,255,255,0.5)"; ctx.fill();
+            }
+            if(![1,3].includes(mode_idx) && !player2.is_bot && vjoys.p2) {
+                ctx.beginPath(); ctx.arc(vjoys.base2[0], vjoys.base2[1], 90, 0, Math.PI*2); ctx.stroke();
+                let vx = vjoys.p2[0]-vjoys.base2[0], vy = vjoys.p2[1]-vjoys.base2[1];
+                let dist = Math.min(Math.hypot(vx,vy), 90), ang = Math.atan2(vy,vx);
+                ctx.beginPath(); ctx.arc(vjoys.base2[0]+Math.cos(ang)*dist, vjoys.base2[1]+Math.sin(ang)*dist, 34, 0, Math.PI*2); 
+                ctx.fillStyle="rgba(255,255,255,0.5)"; ctx.fill();
+            }
+        }
+    }
+
+    drawParticles(ctx);
+    if(state !== "PLAYING" && state !== "PAUSED" && state !== "GAME_OVER") ctx.drawImage(VIGNETTE, 0, 0);
+
+    // --- HUD ---
+    if(["PLAYING","PAUSED","GAME_OVER"].includes(state)) {
+        let p2name = player2.is_bot ? "CPU" : "P2";
+        if(mode_idx===0) {
+            drawPanel(ctx, new Rect(28,20,400,64), 170, 12); drawText(ctx, `P1 Punkte: ${player1.score}`, "bold 34px Arial", toRGB(player1.base_color), 56, 32);
+            drawPanel(ctx, new Rect(WIDTH-428,20,400,64), 170, 12);
+            ctx.font="bold 34px Arial"; let tw = ctx.measureText(`${p2name} Punkte: ${player2.score}`).width;
+            drawText(ctx, `${p2name} Punkte: ${player2.score}`, "bold 34px Arial", toRGB(player2.base_color), WIDTH-56-tw, 32);
+            
+            drawPanel(ctx, new Rect(cx-170, 20, 340, 64), 170, 12);
+            let sec = time_left%60; textCenter(ctx, `Zeit: ${Math.floor(time_left/60)}:${sec<10?'0'+sec:sec}`, "bold 34px Arial", time_left<=30?toRGB(RED):toRGB(WHITE), cx, 32);
+
+            let stat = catcher_idx===-1 ? "Berühre die LILA Kugel in der Mitte!" : (catcher_idx===0 ? `P1 [ROT] jagt!  ${p2name} muss Punkte sammeln!` : `${p2name} [ROT] jagt!  P1 muss Punkte sammeln!`);
+            drawPanel(ctx, new Rect(cx-430,94,860,46), 140, 12); textCenter(ctx, stat, "bold 34px Arial", catcher_idx===-1?toRGB(PURPLE):toRGB(RED), cx, 98);
+        } else {
+            drawPanel(ctx, new Rect(28,20,400,64), 170, 12);
+            drawText(ctx, player1.alive?"P1: Lebt":`P1: Wiederbelebung in ${Math.floor(player1.revive_timer/FPS)}s`, "bold 34px Arial", player1.alive?toRGB(player1.base_color):toRGB(RED), 56, 32);
+            if([2,4].includes(mode_idx)) {
+                drawPanel(ctx, new Rect(WIDTH-428,20,400,64), 170, 12);
+                let t = player2.alive?`${p2name}: Lebt`:`${p2name}: Wiederbelebung in ${Math.floor(player2.revive_timer/FPS)}s`;
+                ctx.font="bold 34px Arial"; let tw = ctx.measureText(t).width; drawText(ctx, t, "bold 34px Arial", player2.alive?toRGB(player2.base_color):toRGB(RED), WIDTH-56-tw, 32);
+            }
+            if(boss_active && boss) {
+                drawPanel(ctx, new Rect(cx-340,16,680,76), 190, 12);
+                ctx.fillStyle="rgb(10,10,16)"; roundRect(ctx, cx-320, 52, 640, 28, 8); ctx.fill();
+                let fw = Math.floor(636 * (Math.max(0, boss.hp) / boss.max_hp));
+                if(fw>0) { ctx.fillStyle=toRGB(RED); roundRect(ctx, cx-318, 54, fw, 24, 8); ctx.fill(); }
+                textCenter(ctx, `DER WÄCHTER: ${Math.max(0,boss.hp)} / ${boss.max_hp}`, "26px Arial", toRGB(WHITE), cx, 22);
+            } else {
+                drawPanel(ctx, new Rect(cx-220,20,440,64), 170, 12);
+                let txt = ([3,4].includes(mode_idx) || !boss_enabled) ? `Überlebt: ${survived_time}s` : `Zeit bis Boss: ${Math.max(0, boss_spawn_time-survived_time)}s`;
+                textCenter(ctx, txt, "bold 34px Arial", toRGB(WHITE), cx, 32);
+            }
+        }
+        
+        if (stats.touch_ctrl) {
+            drawPanel(ctx, pauseBtnRect, 170, 12);
+            ctx.fillStyle = toRGB(WHITE);
+            ctx.fillRect(pauseBtnRect.centerx - 12, pauseBtnRect.centery - 16, 8, 32);
+            ctx.fillRect(pauseBtnRect.centerx + 4, pauseBtnRect.centery - 16, 8, 32);
+        }
+
+        ctx.drawImage(VIGNETTE, 0, 0);
+
+        if(state === "PAUSED") {
+            ctx.fillStyle="rgba(0,0,0,0.6)"; ctx.fillRect(0,0,WIDTH,HEIGHT);
+            drawPanel(ctx, new Rect(cx-380, HEIGHT/2-240, 760, 480), 215);
+            textCenter(ctx, "SPIEL PAUSIERT", "bold 84px Arial", toRGB(YELLOW), cx, HEIGHT/2-210);
+            textCenter(ctx, `Modus: ${MODES[mode_idx]}   |   Zeit: ${survived_time}s`, "26px Arial", toRGB(WHITE), cx, HEIGHT/2-90);
+            btnState.resume = drawAnimatedButton(ctx, btns.resume, "Weiter", mousePos, btnState.resume);
+            btnState.menu_pause = drawAnimatedButton(ctx, btns.mPause, "Hauptmenü", mousePos, btnState.menu_pause);
+            btnState.quit_pause = drawAnimatedButton(ctx, btns.qPause, "Spiel Beenden", mousePos, btnState.quit_pause);
+        } else if(state === "GAME_OVER") {
+            ctx.fillStyle="rgba(0,0,0,0.6)"; ctx.fillRect(0,0,WIDTH,HEIGHT);
+            drawPanel(ctx, new Rect(cx-600, HEIGHT/2-200, 1200, 400), 215);
+            textCenter(ctx, winner_text, "bold 84px Arial", toRGB(winner_color), cx, HEIGHT/2-150);
+            if(highscore_notice) textCenter(ctx, highscore_notice, "bold 34px Arial", toRGB(YELLOW), cx, HEIGHT/2-30);
+            textCenter(ctx, "Tippe auf den Bildschirm oder (A) für das Menü", "bold 34px Arial", toRGB(WHITE), cx, HEIGHT/2+60);
+        }
+    }
+
+    if(state === "MENU") {
+        blitGlow(ctx, cx, 84, 360, [0,150,160], 26);
+        textCenter(ctx, "ULTIMATE ARENA", "bold 112px Arial", toRGB(WHITE), cx, 12);
+        ctx.fillStyle=toRGB(CYAN); roundRect(ctx, cx-270, 142, 540, 4, 2); ctx.fill();
+
+        if(BOSS_TEST_MODUS) textCenter(ctx, ">> BOSS TEST-MODUS AKTIV <<", "bold 34px Arial", toRGB(ORANGE), cx, 150);
+
+        drawSelectorRow(ctx, btns.modeL.y-10, "Spielmodus  (Maus oder Tasten M/1)", MODES[mode_idx], btns.modeL, btns.modeR, mousePos, YELLOW);
+        drawSelectorRow(ctx, btns.mapL.y-10, "Map / Spielfeld  (Maus oder Tasten N/2)", MAPS[map_idx].name, btns.mapL, btns.mapR, mousePos, CYAN);
+        drawMapPreview(ctx, btns.mapPrev, MAPS[map_idx]);
+
+        let bTxt = boss_enabled ? "Boss im Zombie-Modus: AN  (Taste B)" : "Boss im Zombie-Modus: AUS  (Taste B)";
+        btnState.boss = drawAnimatedButton(ctx, btns.bossToggle, bTxt, mousePos, btnState.boss);
+        btnState.start = drawAnimatedButton(ctx, btns.start, "SPIEL STARTEN", mousePos, btnState.start, "start");
+        textCenter(ctx, "Menü komplett per Touch, Gamepad oder Maus bedienbar", "26px Arial", "rgb(190,193,215)", cx, 762);
+
+        textCenter(ctx, "Spieler 1", "bold 34px Arial", toRGB(WHITE), p1cx, 766);
+        textCenter(ctx, "WASD  /  Maus  /  Gamepad 1", "26px Arial", "rgb(185,188,210)", p1cx, 808);
+        blitGlow(ctx, p1cx, 888, 118, COLORS[p1_color_idx][1], 70);
+        drawSkinShape(ctx, p1cx, 888, 54, COLORS[p1_color_idx][1], SKINS[p1_skin_idx]); drawSkinShape(ctx, p1cx, 888, 54, WHITE, SKINS[p1_skin_idx], 3);
+        drawSmallSelector(ctx, p1cx, 952, `Skin: ${SKINS[p1_skin_idx]}`, btns.p1sL, btns.p1sR, mousePos);
+        drawSmallSelector(ctx, p1cx, 1010, `Farbe: ${COLORS[p1_color_idx][0]}`, btns.p1cL, btns.p1cR, mousePos);
+
+        if(![1,3].includes(mode_idx)) {
+            let p2t = p2_is_bot ? `Spieler 2: COMPUTER (${BotController.LEVELS[bot_level].name})` : "Spieler 2: MENSCH  (Taste P)";
+            btnState.p2type = drawAnimatedButton(ctx, btns.p2type, p2t, mousePos, btnState.p2type);
+            textCenter(ctx, p2_is_bot?"Steuert sich selbst - Stärke in den Einstellungen":"Pfeiltasten  /  Gamepad 2", "26px Arial", "rgb(185,188,210)", p2cx, 816);
+            blitGlow(ctx, p2cx, 888, 118, COLORS[p2_color_idx][1], 70);
+            drawSkinShape(ctx, p2cx, 888, 54, COLORS[p2_color_idx][1], SKINS[p2_skin_idx]); drawSkinShape(ctx, p2cx, 888, 54, WHITE, SKINS[p2_skin_idx], 3);
+            drawSmallSelector(ctx, p2cx, 952, `Skin: ${SKINS[p2_skin_idx]}`, btns.p2sL, btns.p2sR, mousePos);
+            drawSmallSelector(ctx, p2cx, 1010, `Farbe: ${COLORS[p2_color_idx][0]}`, btns.p2cL, btns.p2cR, mousePos);
+        } else textCenter(ctx, "--- Spieler 2 inaktiv ---", "bold 34px Arial", toRGB(NEUTRAL_COLOR), p2cx, 880);
+
+        btnState.highscore = drawAnimatedButton(ctx, btns.hs, "Highscores", mousePos, btnState.highscore);
+        btnState.achievements = drawAnimatedButton(ctx, btns.ach, "Erfolge", mousePos, btnState.achievements);
+        btnState.settings = drawAnimatedButton(ctx, btns.set, "Einstellungen", mousePos, btnState.settings);
+        btnState.tutorial = drawAnimatedButton(ctx, btns.tut, "Anleitung", mousePos, btnState.tutorial);
+        btnState.credits = drawAnimatedButton(ctx, btns.cred, "Credits & Info", mousePos, btnState.credits);
+        btnState.quit = drawAnimatedButton(ctx, btns.quit, "Beenden", mousePos, btnState.quit);
+    } else if(state === "SETTINGS") {
+        drawPanel(ctx, new Rect(540, 110, 840, 880), 225); textCenter(ctx, "EINSTELLUNGEN", "bold 84px Arial", toRGB(CYAN), cx, 140);
+        btnState.fps = drawAnimatedButton(ctx, btns.fps, stats.show_fps?"FPS-Anzeige: AN":"FPS-Anzeige: AUS", mousePos, btnState.fps);
+        btnState.touch = drawAnimatedButton(ctx, btns.touch, stats.touch_ctrl?"Touch-Steuerung: AN":"Touch-Steuerung: AUS", mousePos, btnState.touch);
+        btnState.mouse = drawAnimatedButton(ctx, btns.mouse, stats.mouse_ctrl?"Maussteuerung P1: AN":"Maussteuerung P1: AUS", mousePos, btnState.mouse);
+        btnState.bot = drawAnimatedButton(ctx, btns.bot, `Computer-Stärke: ${BotController.LEVELS[bot_level].name}`, mousePos, btnState.bot);
+        textCenter(ctx, "Auflösung wird für Smartphones automatisch skaliert!", "bold 34px Arial", toRGB(YELLOW), cx, 930);
+        btnState.back = drawAnimatedButton(ctx, btns.back, "Zurück", mousePos, btnState.back);
+    } else if(state === "HIGHSCORES") {
+        drawPanel(ctx, new Rect(440, 110, 1040, 880), 225); textCenter(ctx, "HIGHSCORES", "bold 84px Arial", toRGB(YELLOW), cx, 140);
+        MODES.forEach((m, i) => {
+            let entry = highscores[m] || empty_highscore();
+            let y = 290 + i*128; drawPanel(ctx, new Rect(480, y-14, 960, 108), 140, 12);
+            drawText(ctx, m, "bold 34px Arial", toRGB(CYAN), 510, y);
+            drawText(ctx, `Versuche: ${entry.attempts}`, "26px Arial", toRGB(WHITE), 1220, y+6);
+            drawText(ctx, `Bester Versuch: ${entry.best_text||"Noch kein Versuch"}`, "26px Arial", toRGB(YELLOW), 530, y+48);
+        });
+        btnState.back = drawAnimatedButton(ctx, btns.back, "Zurück", mousePos, btnState.back);
+    } else if(state === "ACHIEVEMENTS") {
+        drawPanel(ctx, new Rect(400, 100, 1120, 910), 225); textCenter(ctx, "ERFOLGE", "bold 84px Arial", toRGB(GOLD), cx, 118);
+        ctx.save(); ctx.beginPath(); ctx.rect(420, 230, 1080, 760); ctx.clip();
+        
+        let tH = ACHIEVEMENTS.length * 118, vH = 760;
+        let minScroll = Math.min(0, vH - tH - 10); scroll_y = Math.max(minScroll, Math.min(0, scroll_y));
+        
+        ACHIEVEMENTS.forEach((ach, i) => {
+            let y = 240 + i*118 + scroll_y;
+            if(y>120 && y<1010) {
+                let curr = stats[ach.req_key] || 0, unl = curr>=ach.req_val;
+                ctx.fillStyle = unl ? "rgb(68,60,20)" : "rgb(32,33,46)"; roundRect(ctx, 440, y, 1030, 104, 10); ctx.fill();
+                ctx.lineWidth=2; ctx.strokeStyle = unl ? toRGB(GOLD) : "rgb(75,78,100)"; ctx.stroke();
+                drawText(ctx, ach.name, "bold 34px Arial", unl?toRGB(GOLD):toRGB(WHITE), 470, y+12);
+                drawText(ctx, ach.desc, "26px Arial", "rgb(205,205,215)", 470, y+58);
+                
+                ctx.font="bold 34px Arial"; let pT = `${Math.min(curr, ach.req_val)} / ${ach.req_val}`;
+                drawText(ctx, pT, "bold 34px Arial", toRGB(WHITE), 1220 - ctx.measureText(pT).width/2, y+24);
+                ctx.fillStyle="rgb(18,18,26)"; roundRect(ctx, 1120, y+74, 240, 12, 6); ctx.fill();
+                let fW = Math.floor(240 * Math.min(1, curr/ach.req_val));
+                if(fW>0) { ctx.fillStyle=unl?toRGB(GOLD):toRGB(CYAN); roundRect(ctx, 1120, y+74, fW, 12, 6); ctx.fill(); }
+            }
+        });
+        ctx.restore();
+        if(tH > vH) {
+            let pct = Math.abs(scroll_y)/(tH-vH); let bH = Math.max(40, Math.floor((vH/tH)*vH));
+            ctx.fillStyle="rgb(120,122,148)"; roundRect(ctx, 1486, 230 + Math.floor(pct*(vH-bH)), 10, bH, 5); ctx.fill();
+        }
+        btnState.back = drawAnimatedButton(ctx, btns.back, "Zurück", mousePos, btnState.back);
+    } else if(state === "TUTORIAL") {
+        drawPanel(ctx, new Rect(330, 110, 1260, 900), 225); textCenter(ctx, "SPIELANLEITUNG", "bold 84px Arial", toRGB(ICE_BLUE), cx, 130);
+        let lines = [
+            "Willkommen in der Ultimate Arena! Hier sind die Regeln:", "", "MODI:",
+            "- 1 vs 1 Fangen: Sammelt goldene Punkte! Der rote Fänger ist schneller,", "  kann aber KEINE Punkte sammeln. Berühre den anderen, um die Rollen zu tauschen.",
+            "- Zombie-Überleben: Weiche den Zombies aus und sammle Extras.", "- Bosskampf: Zerstört den Wächter mit gedroppten Waffen.", "", "SPIELER 2 - MENSCH ODER COMPUTER:",
+            "Im Hauptmenü kannst du Spieler 2 zwischen Mensch und Computer umschalten.", "Die Stärke des Computers (Leicht / Mittel / Schwer) stellst du in den Einstellungen ein.", "", "STEUERUNG:",
+            "Spieler 1: W, A, S, D  |  Gamepad 1  |  Touchscreen Joysticks", "           (Die Steuerung auf Handys ist komplett automatisch)",
+            "Spieler 2: Pfeiltasten  |  Gamepad 2", "Menü: Komplett per Touch, Maus oder Gamepad bedienbar.", "       Im Spiel kannst du jederzeit oben rechts pausieren."
+        ];
+        lines.forEach((l, i) => drawText(ctx, l, "26px Arial", l.startsWith("-")?"rgb(205,205,215)":toRGB(WHITE), 380, 240+i*38));
+        btnState.back = drawAnimatedButton(ctx, btns.back, "Zurück", mousePos, btnState.back);
+    } else if(state === "CREDITS") {
+        drawPanel(ctx, new Rect(400, 110, 1120, 880), 225); textCenter(ctx, "CREDITS & INFO", "bold 84px Arial", toRGB(PURPLE), cx, 140);
+        let lines = [
+            "ULTIMATE ARENA v2 - Full-HD, Maus, Touch & Computer-Gegner (HTML5)", "", "Ein dynamisches Couch-Coop-Projekt.", "", "TIPPS FÜR DEN BOSS:",
+            "- Rote Kreise am Boss zeigen an, dass er gleich stürmt.", "- Eis-Waffen verlangsamen den Boss extrem (sehr nützlich!).", "- Feuer-Waffen machen Schaden über Zeit.", "- Bomben machen sofort massiven Flächenschaden.", "",
+            "TIPP GEGEN DEN COMPUTER:", "- Auf Stufe Schwer weicht er Geschossen gezielt aus - nutze Wände als Falle.", "", "Vielen Dank fürs Spielen!"
+        ];
+        lines.forEach((l, i) => drawText(ctx, l, "bold 34px Arial", l.startsWith("-")?"rgb(215,215,225)":toRGB(WHITE), 450, 240+i*48));
+        btnState.back = drawAnimatedButton(ctx, btns.back, "Zurück", mousePos, btnState.back);
+    }
+
+    if(stats.show_fps) { drawText(ctx, `FPS: 60 (Fixed)`, "bold 34px Arial", toRGB(LIME), WIDTH-250, HEIGHT-60); }
+    ctx.restore();
+}
+
+let lastTime = performance.now();
+let deltaAccumulator = 0;
+
+function gameLoop(now) {
+    let delta = now - lastTime;
+    lastTime = now;
+    
+    if(delta > 250) delta = 250; // Verhindert Spiel-Abstürze beim Tab-Wechseln
+    deltaAccumulator += delta;
+
+    pollGamepads();
+
+    while(deltaAccumulator >= TIME_STEP) {
+        if(processUI()) startGame();
+        update();
+        deltaAccumulator -= TIME_STEP;
+    }
+    
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
