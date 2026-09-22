@@ -1,0 +1,7 @@
+*
+!package.json
+!pnpm-lock.yaml
+!server.cjs
+!arcade.js
+!index.html
+!Dockerfile

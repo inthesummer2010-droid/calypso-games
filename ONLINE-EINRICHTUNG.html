@@ -1,0 +1,21 @@
+<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Online-Modus einrichten</title>
+<style>body{font:17px/1.55 system-ui,sans-serif;background:#101b2b;color:#edf6ff;margin:0;padding:24px}main{max-width:690px;margin:auto}h1{line-height:1.15}section{padding:24px;background:#1b3046;border:1px solid #42607c;border-radius:18px;margin:20px 0}label{display:block;margin:16px 0 6px}input,button{box-sizing:border-box;max-width:100%;width:100%;padding:13px;font:inherit;border:1px solid #84bdc7;border-radius:9px;color:inherit;background:#132639}button{margin-top:20px;background:#166966;cursor:pointer}button:disabled{opacity:.5;cursor:default}input:focus-visible,button:focus-visible{outline:3px solid #ffdb8e;outline-offset:3px}small{color:#c3d2df}#status{white-space:pre-wrap;overflow-wrap:anywhere}a{color:#a5ebe5}</style>
+<main><h1>Deinen Hub mit dem Spielserver verbinden</h1><p>Nachdem der Spielserver läuft, erstellt diese Hilfe eine fertige <strong>index.html</strong> für deine Website. Die Verarbeitung passiert auf deinem Gerät; es werden keine Dateien hochgeladen.</p>
+<section><form id="setup"><label for="server">1. Öffentliche Adresse deines Spielservers</label><input id="server" type="url" placeholder="https://dein-spielserver.example" required><small>Die HTTPS-Adresse aus dem Hosting-Dashboard. Keine Passwörter oder Zugangsschlüssel eintragen.</small>
+<label for="game">2. Die neue index.html auswählen</label><input id="game" type="file" accept=".html,text/html" required><small>Verwende die Datei aus dem aktuellen Spiele-Hub.</small><button id="save" type="submit">3. Fertige index.html herunterladen</button></form><p id="status" role="status" aria-live="polite"></p></section>
+<p>Danach lädst du die heruntergeladene index.html wie bisher auf deine Website hoch. Der Spielserver muss zusätzlich laufen. Beide Geräte brauchen dieselbe Website und denselben Server.</p><p>Die aktuelle Website-Adresse bleibt <strong>https://calypso-games.netlify.app/</strong>. Bei einem Umzug müssen auch PUBLIC_SITE_URL am Server und online-config.js angepasst werden.</p></main>
+<script>
+'use strict';
+const form=document.getElementById('setup'),status=document.getElementById('status'),save=document.getElementById('save');
+form.addEventListener('submit',async event=>{event.preventDefault();status.textContent='';save.disabled=true;try{
+ const address=new URL(document.getElementById('server').value.trim());if(address.protocol!=='https:'||address.username||address.password||address.search||address.hash)throw Error('Bitte eine HTTPS-Adresse ohne Zugangsdaten, Suchparameter oder # eingeben.');
+ const file=document.getElementById('game').files[0];if(!file||file.size>3000000)throw Error('Bitte die aktuelle index.html auswählen (höchstens 3 MB).');
+ const html=await file.text(),start='/* HUB_ONLINE_CONFIG_START */',end='/* HUB_ONLINE_CONFIG_END */';const a=html.indexOf(start),b=html.indexOf(end);if(a<0||b<a||html.indexOf(start,a+1)!==-1||html.indexOf(end,b+1)!==-1)throw Error('Diese Datei enthält noch nicht die neue Online-Konfiguration. Bitte die aktuelle index.html auswählen.');
+ const socket=new URL('/play',address);socket.protocol='wss:';
+ const config={serverUrl:socket.href,siteUrl:'https://calypso-games.netlify.app/'};
+ const serialized=JSON.stringify(config).replace(/</g,'\\u003c');
+ const updated=html.slice(0,a)+start+'\nwindow.HubOnlineConfig = '+serialized+';\n'+html.slice(b);
+ const object=URL.createObjectURL(new Blob([updated],{type:'text/html;charset=utf-8'})),link=document.createElement('a');link.href=object;link.download='index.html';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(object),30000);
+ status.textContent='Fertig. Die heruntergeladene index.html verwendet '+socket.href+'.\nLade sie auf die Website hoch und teste Online spielen mit zwei Geräten. Die Serveradresse wurde hier nicht kontaktiert. Bewahre die konfigurierte Datei auch lokal auf.';
+}catch(error){status.textContent=error.message||'Die Datei konnte nicht vorbereitet werden.';}finally{save.disabled=false;}});
+</script></html>
