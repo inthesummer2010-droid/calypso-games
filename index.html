@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content, maximum-scale=1.0, user-scalable=no">
     <title>Manuels Arcade · Sieben Spiele</title>
     <style>
         body, html {
@@ -3655,7 +3655,8 @@ window.HubOnlineConfig = {
       this.toolbar=this.el('nav',undefined,this.host,'arcade-toolbar');this.button(this.tr('hub'),()=>this.requestExit(),this.toolbar);this.pauseButton=this.button(this.tr('pause'),()=>this.pause(),this.toolbar);this.muteButton=this.button(this.tr(options.audio?.getSettings().muted?'soundOn':'mute'),()=>{const a=options.audio;a?.setSettings({muted:!a.getSettings().muted});this.muteButton.textContent=this.tr(a?.getSettings().muted?'soundOn':'mute');},this.toolbar);
       this.stage=this.el('div',undefined,this.host,'arcade-stage');this.canvas=this.el('canvas',undefined,this.stage);this.canvas.width=600;this.canvas.height=800;this.ctx=this.canvas.getContext('2d');this.canvas.tabIndex=0;this.canvas.setAttribute('aria-label',this.tr('title'));
       this.overlay=this.el('div',undefined,this.host,'arcade-overlay');this.status=this.el('p','',this.host,'online-status');this.status.setAttribute('role','status');this.status.setAttribute('aria-live','polite');this.status.setAttribute('aria-label',this.tr('status'));
-      this.listen(window,'resize',()=>this.resize());if(window.visualViewport)this.listen(window.visualViewport,'resize',()=>this.resize());this.listen(window,'blur',()=>this.pause());this.listen(document,'visibilitychange',()=>{if(document.hidden)this.pause();});this.listen(window,'pagehide',()=>this.close(false));
+      this.resizeQueued=false;const queueResize=()=>{if(this.resizeQueued)return;this.resizeQueued=true;requestAnimationFrame(()=>{this.resizeQueued=false;if(!this.closed)this.resize();});};
+      this.listen(window,'resize',queueResize);this.listen(window,'orientationchange',queueResize);if(window.visualViewport){this.listen(window.visualViewport,'resize',queueResize);this.listen(window.visualViewport,'scroll',queueResize);}this.listen(window,'blur',()=>this.pause());this.listen(document,'visibilitychange',()=>{if(document.hidden)this.pause();else queueResize();});this.listen(window,'pagehide',()=>this.close(false));
       this.listen(window,'keydown',e=>this.key(e,true),true);this.listen(window,'keyup',e=>this.key(e,false),true);
       for(const type of ['pointerdown','pointermove','pointerup','pointercancel','lostpointercapture'])this.listen(this.canvas,type,e=>this.point(e,type));
       this.resize();this.refresh();this.prepare();this.last=performance.now();const frame=t=>{if(this.closed)return;this.update(t);this.draw(t);this.raf=requestAnimationFrame(frame);};this.raf=requestAnimationFrame(frame);
@@ -3701,7 +3702,29 @@ window.HubOnlineConfig = {
       axis=axis||(this.keys.has('KeyD')||this.keys.has('ArrowRight')?1:0)-(this.keys.has('KeyA')||this.keys.has('ArrowLeft')?1:0);
       if(t-this.lastInput>=50){this.lastInput=t;this.client?.input(this.overlay.hidden?axis:0,this.overlay.hidden&&!axis?this.target:null);}
     }
-    resize(){const viewport=window.visualViewport,vw=Math.max(1,Number(viewport?.width)||window.innerWidth),vh=Math.max(1,Number(viewport?.height)||window.innerHeight),landscape=vw>vh*1.15,toolbarH=this.toolbar.getBoundingClientRect().height||52,statusH=this.status.getBoundingClientRect().height||28,safeW=landscape?Math.max(180,vw-190):Math.max(180,vw-16),safeH=Math.max(180,vh-toolbarH-statusH-28),scale=Math.max(.1,Math.min(safeW/600,safeH/800));this.host.className='arcade-view online-view'+(landscape?' online-landscape':'');Object.assign(this.canvas.style,{width:600*scale+'px',height:800*scale+'px'});Object.assign(this.stage.style,{width:600*scale+'px',height:800*scale+'px',maxWidth:'calc(100vw - 16px)',maxHeight:'calc(100dvh - 96px)'});}
+    resize(){
+      const viewport=window.visualViewport;
+      const vw=Math.max(1,Number(viewport?.width)||Number(document.documentElement?.clientWidth)||window.innerWidth||1);
+      const vh=Math.max(1,Number(viewport?.height)||Number(document.documentElement?.clientHeight)||window.innerHeight||1);
+      const landscape=vw>vh*1.15;
+      this.host.className='arcade-view online-view'+(landscape?' online-landscape':'');
+      const hostRect=this.host.getBoundingClientRect();
+      const style=typeof getComputedStyle==='function'?getComputedStyle(this.host):{paddingLeft:'0',paddingRight:'0',paddingTop:'0',paddingBottom:'0'};
+      const padX=(parseFloat(style.paddingLeft)||0)+(parseFloat(style.paddingRight)||0);
+      const padY=(parseFloat(style.paddingTop)||0)+(parseFloat(style.paddingBottom)||0);
+      const contentW=Math.max(1,Math.min(vw,hostRect.width)-padX);
+      const contentH=Math.max(1,Math.min(vh,hostRect.height)-padY);
+      const toolbarRect=this.toolbar.getBoundingClientRect();
+      const statusRect=this.status.getBoundingClientRect();
+      const gap=landscape?12:8;
+      const safeW=Math.max(180,contentW-(landscape?toolbarRect.width+gap:0));
+      const safeH=Math.max(180,contentH-(landscape?0:toolbarRect.height+statusRect.height+gap*2));
+      const scale=Math.max(.1,Math.min(safeW/600,safeH/800));
+      const width=Math.max(1,Math.floor(600*scale));
+      const height=Math.max(1,Math.floor(800*scale));
+      Object.assign(this.canvas.style,{width:width+'px',height:height+'px'});
+      Object.assign(this.stage.style,{width:width+'px',height:height+'px',maxWidth:'100%',maxHeight:'100%',margin:'0 auto'});
+    }
     draw(t){const s=this.client?.state,m=this.drawGame,slot=this.client?.joined?.slot||0,flip=slot===1;if(s){const alpha=this.previous?.round===s.round&&this.previous?.phase===s.phase?Math.min(1,Math.max(0,(t-this.receivedAt)/50)):1;const a=this.previous?.game||s.game;const serverIndex=i=>flip?1-i:i;const serverY=y=>flip?800-y:y;m.paddles=[0,1].map(i=>{const si=serverIndex(i);return a.paddles[si]+(s.game.paddles[si]-a.paddles[si])*alpha;});const jump=Math.abs(s.game.ball.y-a.ball.y)>150||s.game.wait>0;m.ball={...s.game.ball,x:jump?s.game.ball.x:a.ball.x+(s.game.ball.x-a.ball.x)*alpha,y:serverY(jump?s.game.ball.y:a.ball.y+(s.game.ball.y-a.ball.y)*alpha)};m.scores=[0,1].map(i=>s.game.scores[serverIndex(i)]);m.phase=s.phase;m.wait=s.game.wait;}
       root.ArcadeGames.render(this.ctx,m,'rally',t/1000,this.options.motion?.()!==false);
     }
@@ -4705,16 +4728,18 @@ window.HubOnlineConfig = {
   const style=document.createElement('style');style.textContent=`
     .bonus-demo{position:static!important;width:100%;height:auto;border-radius:14px}.bonus-live{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}.bonus-landscape{flex-direction:row;gap:14px}.bonus-landscape .arcade-toolbar{order:2;flex-direction:column;width:170px;padding:0}.bonus-landscape .arcade-stage{order:1}.bonus-landscape .arcade-toolbar button{width:100%;min-height:40px}
     .online-view .online-status{font:13px/1.4 system-ui;color:#c5d7e9;padding:0 12px;text-align:center;max-width:620px}.online-sheet{max-width:550px}.online-sheet label{display:block;color:#d7e5ef;margin-top:14px}.online-sheet input{box-sizing:border-box;width:100%;max-width:100%;min-height:46px;padding:12px;border:1px solid #6b86a0;background:#0a192c;color:#effaff;border-radius:10px;font:16px system-ui;margin:8px 0}.online-sheet .online-room-code{display:block;font:800 clamp(28px,8vw,42px) system-ui;letter-spacing:.12em;color:#9cf3dd;overflow-wrap:anywhere}.online-sheet .online-error{padding:12px;border:1px solid #ba8d86;background:#4c2c3e;color:#ffe5db;border-radius:10px}.online-qr{display:block;width:min(220px,80vw);height:auto;margin:12px auto;border-radius:10px}.online-invite-input{font-size:13px!important;line-height:1.25;overflow:hidden;text-overflow:ellipsis}.online-invite-link{display:block;max-width:100%;margin:3px 0 10px;color:#9cf3dd;overflow-wrap:anywhere;word-break:break-word;font-size:13px}.online-landscape{flex-direction:row;gap:12px}.online-landscape .arcade-toolbar{flex-direction:column;max-width:170px}.online-landscape .online-status{position:absolute;bottom:0;right:4px;width:155px;max-height:60px;overflow:auto}
+    .online-landscape .arcade-toolbar{width:min(170px,30vw)}
     [hidden]{display:none!important}
     .arcade-view,.device-screen,.device-game-menu{color:#edf7ff;font:16px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif;box-sizing:border-box}
     .arcade-view button,.device-screen button,.device-game-menu button,.device-play button{font:600 15px/1.35 system-ui,sans-serif;min-height:46px;padding:11px 17px;border:1px solid #48607d;border-radius:13px;color:#edf7ff;background:#1c3049;cursor:pointer;white-space:normal;overflow-wrap:anywhere;max-width:100%;box-sizing:border-box;touch-action:manipulation}
     .arcade-view button:hover,.device-screen button:hover,.device-game-menu button:hover{background:#28415c;border-color:#78ece3}
     .arcade-view button:focus-visible,.device-screen button:focus-visible,.device-game-menu button:focus-visible,.device-play button:focus-visible{outline:3px solid #f9da91;outline-offset:3px}
     button:disabled{opacity:.55;cursor:default}.arcade-view .primary,.device-screen .primary{background:#166664;border-color:#68e3d6}
-    .arcade-view{position:fixed;inset:0;z-index:10000;background:radial-gradient(ellipse at top,#183447,#080f1f 70%);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);overflow:hidden;contain:layout paint;overscroll-behavior:none}
-    .arcade-toolbar{display:flex;justify-content:center;gap:7px;flex-wrap:wrap;max-width:100%;padding:8px;box-sizing:border-box;flex-shrink:0}
-    .arcade-stage{position:relative;flex:0 0 auto;border:1px solid #314660;border-radius:18px;overflow:hidden;box-sizing:border-box}
-    .arcade-stage canvas{position:static;display:block;touch-action:none;max-width:100%}
+    .arcade-view{position:fixed;inset:0;width:100%;height:100dvh;min-height:100svh;min-width:0;z-index:10000;background:radial-gradient(ellipse at top,#183447,#080f1f 70%);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);overflow:hidden;contain:layout paint;overscroll-behavior:none}
+    .arcade-toolbar{display:flex;justify-content:center;gap:7px;flex-wrap:wrap;max-width:100%;min-width:0;padding:8px;box-sizing:border-box;flex-shrink:0}
+    .arcade-stage{position:relative;flex:0 0 auto;min-width:0;min-height:0;border:1px solid #314660;border-radius:18px;overflow:hidden;box-sizing:border-box}
+    .arcade-stage canvas{position:static;display:block;touch-action:none;max-width:100%;max-height:100%}
+    .online-view{gap:0}.online-view .arcade-stage{margin-inline:auto}
     .arcade-overlay{position:fixed;inset:0;overflow:auto;touch-action:pan-y;z-index:2;background:#071020d9;padding:max(20px,env(safe-area-inset-top)) 16px max(20px,env(safe-area-inset-bottom));display:flex;align-items:safe center;justify-content:center;box-sizing:border-box;backdrop-filter:blur(8px)}
     .arcade-sheet{box-sizing:border-box;margin:auto;width:100%;max-width:510px;background:linear-gradient(150deg,#1d344b,#111c33);padding:clamp(20px,4vw,40px);border:1px solid #486384;border-radius:25px;box-shadow:0 24px 80px #0006}
     .arcade-sheet small,.device-screen small{color:#8fe1dc;letter-spacing:.16em;font-weight:700;font-size:12px}
@@ -4771,7 +4796,7 @@ window.HubOnlineConfig = {
       else{for(let i=0;i<3;i++){c.fillStyle=i%2?'#ffd16d':'#a582a4';c.beginPath();c.arc(130+i*180,40+(i*45+time*20)%110,i%2?8:18,0,7);c.fill();}const x=300+Math.sin(time)*70;c.fillStyle='#a5e9ff';c.beginPath();c.moveTo(x,127);c.lineTo(x+22,180);c.lineTo(x,166);c.lineTo(x-22,180);c.closePath();c.fill();c.fillStyle='#ffb46d';c.beginPath();c.moveTo(x-8,176);c.lineTo(x,202);c.lineTo(x+8,176);c.fill();}
       }else HubPresentation.preview(c,kind,0,0,600,230,time);if(kind==='arena'&&HubQA.miniSecret==='hub')HubPresentation.tinySecret(c,'hub',time*1000%5000,600,230,motion);});
   }
-  function fitArena(){const size=state+'|'+window.innerWidth+'|'+window.innerHeight;if(size===lastSize)return;lastSize=size;resize();if(state!=='PLAYING'||!small())return;const reserve=window.innerHeight<500?112:162,top=60,scale=Math.min(window.innerWidth/WIDTH,Math.max(120,window.innerHeight-reserve-top)/HEIGHT);Object.assign(canvas.style,{width:WIDTH*scale+'px',height:HEIGHT*scale+'px',left:(window.innerWidth-WIDTH*scale)/2+'px',top:top+(window.innerHeight-reserve-top-HEIGHT*scale)/2+'px'});}
+  function fitArena(){const vv=window.visualViewport,vw=Math.max(1,Number(vv?.width)||Number(document.documentElement?.clientWidth)||window.innerWidth),vh=Math.max(1,Number(vv?.height)||Number(document.documentElement?.clientHeight)||window.innerHeight),size=state+'|'+Math.round(vw)+'|'+Math.round(vh);if(size===lastSize)return;lastSize=size;resize();if(state!=='PLAYING'||!(vw<920||vh<500))return;const reserve=vh<500?112:162,top=60,scale=Math.min(vw/WIDTH,Math.max(120,vh-reserve-top)/HEIGHT);Object.assign(canvas.style,{width:WIDTH*scale+'px',height:HEIGHT*scale+'px',left:(vw-WIDTH*scale)/2+'px',top:top+(vh-reserve-top-HEIGHT*scale)/2+'px'});}
   function sync(){
     const s=state,show=s==='HUB';screen.hidden=!show;
     if(show){const sig=HubI18n.language+'|'+HubStorage.enabled;if(sig!==signature){signature=sig;renderHub();}drawPreviews();document.getElementById('canvasControls').hidden=true;}
@@ -4780,7 +4805,7 @@ window.HubOnlineConfig = {
     if(s!==lastState){sticks.forEach(j=>j.release());lastState=s;}fitArena();
   }
   const oldDraw=draw;draw=function(){oldDraw();sync();};
-  window.addEventListener('resize',()=>{lastSize='';sync();});
+  const viewportChanged=()=>{lastSize='';sync();};window.addEventListener('resize',viewportChanged);window.addEventListener('orientationchange',viewportChanged);if(window.visualViewport){window.visualViewport.addEventListener('resize',viewportChanged);window.visualViewport.addEventListener('scroll',viewportChanged);}
   // Native controls handle Space/Enter themselves; game shortcuts must not leak through.
   const invitation=(()=>{const hash=String(window.location?.hash||'').match(/^#room=([ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6})$/i);if(hash)return hash[1].toUpperCase();const query=String(window.location?.search||'').match(/[?&]room=([ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6})(?:&|$)/i)?.[1]?.toUpperCase();return /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(query||'')?query:'';})();if(invitation)setTimeout(()=>{if(state==='HUB')HubActions.openOnline(invitation);},0);
   window.DeviceUI={sync,get screen(){return screen;},get active(){return !screen.hidden;},get buttons(){const all=Array.from(screen.querySelectorAll('button'));if(state==='HUB'){const tiles=all.filter(b=>['Ultimate Arena v2','Snake','Neon Breaker','Neon Rally','Orbit Dash','Prism Merge','Cloud Hop'].includes(b.textContent));return [...tiles,...all.filter(b=>!tiles.includes(b))];}return all;},credits:()=>t(21)};
