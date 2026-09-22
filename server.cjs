@@ -34,8 +34,12 @@ class Rooms {
       r.phase='countdown';r.countdown=this.now()+3000;r.players.forEach(p=>{p.input={axis:0,target:null};p.inputAt=0;});
     }this.broadcast(r);
   }
-  pause(ws){const a=this.player(ws);if(!a)return;const r=a.room;a.p.away=true;a.p.ready=false;a.p.input={axis:0,target:null};
-    if(['playing','countdown'].includes(r.phase)){r.phase='paused';r.game.pause();r.players.forEach(p=>{if(p)p.ready=false;});}this.broadcast(r);
+  pause(ws){const a=this.player(ws);if(!a)return;const r=a.room;
+    // Losing focus while the lobby is open must not cancel a player's ready state.
+    // Only an active countdown or match can be paused.
+    if(!['playing','countdown'].includes(r.phase))return;
+    a.p.away=true;a.p.ready=false;a.p.input={axis:0,target:null};
+    r.phase='paused';r.game.pause();r.players.forEach(p=>{if(p)p.ready=false;});this.broadcast(r);
   }
   input(ws,msg){const a=this.player(ws);if(!a||a.room.phase!=='playing')return;const p=a.p;if(!Number.isSafeInteger(msg.seq)||msg.seq<0||msg.seq<=p.seq||msg.seq>1e9||!Number.isFinite(msg.axis)||Math.abs(msg.axis)>1||!(msg.target===null||Number.isFinite(msg.target)&&msg.target>=0&&msg.target<=1))return;
     p.seq=msg.seq;p.input={axis:msg.axis,target:msg.axis?null:msg.target===null?null:msg.target*600};p.inputAt=this.now();

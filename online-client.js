@@ -54,7 +54,7 @@
       this.toolbar=this.el('nav',undefined,this.host,'arcade-toolbar');this.button(this.tr('hub'),()=>this.requestExit(),this.toolbar);this.pauseButton=this.button(this.tr('pause'),()=>this.pause(),this.toolbar);this.muteButton=this.button(this.tr(options.audio?.getSettings().muted?'soundOn':'mute'),()=>{const a=options.audio;a?.setSettings({muted:!a.getSettings().muted});this.muteButton.textContent=this.tr(a?.getSettings().muted?'soundOn':'mute');},this.toolbar);
       this.stage=this.el('div',undefined,this.host,'arcade-stage');this.canvas=this.el('canvas',undefined,this.stage);this.canvas.width=600;this.canvas.height=800;this.ctx=this.canvas.getContext('2d');this.canvas.tabIndex=0;this.canvas.setAttribute('aria-label',this.tr('title'));
       this.overlay=this.el('div',undefined,this.host,'arcade-overlay');this.status=this.el('p','',this.host,'online-status');this.status.setAttribute('role','status');this.status.setAttribute('aria-live','polite');this.status.setAttribute('aria-label',this.tr('status'));
-      this.listen(window,'resize',()=>this.resize());this.listen(window,'blur',()=>this.pause());this.listen(document,'visibilitychange',()=>{if(document.hidden)this.pause();});this.listen(window,'pagehide',()=>this.close(false));
+      this.listen(window,'resize',()=>this.resize());if(window.visualViewport)this.listen(window.visualViewport,'resize',()=>this.resize());this.listen(window,'blur',()=>this.pause());this.listen(document,'visibilitychange',()=>{if(document.hidden)this.pause();});this.listen(window,'pagehide',()=>this.close(false));
       this.listen(window,'keydown',e=>this.key(e,true),true);this.listen(window,'keyup',e=>this.key(e,false),true);
       for(const type of ['pointerdown','pointermove','pointerup','pointercancel','lostpointercapture'])this.listen(this.canvas,type,e=>this.point(e,type));
       this.resize();this.refresh();this.prepare();this.last=performance.now();const frame=t=>{if(this.closed)return;this.update(t);this.draw(t);this.raf=requestAnimationFrame(frame);};this.raf=requestAnimationFrame(frame);
@@ -82,7 +82,7 @@
       this.refresh();
     }
     clearInput(){this.keys.clear();this.target=null;this.pointer=null;this.client?.input(0,null);}
-    pause(){this.clearInput();if(this.client?.joined){this.client.send('pause');this.options.onPause?.();}}
+    pause(){const phase=this.client?.state?.phase;this.clearInput();if(this.client?.joined&&['playing','countdown'].includes(phase)){this.client.send('pause');this.options.onPause?.();}}
     requestExit(){if(!this.client?.joined){this.close();return;}this.pause();this.confirm=true;this.refresh();}
     menuControls(){return Array.from(this.overlay.querySelectorAll('button,input')).filter(e=>!e.disabled&&!e.hidden);}
     navigate(d){const list=this.menuControls();this.selected=(this.selected+d+list.length)%Math.max(1,list.length);list[this.selected]?.focus();list[this.selected]?.scrollIntoView?.({block:'nearest'});}
@@ -100,7 +100,7 @@
       axis=axis||(this.keys.has('KeyD')||this.keys.has('ArrowRight')?1:0)-(this.keys.has('KeyA')||this.keys.has('ArrowLeft')?1:0);
       if(t-this.lastInput>=50){this.lastInput=t;this.client?.input(this.overlay.hidden?axis:0,this.overlay.hidden&&!axis?this.target:null);}
     }
-    resize(){const short=window.innerHeight<540&&window.innerWidth>window.innerHeight,w=window.innerWidth-(short?195:24),h=window.innerHeight-(short?24:150),scale=Math.max(.1,Math.min(w/600,h/800));this.host.className='arcade-view online-view'+(short?' online-landscape':'');Object.assign(this.canvas.style,{width:600*scale+'px',height:800*scale+'px'});Object.assign(this.stage.style,{width:600*scale+'px',height:800*scale+'px'});}
+    resize(){const viewport=window.visualViewport,vw=Math.max(1,Number(viewport?.width)||window.innerWidth),vh=Math.max(1,Number(viewport?.height)||window.innerHeight),short=vh<540&&vw>vh,w=vw-(short?195:12),h=vh-(short?24:108),scale=Math.max(.1,Math.min(w/600,h/800));this.host.className='arcade-view online-view'+(short?' online-landscape':'');Object.assign(this.canvas.style,{width:600*scale+'px',height:800*scale+'px'});Object.assign(this.stage.style,{width:600*scale+'px',height:800*scale+'px'});}
     draw(t){const s=this.client?.state,m=this.drawGame;if(s){const alpha=this.previous?.round===s.round&&this.previous?.phase===s.phase?Math.min(1,Math.max(0,(t-this.receivedAt)/50)):1;const a=this.previous?.game||s.game;m.paddles=s.game.paddles.map((v,i)=>a.paddles[i]+(v-a.paddles[i])*alpha);const jump=Math.abs(s.game.ball.y-a.ball.y)>150||s.game.wait>0;m.ball={...s.game.ball,x:jump?s.game.ball.x:a.ball.x+(s.game.ball.x-a.ball.x)*alpha,y:jump?s.game.ball.y:a.ball.y+(s.game.ball.y-a.ball.y)*alpha};m.scores=s.game.scores;m.phase=s.phase;m.wait=s.game.wait;}
       root.ArcadeGames.render(this.ctx,m,'rally',t/1000,this.options.motion?.()!==false);
     }
