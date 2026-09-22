@@ -8,7 +8,7 @@ const token=()=>crypto.randomBytes(24).toString('hex');
 function publicUrl(value,local=false){const u=new URL(value);if(u.username||u.password||u.search||u.hash||!['https:',...(local?['http:']:[])].includes(u.protocol))throw Error('Use an HTTPS public URL without credentials, query or fragment.');return u;}
 
 class Rooms {
-  constructor({now=()=>Date.now(),send=(ws,msg)=>ws.send(JSON.stringify(msg)),maxRooms=100,roomMs=30*60e3,reconnectMs=30e3,siteUrl='https://calypso-games.netlify.app/'}={}){
+  constructor({now=()=>Date.now(),send=(ws,msg)=>ws.send(JSON.stringify(msg)),maxRooms=100,roomMs=30*60e3,reconnectMs=30e3,siteUrl='https://calypso-games.onrender.com/'}={}){
     Object.assign(this,{now,send,maxRooms,roomMs,reconnectMs,siteUrl});this.rooms=new Map();this.members=new Map();
   }
   error(ws,code){this.send(ws,{type:'error',code});}
@@ -59,7 +59,7 @@ class Rooms {
 
 function createServer(options={}){
   const local=options.local??process.env.NODE_ENV!=='production';
-  const configuredSite=options.siteUrl||process.env.PUBLIC_SITE_URL||'https://calypso-games.netlify.app/';
+  const configuredSite=options.siteUrl||process.env.PUBLIC_SITE_URL||'https://calypso-games.onrender.com/';
   const site=publicUrl(configuredSite,local);site.hash='';
   const serverAddress=options.serverUrl||process.env.PUBLIC_SERVER_URL||process.env.RENDER_EXTERNAL_URL||'';
   const external=serverAddress?publicUrl(serverAddress,local):null;
@@ -116,3 +116,4 @@ function createServer(options={}){
 }
 if(require.main===module){const app=createServer();app.listen().then(a=>console.log(`Arcade room server listening on port ${a.port}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>app.close().then(()=>process.exit(0)));}
 module.exports={Rooms,createServer};
+

@@ -2085,24 +2085,24 @@ window.HubLegal = {
     },
     {
       "heading": "Spiel, Musik und Datenschutz",
-      "body": "Diese Hinweise gelten für die überarbeitete Spielversion auf calypso-games.netlify.app. Die Spiele laufen im Browser. Der Spielcode enthält keine Werbung, Analyse- oder Trackingdienste, Nutzerkonten oder extern geladenen Schriftarten. Dauerhaft gespeicherte Highscores und Erfolge bleiben auf deinem Gerät. Der ausdrücklich gestartete Online-Modus überträgt die unten beschriebenen Partiedaten. Musik und Klänge entstehen auf deinem Gerät; es wird kein Musikdienst eingebunden. Es gibt kein Profiling und keine automatisierten Entscheidungen mit rechtlicher oder vergleichbar erheblicher Wirkung durch das Spiel."
+      "body": "Diese Hinweise gelten für die überarbeitete Spielversion auf calypso-games.onrender.com. Die Spiele laufen im Browser. Der Spielcode enthält keine Werbung, Analyse- oder Trackingdienste, Nutzerkonten oder extern geladenen Schriftarten. Dauerhaft gespeicherte Highscores und Erfolge bleiben auf deinem Gerät. Der ausdrücklich gestartete Online-Modus überträgt die unten beschriebenen Partiedaten. Musik und Klänge entstehen auf deinem Gerät; es wird kein Musikdienst eingebunden. Es gibt kein Profiling und keine automatisierten Entscheidungen mit rechtlicher oder vergleichbar erheblicher Wirkung durch das Spiel."
     },
     {
       "heading": "Online-Partien · technische Vorbereitung",
-      "body": "Neon Rally kann nach Einrichtung eines Spielservers online gespielt werden. Beim Öffnen der Online-Lobby kann die Website ihre Serverkonfiguration abrufen. Raum erstellen oder Beitreten verbindet dein Gerät mit dem konfigurierten Spielserver. Er verarbeitet Verbindungs-IP, Raumcode, zufällige Sitzungskennung, Steuerungseingaben und Spielstände, um beide Spieler zu verbinden und die gemeinsame Partie zu berechnen. Der Mitspieler erhält Punkte und Spielbewegungen, aber keine Sitzungskennung oder IP-Adresse. Der Raum-QR enthält nur einen Einladungslink mit Raumcode; kein externer QR-Dienst wird verwendet.\n\nRäume und Partiedaten liegen höchstens 30 Minuten im Arbeitsspeicher des Servers. Bewusstes Verlassen schließt den Raum; nach erkanntem Verbindungsabbruch bleibt der Platz 30 Sekunden reserviert. Die Anwendung führt keine Spielerdatenbank. Zur Wiederaufnahme nach Neuladen wird eine zufällige Kennung im sessionStorage des Tabs gespeichert, unabhängig von der freiwilligen Highscore-Speicherung. Beim Verlassen oder erkannten Raumende wird sie entfernt; nach 30 Minuten wird sie bei der nächsten Prüfung verworfen. Das Schließen des Tabs beendet normalerweise diesen Browserspeicher; die Wiederherstellungsfunktion deines Browsers kann ihn erhalten.\n\nDer zusätzliche Serverhoster ist noch nicht gewählt. Vor Aktivierung sind Anbieter, Region, Empfänger, Rechtsgrundlage, Auftragsverarbeitung, etwaige internationale Übermittlungen und die tatsächlichen Fristen eigener Hostingprotokolle zu ergänzen. Diese Fassung aktiviert noch keinen öffentlichen Spielserver.",
+      "body": "Neon Rally kann nach Einrichtung eines Spielservers online gespielt werden. Beim Öffnen der Online-Lobby kann die Website ihre Serverkonfiguration abrufen. Raum erstellen oder Beitreten verbindet dein Gerät mit dem konfigurierten Spielserver. Er verarbeitet Verbindungs-IP, Raumcode, zufällige Sitzungskennung, Steuerungseingaben und Spielstände, um beide Spieler zu verbinden und die gemeinsame Partie zu berechnen. Der Mitspieler erhält Punkte und Spielbewegungen, aber keine Sitzungskennung oder IP-Adresse. Der Raum-QR enthält nur einen Einladungslink mit Raumcode; kein externer QR-Dienst wird verwendet.\n\nRäume und Partiedaten liegen höchstens 30 Minuten im Arbeitsspeicher des Servers. Bewusstes Verlassen schließt den Raum; nach erkanntem Verbindungsabbruch bleibt der Platz 30 Sekunden reserviert. Die Anwendung führt keine Spielerdatenbank. Zur Wiederaufnahme nach Neuladen wird eine zufällige Kennung im sessionStorage des Tabs gespeichert, unabhängig von der freiwilligen Highscore-Speicherung. Beim Verlassen oder erkannten Raumende wird sie entfernt; nach 30 Minuten wird sie bei der nächsten Prüfung verworfen. Das Schließen des Tabs beendet normalerweise diesen Browserspeicher; die Wiederherstellungsfunktion deines Browsers kann ihn erhalten.\n\nDer Online-Spielserver läuft unter https://calypso-games.onrender.com/ bei Render. Render verarbeitet für den Betrieb technische Verbindungsdaten. Die genaue Aufbewahrung von Hostingprotokollen richtet sich nach Dienst und Tarif und sollte im Render-Konto geprüft werden; eine feste Frist wird hier nicht versprochen.",
       "notice": true
     },
     {
-      "heading": "Hosting bei Netlify",
-      "body": "Die öffentliche Website wird über Netlify, Inc., San Francisco, USA, ausgeliefert. Beim Aufruf erhält Netlify technische Anfragedaten, insbesondere IP-Adresse, Zeitpunkt, angeforderte Adresse, Browserinformationen und gegebenenfalls die verweisende Seite. Die Verarbeitung dient der Auslieferung, Fehleranalyse und Sicherheit der Website. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO: das berechtigte Interesse an einem funktionsfähigen, sicheren Spieleangebot. Diese Verbindungsdaten sind für den Onlineabruf erforderlich. Empfänger sind Netlify und die für das Hosting eingesetzten Dienstleister.",
-      "link": "Netlify · Datenschutz",
-      "href": "https://www.netlify.com/privacy/"
+      "heading": "Hosting bei Render",
+      "body": "Die öffentliche Website wird über Render Services, Inc., San Francisco, USA, ausgeliefert. Beim Aufruf erhält Render technische Anfragedaten, insbesondere IP-Adresse, Zeitpunkt, angeforderte Adresse, Browserinformationen und gegebenenfalls die verweisende Seite. Die Verarbeitung dient der Auslieferung, Fehleranalyse und Sicherheit der Website. Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO: das berechtigte Interesse an einem funktionsfähigen, sicheren Spieleangebot. Diese Verbindungsdaten sind für den Onlineabruf erforderlich. Empfänger sind Render und die für das Hosting eingesetzten Dienstleister.",
+      "link": "Render · Datenschutz",
+      "href": "https://render.com/privacy"
     },
     {
       "heading": "Hosting · Übermittlung und Speicherdauer",
-      "body": "Beim Hosting kann eine Verarbeitung außerhalb des Europäischen Wirtschaftsraums, insbesondere in den USA, erfolgen. Netlifys veröffentlichter Auftragsverarbeitungsvertrag sieht das EU-US Data Privacy Framework und ersatzweise EU-Standardvertragsklauseln als Übermittlungsmechanismen vor. Die verlinkten Bedingungen beschreiben die Schutzmaßnahmen.\n\nNetlify Web Analytics, Real User Monitoring und Log Drains sind für dieses Projekt nicht aktiviert. Davon unabhängig fallen technische Hostingprotokolle an. Ihre konkrete Aufbewahrungsdauer ist noch nicht bestätigt; eine pauschale Löschfrist wird deshalb nicht zugesichert. Auskunft dazu kannst du über die oben genannte Kontaktadresse verlangen.",
-      "link": "Netlify · Auftragsverarbeitungsvertrag und Schutzmaßnahmen",
-      "href": "https://www.netlify.com/pdf/netlify-dpa.pdf",
+      "body": "Beim Hosting kann eine Verarbeitung außerhalb des Europäischen Wirtschaftsraums, insbesondere in den USA, erfolgen. Renders veröffentlichter Auftragsverarbeitungsvertrag sieht das EU-US Data Privacy Framework und ersatzweise EU-Standardvertragsklauseln als Übermittlungsmechanismen vor. Die verlinkten Bedingungen beschreiben die Schutzmaßnahmen.\n\nRender-Dashboard-Analytics, zusätzliche Überwachung und Log-Weiterleitungen sind für dieses Projekt nicht aktiviert. Davon unabhängig fallen technische Hostingprotokolle an. Ihre konkrete Aufbewahrungsdauer ist noch nicht bestätigt; eine pauschale Löschfrist wird deshalb nicht zugesichert. Auskunft dazu kannst du über die oben genannte Kontaktadresse verlangen.",
+      "link": "Render · Auftragsverarbeitungsvertrag und Schutzmaßnahmen",
+      "href": "https://render.com/dpa",
       "notice": true
     },
     {
@@ -2127,7 +2127,7 @@ window.HubLegal = {
     },
     {
       "heading": "Externe Links und lokale Nutzung",
-      "body": "Die Links in diesen Hinweisen öffnen externe Informationsseiten erst auf deinen Wunsch. Dort gelten die jeweiligen Datenschutzhinweise. Wenn du die HTML-Datei direkt auf deinem Gerät öffnest, entfällt die Auslieferung über Netlify. Die Angaben zu optionalem Gerätespeicher und einer von dir veranlassten E-Mail bleiben anwendbar.\n\nStand: 22. September 2026. Änderungen an Hosting oder eingebundenen Diensten erfordern eine Aktualisierung dieser Hinweise."
+      "body": "Die Links in diesen Hinweisen öffnen externe Informationsseiten erst auf deinen Wunsch. Dort gelten die jeweiligen Datenschutzhinweise. Wenn du die HTML-Datei direkt auf deinem Gerät öffnest, entfällt die Auslieferung über Render. Die Angaben zu optionalem Gerätespeicher und einer von dir veranlassten E-Mail bleiben anwendbar.\n\nStand: 22. September 2026. Änderungen an Hosting oder eingebundenen Diensten erfordern eine Aktualisierung dieser Hinweise."
     }
   ],
   "en": [
@@ -2139,24 +2139,24 @@ window.HubLegal = {
     },
     {
       "heading": "Games, music and privacy",
-      "body": "This notice covers the revised game version at calypso-games.netlify.app. The games run in your browser. The game code contains no advertising, analytics or tracking services, user accounts or externally loaded fonts. Persistently saved high scores and achievements stay on your device. Online play, when explicitly opened, transfers the match data described below. Music and sounds are generated on your device, without an external music service. The game performs no profiling or automated decisions producing legal or similarly significant effects."
+      "body": "This notice covers the revised game version at calypso-games.onrender.com. The games run in your browser. The game code contains no advertising, analytics or tracking services, user accounts or externally loaded fonts. Persistently saved high scores and achievements stay on your device. Online play, when explicitly opened, transfers the match data described below. Music and sounds are generated on your device, without an external music service. The game performs no profiling or automated decisions producing legal or similarly significant effects."
     },
     {
       "heading": "Online matches · setup in preparation",
-      "body": "Neon Rally supports online play once a game server is configured. Opening the online lobby may retrieve the website’s server configuration. Creating or joining a room connects your device to the configured game server. It processes the connection IP, room code, random session identifier, control inputs and match state to connect both players and run their match. The opponent receives scores and game movements, but no session identifier or IP address. Room QR codes contain only an invitation link with the room code; no external QR service is used.\n\nRooms and match data stay in server memory for no more than 30 minutes. Leaving closes the room; after a detected disconnect the slot is reserved for 30 seconds. The application has no player database. To resume after reloading, a random identifier is stored in the tab’s sessionStorage, independently of optional high-score saving. Leaving or detecting the end of a room removes it; after 30 minutes it is discarded at the next check. Closing the tab normally ends this browser storage; browser session restoration may preserve it.\n\nThe additional server host has not been chosen. Before activation, add the provider, region, recipients, legal basis, data processing agreement, any international transfers and actual retention periods for hosting logs. This version does not yet activate a public game server.",
+      "body": "Neon Rally supports online play once a game server is configured. Opening the online lobby may retrieve the website’s server configuration. Creating or joining a room connects your device to the configured game server. It processes the connection IP, room code, random session identifier, control inputs and match state to connect both players and run their match. The opponent receives scores and game movements, but no session identifier or IP address. Room QR codes contain only an invitation link with the room code; no external QR service is used.\n\nRooms and match data stay in server memory for no more than 30 minutes. Leaving closes the room; after a detected disconnect the slot is reserved for 30 seconds. The application has no player database. To resume after reloading, a random identifier is stored in the tab’s sessionStorage, independently of optional high-score saving. Leaving or detecting the end of a room removes it; after 30 minutes it is discarded at the next check. Closing the tab normally ends this browser storage; browser session restoration may preserve it.\n\nThe online game server runs at https://calypso-games.onrender.com/ on Render. Render processes technical connection data needed to operate the service. Actual hosting-log retention depends on the service and plan and should be checked in the Render account; this notice promises no fixed period.",
       "notice": true
     },
     {
-      "heading": "Netlify hosting",
-      "body": "The public website is delivered by Netlify, Inc., San Francisco, USA. Requests disclose technical information to Netlify, including IP address, time, requested address, browser information and, where supplied, the referring page. Processing serves delivery, troubleshooting and website security. The legal basis is Article 6(1)(f) GDPR: the legitimate interest in a functioning, secure game service. This connection data is necessary to access the website online. Recipients are Netlify and service providers used for hosting.",
-      "link": "Netlify · Privacy",
-      "href": "https://www.netlify.com/privacy/"
+      "heading": "Render hosting",
+      "body": "The public website is delivered by Render Services, Inc., San Francisco, USA. Requests disclose technical information to Render, including IP address, time, requested address, browser information and, where supplied, the referring page. Processing serves delivery, troubleshooting and website security. The legal basis is Article 6(1)(f) GDPR: the legitimate interest in a functioning, secure game service. This connection data is necessary to access the website online. Recipients are Render and service providers used for hosting.",
+      "link": "Render · Privacy",
+      "href": "https://render.com/privacy"
     },
     {
       "heading": "Hosting · Transfers and retention",
-      "body": "Hosting may involve processing outside the European Economic Area, particularly in the USA. Netlify’s published data processing agreement provides for the EU-US Data Privacy Framework and, as a fallback, EU Standard Contractual Clauses. The linked terms describe the safeguards.\n\nNetlify Web Analytics, Real User Monitoring and Log Drains are not enabled for this project. Technical hosting logs still arise independently. Their specific retention period has not yet been confirmed, so no fixed deletion period is promised. You can request information using the contact address above.",
-      "link": "Netlify · Data processing agreement and safeguards",
-      "href": "https://www.netlify.com/pdf/netlify-dpa.pdf",
+      "body": "Hosting may involve processing outside the European Economic Area, particularly in the USA. Render’s published data processing agreement provides for the EU-US Data Privacy Framework and, as a fallback, EU Standard Contractual Clauses. The linked terms describe the safeguards.\n\nRender dashboard analytics, additional monitoring and log forwarding are not enabled for this project. Technical hosting logs still arise independently. Their specific retention period has not yet been confirmed, so no fixed deletion period is promised. You can request information using the contact address above.",
+      "link": "Render · Data processing agreement and safeguards",
+      "href": "https://render.com/dpa",
       "notice": true
     },
     {
@@ -2181,7 +2181,7 @@ window.HubLegal = {
     },
     {
       "heading": "External links and local use",
-      "body": "The links in this notice open external information pages only when you choose them. Those pages have their own privacy notices. Opening the HTML file directly on your device does not involve Netlify delivery. The information about optional device storage and email you choose to send still applies.\n\nUpdated: 22 September 2026. Hosting or service changes require an update to this notice."
+      "body": "The links in this notice open external information pages only when you choose them. Those pages have their own privacy notices. Opening the HTML file directly on your device does not involve Render delivery. The information about optional device storage and email you choose to send still applies.\n\nUpdated: 22 September 2026. Hosting or service changes require an update to this notice."
     }
   ],
   "fr": [
@@ -2193,24 +2193,24 @@ window.HubLegal = {
     },
     {
       "heading": "Jeux, musique et confidentialité",
-      "body": "Ces informations concernent la version révisée du jeu sur calypso-games.netlify.app. Les jeux fonctionnent dans votre navigateur. Leur code ne contient ni publicité, ni service d’analyse ou de suivi, ni compte utilisateur, ni police chargée à distance. Les records et succès sauvegardés durablement restent sur votre appareil. Le mode en ligne, ouvert à votre demande, transmet les données de partie décrites ci-dessous. Musique et sons sont produits sur votre appareil, sans service musical externe. Le jeu n’effectue ni profilage ni décision automatisée produisant des effets juridiques ou des effets significatifs similaires."
+      "body": "Ces informations concernent la version révisée du jeu sur calypso-games.onrender.com. Les jeux fonctionnent dans votre navigateur. Leur code ne contient ni publicité, ni service d’analyse ou de suivi, ni compte utilisateur, ni police chargée à distance. Les records et succès sauvegardés durablement restent sur votre appareil. Le mode en ligne, ouvert à votre demande, transmet les données de partie décrites ci-dessous. Musique et sons sont produits sur votre appareil, sans service musical externe. Le jeu n’effectue ni profilage ni décision automatisée produisant des effets juridiques ou des effets significatifs similaires."
     },
     {
       "heading": "Parties en ligne · configuration en préparation",
-      "body": "Neon Rally permet de jouer en ligne après configuration d’un serveur. Ouvrir le salon peut récupérer la configuration du serveur du site. Créer ou rejoindre un salon connecte votre appareil au serveur configuré. Il traite l’IP de connexion, le code du salon, un identifiant aléatoire de session, les commandes et l’état de la partie pour relier les joueurs et calculer leur partie. L’adversaire reçoit les scores et mouvements, mais ni votre identifiant de session ni votre adresse IP. Le QR contient uniquement un lien d’invitation avec le code ; aucun service QR externe n’est utilisé.\n\nSalons et parties restent en mémoire du serveur au maximum 30 minutes. Quitter ferme le salon ; après une déconnexion détectée, la place reste réservée 30 secondes. L’application n’a pas de base de joueurs. Pour reprendre après rechargement, un identifiant aléatoire est enregistré dans le sessionStorage de l’onglet, indépendamment de la sauvegarde facultative. Quitter ou détecter la fin du salon le supprime ; après 30 minutes, il est écarté à la prochaine vérification. Fermer l’onglet termine normalement ce stockage ; la restauration de session du navigateur peut le préserver.\n\nL’hébergeur du serveur reste à choisir. Avant activation, ajouter prestataire, région, destinataires, base juridique, accord de traitement, transferts internationaux éventuels et durées réelles des journaux d’hébergement. Cette version n’active pas encore de serveur public.",
+      "body": "Neon Rally permet de jouer en ligne après configuration d’un serveur. Ouvrir le salon peut récupérer la configuration du serveur du site. Créer ou rejoindre un salon connecte votre appareil au serveur configuré. Il traite l’IP de connexion, le code du salon, un identifiant aléatoire de session, les commandes et l’état de la partie pour relier les joueurs et calculer leur partie. L’adversaire reçoit les scores et mouvements, mais ni votre identifiant de session ni votre adresse IP. Le QR contient uniquement un lien d’invitation avec le code ; aucun service QR externe n’est utilisé.\n\nSalons et parties restent en mémoire du serveur au maximum 30 minutes. Quitter ferme le salon ; après une déconnexion détectée, la place reste réservée 30 secondes. L’application n’a pas de base de joueurs. Pour reprendre après rechargement, un identifiant aléatoire est enregistré dans le sessionStorage de l’onglet, indépendamment de la sauvegarde facultative. Quitter ou détecter la fin du salon le supprime ; après 30 minutes, il est écarté à la prochaine vérification. Fermer l’onglet termine normalement ce stockage ; la restauration de session du navigateur peut le préserver.\n\nLe serveur de jeu en ligne fonctionne sur Render à l’adresse https://calypso-games.onrender.com/. Render traite les données techniques de connexion nécessaires au service. La conservation réelle des journaux dépend du service et du forfait et doit être vérifiée dans le compte Render ; cette notice ne promet pas de durée fixe.",
       "notice": true
     },
     {
-      "heading": "Hébergement Netlify",
-      "body": "Netlify, Inc., San Francisco, États-Unis, fournit le site public. Chaque requête lui transmet des données techniques : adresse IP, date et heure, adresse demandée, informations du navigateur et, si fournie, page d’origine. Le traitement sert à fournir, dépanner et sécuriser le site. Base juridique : article 6, paragraphe 1, point f, du RGPD, intérêt légitime à un service fonctionnel et sûr. Ces données de connexion sont nécessaires à l’accès en ligne. Les destinataires sont Netlify et ses prestataires d’hébergement.",
-      "link": "Netlify · Confidentialité",
-      "href": "https://www.netlify.com/privacy/"
+      "heading": "Hébergement Render",
+      "body": "Render Services, Inc., San Francisco, États-Unis, fournit le site public. Chaque requête lui transmet des données techniques : adresse IP, date et heure, adresse demandée, informations du navigateur et, si fournie, page d’origine. Le traitement sert à fournir, dépanner et sécuriser le site. Base juridique : article 6, paragraphe 1, point f, du RGPD, intérêt légitime à un service fonctionnel et sûr. Ces données de connexion sont nécessaires à l’accès en ligne. Les destinataires sont Render et ses prestataires d’hébergement.",
+      "link": "Render · Confidentialité",
+      "href": "https://render.com/privacy"
     },
     {
       "heading": "Hébergement · Transferts et conservation",
-      "body": "L’hébergement peut impliquer des traitements hors de l’Espace économique européen, notamment aux États-Unis. L’accord de traitement publié par Netlify prévoit le cadre de protection des données UE-États-Unis et, à défaut, les clauses contractuelles types de l’UE. Le document lié décrit les garanties.\n\nNetlify Web Analytics, Real User Monitoring et Log Drains ne sont pas activés pour ce projet. Des journaux techniques d’hébergement sont néanmoins produits. Leur durée précise de conservation n’est pas encore confirmée ; aucun délai fixe de suppression n’est donc garanti. Vous pouvez demander ces informations à l’adresse de contact ci-dessus.",
-      "link": "Netlify · Accord de traitement et garanties",
-      "href": "https://www.netlify.com/pdf/netlify-dpa.pdf",
+      "body": "L’hébergement peut impliquer des traitements hors de l’Espace économique européen, notamment aux États-Unis. L’accord de traitement publié par Render prévoit le cadre de protection des données UE-États-Unis et, à défaut, les clauses contractuelles types de l’UE. Le document lié décrit les garanties.\n\nles analyses du tableau de bord Render, la surveillance supplémentaire et la transmission de journaux ne sont pas activés pour ce projet. Des journaux techniques d’hébergement sont néanmoins produits. Leur durée précise de conservation n’est pas encore confirmée ; aucun délai fixe de suppression n’est donc garanti. Vous pouvez demander ces informations à l’adresse de contact ci-dessus.",
+      "link": "Render · Accord de traitement et garanties",
+      "href": "https://render.com/dpa",
       "notice": true
     },
     {
@@ -2235,7 +2235,7 @@ window.HubLegal = {
     },
     {
       "heading": "Liens externes et utilisation locale",
-      "body": "Les liens de cette notice ouvrent des pages externes uniquement à votre demande. Ces pages appliquent leurs propres politiques. L’ouverture directe du fichier HTML sur votre appareil n’utilise pas Netlify pour fournir le jeu. Les informations sur la sauvegarde facultative et les e-mails que vous décidez d’envoyer restent applicables.\n\nMise à jour : 22 septembre 2026. Toute modification d’hébergement ou de service intégré nécessite une mise à jour de cette notice."
+      "body": "Les liens de cette notice ouvrent des pages externes uniquement à votre demande. Ces pages appliquent leurs propres politiques. L’ouverture directe du fichier HTML sur votre appareil n’utilise pas Render pour fournir le jeu. Les informations sur la sauvegarde facultative et les e-mails que vous décidez d’envoyer restent applicables.\n\nMise à jour : 22 septembre 2026. Toute modification d’hébergement ou de service intégré nécessite une mise à jour de cette notice."
     }
   ],
   "es": [
@@ -2247,24 +2247,24 @@ window.HubLegal = {
     },
     {
       "heading": "Juegos, música y privacidad",
-      "body": "Este aviso se aplica a la versión revisada del juego en calypso-games.netlify.app. Los juegos se ejecutan en tu navegador. Su código no contiene publicidad, servicios de análisis o seguimiento, cuentas de usuario ni fuentes cargadas desde servicios externos. Los récords y logros guardados de forma permanente permanecen en tu dispositivo. El modo en línea, abierto expresamente, transmite los datos de partida descritos abajo. La música y los sonidos se generan en tu dispositivo, sin servicios de música externos. El juego no elabora perfiles ni toma decisiones automatizadas con efectos jurídicos o de importancia similar."
+      "body": "Este aviso se aplica a la versión revisada del juego en calypso-games.onrender.com. Los juegos se ejecutan en tu navegador. Su código no contiene publicidad, servicios de análisis o seguimiento, cuentas de usuario ni fuentes cargadas desde servicios externos. Los récords y logros guardados de forma permanente permanecen en tu dispositivo. El modo en línea, abierto expresamente, transmite los datos de partida descritos abajo. La música y los sonidos se generan en tu dispositivo, sin servicios de música externos. El juego no elabora perfiles ni toma decisiones automatizadas con efectos jurídicos o de importancia similar."
     },
     {
       "heading": "Partidas en línea · configuración en preparación",
-      "body": "Neon Rally permite jugar en línea tras configurar un servidor. Abrir la sala puede consultar la configuración del servidor del sitio. Crear una sala o unirse conecta tu dispositivo al servidor configurado. Este procesa la IP de conexión, código de sala, identificador aleatorio de sesión, controles y estado de partida para conectar a ambos jugadores y calcular la partida. El rival recibe puntos y movimientos, pero no el identificador de sesión ni la IP. El QR contiene solo un enlace con el código; no se usa un servicio QR externo.\n\nSalas y partidas permanecen en la memoria del servidor como máximo 30 minutos. Salir cierra la sala; tras detectar una desconexión se reserva la plaza 30 segundos. La aplicación no tiene una base de jugadores. Para volver tras recargar, guarda un identificador aleatorio en el sessionStorage de la pestaña, independientemente del guardado opcional. Salir o detectar el cierre de la sala lo elimina; tras 30 minutos se descarta en la siguiente comprobación. Cerrar la pestaña normalmente termina este almacenamiento; la restauración de sesiones del navegador puede conservarlo.\n\nFalta elegir el proveedor del servidor. Antes de activarlo hay que añadir proveedor, región, destinatarios, base jurídica, acuerdo de tratamiento, posibles transferencias internacionales y plazos reales de registros del alojamiento. Esta versión todavía no activa un servidor público.",
+      "body": "Neon Rally permite jugar en línea tras configurar un servidor. Abrir la sala puede consultar la configuración del servidor del sitio. Crear una sala o unirse conecta tu dispositivo al servidor configurado. Este procesa la IP de conexión, código de sala, identificador aleatorio de sesión, controles y estado de partida para conectar a ambos jugadores y calcular la partida. El rival recibe puntos y movimientos, pero no el identificador de sesión ni la IP. El QR contiene solo un enlace con el código; no se usa un servicio QR externo.\n\nSalas y partidas permanecen en la memoria del servidor como máximo 30 minutos. Salir cierra la sala; tras detectar una desconexión se reserva la plaza 30 segundos. La aplicación no tiene una base de jugadores. Para volver tras recargar, guarda un identificador aleatorio en el sessionStorage de la pestaña, independientemente del guardado opcional. Salir o detectar el cierre de la sala lo elimina; tras 30 minutos se descarta en la siguiente comprobación. Cerrar la pestaña normalmente termina este almacenamiento; la restauración de sesiones del navegador puede conservarlo.\n\nEl servidor de juego en línea funciona en Render en https://calypso-games.onrender.com/. Render procesa los datos técnicos de conexión necesarios para prestar el servicio. La conservación real de los registros depende del servicio y del plan y debe comprobarse en la cuenta de Render; este aviso no promete un plazo fijo.",
       "notice": true
     },
     {
-      "heading": "Alojamiento en Netlify",
-      "body": "Netlify, Inc., San Francisco, Estados Unidos, sirve el sitio público. Las solicitudes transmiten datos técnicos, como dirección IP, fecha y hora, dirección solicitada, información del navegador y, si se facilita, página de procedencia. Se tratan para entregar, mantener y proteger el sitio. Base jurídica: artículo 6.1.f del RGPD, interés legítimo en un servicio funcional y seguro. Los datos de conexión son necesarios para acceder en línea. Los destinatarios son Netlify y sus proveedores de alojamiento.",
-      "link": "Netlify · Privacidad",
-      "href": "https://www.netlify.com/privacy/"
+      "heading": "Alojamiento en Render",
+      "body": "Render Services, Inc., San Francisco, Estados Unidos, sirve el sitio público. Las solicitudes transmiten datos técnicos, como dirección IP, fecha y hora, dirección solicitada, información del navegador y, si se facilita, página de procedencia. Se tratan para entregar, mantener y proteger el sitio. Base jurídica: artículo 6.1.f del RGPD, interés legítimo en un servicio funcional y seguro. Los datos de conexión son necesarios para acceder en línea. Los destinatarios son Render y sus proveedores de alojamiento.",
+      "link": "Render · Privacidad",
+      "href": "https://render.com/privacy"
     },
     {
       "heading": "Alojamiento · Transferencias y conservación",
-      "body": "El alojamiento puede implicar tratamiento fuera del Espacio Económico Europeo, en particular en Estados Unidos. El acuerdo de tratamiento publicado por Netlify prevé el Marco de Privacidad de Datos UE-EE. UU. y, de forma subsidiaria, las cláusulas contractuales tipo de la UE. El documento enlazado describe las garantías.\n\nNetlify Web Analytics, Real User Monitoring y Log Drains no están activados para este proyecto. Aun así, se generan registros técnicos de alojamiento. Su plazo concreto de conservación no se ha confirmado; por ello no se garantiza un plazo fijo de borrado. Puedes solicitar información mediante el contacto indicado arriba.",
-      "link": "Netlify · Acuerdo de tratamiento y garantías",
-      "href": "https://www.netlify.com/pdf/netlify-dpa.pdf",
+      "body": "El alojamiento puede implicar tratamiento fuera del Espacio Económico Europeo, en particular en Estados Unidos. El acuerdo de tratamiento publicado por Render prevé el Marco de Privacidad de Datos UE-EE. UU. y, de forma subsidiaria, las cláusulas contractuales tipo de la UE. El documento enlazado describe las garantías.\n\nlas analíticas del panel de Render, la supervisión adicional y el reenvío de registros no están activados para este proyecto. Aun así, se generan registros técnicos de alojamiento. Su plazo concreto de conservación no se ha confirmado; por ello no se garantiza un plazo fijo de borrado. Puedes solicitar información mediante el contacto indicado arriba.",
+      "link": "Render · Acuerdo de tratamiento y garantías",
+      "href": "https://render.com/dpa",
       "notice": true
     },
     {
@@ -2289,7 +2289,7 @@ window.HubLegal = {
     },
     {
       "heading": "Enlaces externos y uso local",
-      "body": "Los enlaces de este aviso solo abren páginas externas cuando los eliges. Esas páginas tienen sus propias políticas. Abrir el archivo HTML directamente en tu dispositivo no usa Netlify para entregar el juego. Siguen siendo aplicables los apartados sobre almacenamiento opcional y correos que decidas enviar.\n\nActualizado: 22 de septiembre de 2026. Los cambios de alojamiento o de servicios integrados requieren actualizar este aviso."
+      "body": "Los enlaces de este aviso solo abren páginas externas cuando los eliges. Esas páginas tienen sus propias políticas. Abrir el archivo HTML directamente en tu dispositivo no usa Render para entregar el juego. Siguen siendo aplicables los apartados sobre almacenamiento opcional y correos que decidas enviar.\n\nActualizado: 22 de septiembre de 2026. Los cambios de alojamiento o de servicios integrados requieren actualizar este aviso."
     }
   ]
 };
@@ -2327,18 +2327,20 @@ window.HubLegalSources = [
     "url": "https://eur-lex.europa.eu/legal-content/DE/TXT/?uri=CELEX%3A32016R0679"
   },
   {
-    "label": "Netlify · Privacy",
-    "url": "https://www.netlify.com/privacy/"
+    "label": "Render · Privacy",
+    "url": "https://render.com/privacy"
   },
   {
-    "label": "Netlify · DPA",
-    "url": "https://www.netlify.com/pdf/netlify-dpa.pdf"
+    "label": "Render · DPA",
+    "url": "https://render.com/dpa"
   },
   {
     "label": "Google · Privacy",
     "url": "https://policies.google.com/privacy"
   }
 ];
+
+
 
 </script>
 <script>
@@ -3587,9 +3589,10 @@ window.HubLegalSources = [
 /* HUB_ONLINE_CONFIG_START */
 window.HubOnlineConfig = {
   serverUrl: '',
-  siteUrl: 'https://calypso-games.netlify.app/'
+  siteUrl: 'https://calypso-games.onrender.com/'
 };
 /* HUB_ONLINE_CONFIG_END */
+
 
 </script>
 <script>
@@ -4506,7 +4509,7 @@ window.HubOnlineConfig = {
             htmlButton(tr('Einstellungen'),()=>info('SETTINGS','LEGAL'),inner);
         }else if(state==='CREDITS'){
             const shareCopy={de:['Website teilen','Dieser QR-Code öffnet die Website auf einem anderen Gerät. Über „Online spielen“ kannst du mit einem Raumcode gegeneinander spielen, sobald der Spielserver eingerichtet ist.','Website öffnen'],en:['Share website','This QR code opens the website on another device. Use “Play online” for room-code matches once the game server is configured.','Open website'],fr:['Partager le site','Ce QR code ouvre le site sur un autre appareil. Le mode en ligne avec code de salon fonctionne une fois le serveur configuré.','Ouvrir le site'],es:['Compartir sitio','Este QR abre el sitio en otro dispositivo. El modo en línea con código de sala funciona cuando se configura el servidor.','Abrir sitio']}[HubI18n.language]||[];
-            const share=section(inner,shareCopy[0],shareCopy[1]);const qr=element('img',undefined,share);qr.src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASgAAAEoCAIAAABkZftOAAAFdUlEQVR4nO3dQY7jOBAAwfFi//9l7Qt00IDcLEoR54btljvBBgokf9d1/QH+X//8z+8HCA8aVjwICA8CwoOA8CAgPAgIDwLCg4DwICA8CAgPAsKDgPAgIDwICA8CwoOA8CAgPAgIDwLCg4DwICA8CAgPAsKDgPAgIDwICA8CwoOA8CAgPAj8u/sNfr/fnxM8vSfw7vda9Tp3dr/+U9M+zyq774204kFAeBAQHgSEBwHhQUB4EBAevHGOV81Jps2RVr1vNffb/X1dH/t7sOJBQHgQEB4EhAcB4UFAeBAQHnxpjrd7rlLNnVbN2ar9fqteZ9Xz/x3y9/CUFQ8CwoOA8CAgPAgIDwLCg4DwIDBujvdWq+Z+b92P9zVWPAgIDwLCg4DwICA8CAgPAsKDgDneX3o671r189W+vjvmfn/HigcB4UFAeBAQHgSEBwHhQUB4EBg3x5u272v3frndTp/XXcP+Hlax4kFAeBAQHgSEBwHhQUB4EBAefGmON23e9dTufXe7z+F8Oh875R6/U1jxICA8CAgPAsKDgPAgIDwICA/eOMc7fT/Vqnla5ZR54NdY8SAgPAgIDwLCg4DwICA8CAgP3jjH271fa9r9crvne7t/36dOucdvGiseBIQHAeFBQHgQEB4EhAcB4UFg3P14u8+lXKXaj7d7bvb0dVa977V5rrv7dZ6y4kFAeBAQHgSEBwHhQUB4EBAeBH7VfqfT52/T9sWdPu/6RXPR6u/figcB4UFAeBAQHgSEBwHhQUB4EBi3H6/ap7d7vnf6/sOnnn7Oa9j3uJsVDwLCg4DwICA8CAgPAsKDgPDgjfvxpt2fdsq+slW/1ynve6ea7zlXE17Iv5oQEB4EhAcB4UFAeBAQHgTGnav51LS537T9crufw51p+wOnseJBQHgQEB4EhAcB4UFAeBAQHrzxXM1qrjXt3MXT53urnucp515em78XKx4EhAcB4UFAeBAQHgSEBwHhwRvneNPOh5x2fua0cylP/5zXIfskrXgQEB4EhAcB4UFAeBAQHgSEB2+c463ydD5zyjmQ1fyqev5Pn/P10vM5rXgQEB4EhAcB4UFAeBAQHgSEB1+6H++p3fupds/9qv1g1TzzrfcfrmLFg4DwICA8CAgPAsKDgPAgIDwIHH8/3u550bTzNld9zur8yWpf32/YvXxWPAgIDwLCg4DwICA8CAgPAsKDwDH341Vzp2nznzun3HdXvc40VjwICA8CwoOA8CAgPAgIDwLCgzeeq7lqLjftXrjTz5NcpZpzXoc8nztWPAgIDwLCg4DwICA8CAgPAsKDwDH341Wm3S+3e664e746bQ58x/148EL+1YSA8CAgPAgIDwLCg4Dw4Ev3401zN7eZNues9putmptNu3/vir5fKx4EhAcB4UFAeBAQHgSEBwHhwRvneHdOOQey2od2+pzqzrR7C3/Rc7PiQUB4EBAeBIQHwoNvsOJBQHjwpTnenWnnIu4+v3HV+55yHuYq1yGf844VDwLCg4DwICA8CAgPAsKDgPAgMG6ON021f6+aZ55yDupv2Lz3KSseBIQHAeFBQHgQEB4EhAcB4UHAHC+eg+2em52yL66a1zlXEz7Ev5oQEB4EhAcB4UFAeBAQHgTGzfGm3edWzf1OeQ6rzvm8Hv6+pz9nKx4EhAcB4UFAeBAQHgSEBwHhwZfmeKef3zhtf1d1b97d6+x+Dr9hc7mnrHggPPgGKx4EhAcB4UFAeBAQHgR+p8w94E2seBAQHgSEBwHhQUB4EBAeBIQHAeFBQHgQEB4EhAcB4UFAeBAQHgSEBwHhQUB4EBAeBIQHAeFBQHgQEB4EhAcB4UFAeBAQHgSEBwHhQUB4EBAeCA/+fMJ/MrYhdwinyawAAAAASUVORK5CYII=';qr.alt='QR · https://calypso-games.netlify.app/';qr.width=264;qr.height=264;Object.assign(qr.style,{display:'block',maxWidth:'100%',height:'auto',margin:'16px 0',borderRadius:'8px'});const link=element('a',shareCopy[2]+' · calypso-games.netlify.app',share);link.href='https://calypso-games.netlify.app/';link.target='_blank';link.rel='noopener noreferrer';
+            const share=section(inner,shareCopy[0],shareCopy[1]);const qr=element('img',undefined,share);qr.src='data:image/png;base64,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';qr.alt='QR · https://calypso-games.onrender.com/';qr.width=264;qr.height=264;Object.assign(qr.style,{display:'block',maxWidth:'100%',height:'auto',margin:'16px 0',borderRadius:'8px'});const link=element('a',shareCopy[2]+' · calypso-games.onrender.com',share);link.href='https://calypso-games.onrender.com/';link.target='_blank';link.rel='noopener noreferrer';
             section(inner,'Ultimate Arena v2',u(10));section(inner,'Snake',u(11));section(inner,'Neon Breaker',tr('Eigenständiges Arcade-Spiel für diesen Hub: fünf Level, Bonusgegenstände und lokale Klänge.'));section(inner,'Neon Rally & Orbit Dash',window.DeviceUI?.credits()||'Original arcade games');section(inner,'Prism Merge',BonusGames.COPY[HubI18n.language].prism);section(inner,'Cloud Hop',BonusGames.COPY[HubI18n.language].cloud);section(inner,u(8),u(9));section(inner,tr('Technik'),u(12));section(inner,at(0),at(5));element('p',u(13),inner);
         }else if(state==='ACHIEVEMENTS'){
             HubAchievements.render(inner,{list:ACHIEVEMENTS,stats,language:HubI18n.language,translate:tr,sound});
@@ -4691,6 +4694,9 @@ window.HubOnlineConfig = {
     // Test-only read-only access to presentation metrics and explicit UI actions.
     window.HubQA={get buttons(){return renderedButtons.map(b=>({label:b.label,x:b.rect.x,y:b.rect.y,w:b.rect.w,h:b.rect.h,font:b.font}));},get state(){return state;},get achievements(){return ACHIEVEMENTS.length;},get secretActive(){return eggTime>=0;},get miniSecret(){return miniElapsed>=0?miniKind:'';}};
 })();
+
+
+
 
 </script>
 <script>

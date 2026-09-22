@@ -2,6 +2,7 @@
 /* HUB_ONLINE_CONFIG_START */
 window.HubOnlineConfig = {
   serverUrl: '',
-  siteUrl: 'https://calypso-games.netlify.app/'
+  siteUrl: 'https://calypso-games.onrender.com/'
 };
 /* HUB_ONLINE_CONFIG_END */
+
