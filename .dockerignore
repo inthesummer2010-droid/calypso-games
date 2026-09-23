@@ -3,5 +3,6 @@
 !pnpm-lock.yaml
 !server.cjs
 !arcade.js
+!snake.js
 !index.html
 !Dockerfile
