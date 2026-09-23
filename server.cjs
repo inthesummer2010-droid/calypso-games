@@ -143,7 +143,10 @@ function createServer(options={}){
   let last=performance.now(),acc=0,broadcastAcc=0;
   const loop=setInterval(()=>{const now=performance.now(),elapsed=Math.min(.1,(now-last)/1000);last=now;acc+=elapsed;broadcastAcc+=elapsed;while(acc>=1/60){rooms.tick(1/60);acc-=1/60;}if(broadcastAcc>=.05){broadcastAcc=0;for(const r of rooms.rooms.values())rooms.broadcast(r);}},1000/60);loop.unref();
   const heartbeat=setInterval(()=>{for(const ws of connections){if(!ws.alive){ws.terminate();continue;}ws.alive=false;ws.ping();}},10000);heartbeat.unref();
-  return {server,rooms,wss,listen:(port=Number(process.env.PORT)||8080,host=process.env.HOST||'127.0.0.1')=>new Promise(resolve=>server.listen(port,host,()=>resolve(server.address()))),close:()=>new Promise(resolve=>{clearInterval(loop);clearInterval(heartbeat);for(const ws of connections)ws.terminate();wss.close();server.close(resolve);})};
+  // Render routes traffic to the container network interface. Keep local tests
+  // on loopback, but never let a production process bind only to localhost.
+  const defaultHost=process.env.HOST||(process.env.NODE_ENV==='production'?'0.0.0.0':'127.0.0.1');
+  return {server,rooms,wss,listen:(port=Number(process.env.PORT)||8080,host=defaultHost)=>new Promise(resolve=>server.listen(port,host,()=>resolve(server.address()))),close:()=>new Promise(resolve=>{clearInterval(loop);clearInterval(heartbeat);for(const ws of connections)ws.terminate();wss.close();server.close(resolve);})};
 }
 if(require.main===module){const app=createServer();app.listen().then(a=>console.log(`Arcade room server listening on port ${a.port}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>app.close().then(()=>process.exit(0)));}
 module.exports={Rooms,createServer,SnakeDuel,ArenaOnline};
