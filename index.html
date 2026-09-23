@@ -1265,6 +1265,11 @@ function serializeOnlineArena() {
 
 function update() {
     let now = Date.now();
+
+    // A guest still uses this original update/draw loop. Its bridge replaces
+    // the local objects from the host snapshot, so no second online physics
+    // implementation is needed.
+    if(onlineArenaBridge?.active && onlineArenaBridge.remoteOnly) return;
     
     if(state === "PLAYING") {
         survived_time = Math.floor((now - start_ticks - paused_time_total)/1000);
@@ -1725,63 +1730,61 @@ function draw() {
     ctx.restore();
 }
 
-// The online room reuses this renderer instead of maintaining a second Arena
-// drawing language.  It receives an authoritative snapshot, recreates the
-// original game objects, and calls the same Player/Zombie/Boss/PowerUp/Weapon
-// draw methods used by the local game.
+// Online play uses the original Arena state and draw loop on both devices.
+// The host runs the original update(); a guest only applies the host snapshot
+// to these same original objects before the original draw() runs.
 window.UltimateArenaOriginal = window.UltimateArenaOriginal || {};
-window.UltimateArenaOriginal.renderSnapshot = function(onlineCtx, snapshot, nowSeconds=0) {
-    const sw = Number(snapshot.w) || WIDTH, sh = Number(snapshot.h) || HEIGHT;
-    const sx = WIDTH / sw, sy = HEIGHT / sh;
+function onlineMode(options={}) {
+    const map = {'arena-catch':0,'arena-zombie':2,'arena-boss':4};
+    return Number.isInteger(options.modeIndex) ? options.modeIndex : (map[options.mode] ?? 0);
+}
+function restoreOnlinePlayer(data, index) {
+    const color = Array.isArray(data?.base_color) ? data.base_color : COLORS[index ? 1 : 0][1];
+    const skin = typeof data?.skin === 'string' ? data.skin : SKINS[index ? 1 : 0];
+    const player = new Player(Number(data?.x)||0, Number(data?.y)||0, color, {}, index ? 'P2' : 'P1', skin, index);
+    Object.assign(player, data || {});
+    player.base_color = color; player.skin = skin; player.radius = Number(data?.radius)||player.base_radius;
+    return player;
+}
+function applyOnlineArenaSnapshot(snapshot) {
+    if(!snapshot || !Array.isArray(snapshot.players) || snapshot.players.length < 2) return;
     const mode = Number.isInteger(snapshot.modeIndex) ? snapshot.modeIndex : (snapshot.mode === 'arena-catch' ? 0 : snapshot.mode === 'arena-boss' ? 4 : 2);
-    const map = MAPS[Number.isInteger(snapshot.mapIndex) ? snapshot.mapIndex : 0] || MAPS[0];
-    const colorFor = (p, i) => Array.isArray(p?.base_color) ? p.base_color : (i ? COLORS[1][1] : COLORS[0][1]);
-    const skinFor = (p, i) => typeof p?.skin === 'string' ? p.skin : (i ? SKINS[1] : SKINS[0]);
-    const playerFrom = (p, i) => {
-        const q = new Player(Number(p?.x)||0, Number(p?.y)||0, colorFor(p,i), {}, i ? 'P2' : 'P1', skinFor(p,i));
-        Object.assign(q, p || {}); q.base_color = colorFor(p,i); q.skin = skinFor(p,i); q.radius = Number(p?.radius)||q.base_radius;
-        return q;
-    };
-    const powerupFrom = item => { const q = new PowerUp(map.walls, mode); Object.assign(q, item || {}); q.x=Number(item?.x)||0; q.y=Number(item?.y)||0; return q; };
-    const weaponFrom = item => { const q = new WeaponDrop(map.walls); Object.assign(q, item || {}); q.x=Number(item?.x)||0; q.y=Number(item?.y)||0; return q; };
-    onlineCtx.save(); onlineCtx.setTransform(sx,0,0,sy,0,0); onlineCtx.clearRect(0,0,WIDTH,HEIGHT); onlineCtx.drawImage(BACKGROUND,0,0);
-    (map.walls||[]).forEach(w => drawWall(onlineCtx,w));
-    if(mode===0 && Number(snapshot.catcher) < 0) {
-        const p = Math.sin((nowSeconds||0)*5)*8, orb = new Rect(WIDTH/2-24-p/2, HEIGHT/2-24-p/2, 48+p, 48+p);
-        blitGlow(onlineCtx, WIDTH/2, HEIGHT/2, 95, PURPLE, 110); onlineCtx.beginPath(); onlineCtx.ellipse(orb.centerx,orb.centery,orb.w/2,orb.h/2,0,0,Math.PI*2); onlineCtx.fillStyle=toRGB(PURPLE); onlineCtx.fill(); onlineCtx.lineWidth=3; onlineCtx.strokeStyle=toRGB(WHITE); onlineCtx.stroke();
-    }
-    (snapshot.powerups||[]).map(powerupFrom).forEach(p=>p.draw(onlineCtx));
-    (snapshot.weapons||[]).map(weaponFrom).forEach(w=>w.draw(onlineCtx));
-    (snapshot.zombies||[]).map(z=>Object.assign(new Zombie(Number(z.x)||0,Number(z.y)||0),z)).forEach(z=>z.draw(onlineCtx));
-    (snapshot.projectiles||[]).map(p=>Object.assign(new BossProjectile(Number(p.x)||0,Number(p.y)||0,Number(p.vx)||0,Number(p.vy)||0),p)).forEach(p=>p.draw(onlineCtx));
-    (snapshot.attacks||[]).map(a=>Object.assign(new PlayerAttack(a.type,Number(a.x)||0,Number(a.y)||0),a)).forEach(a=>a.draw(onlineCtx));
-    if(snapshot.boss) Object.assign(new Boss(Number(snapshot.boss.x)||0,Number(snapshot.boss.y)||0),snapshot.boss).draw(onlineCtx);
-    (snapshot.players||[]).forEach((p,i)=>playerFrom(p,i).draw(onlineCtx, Number(snapshot.catcher) < 0 ? -1 : mode===0 ? (Number(snapshot.catcher)===i ? 0 : 1) : 1));
-    onlineCtx.drawImage(VIGNETTE,0,0);
-    const p1=snapshot.players?.[0]||{}, p2=snapshot.players?.[1]||{};
-    if(mode===0) {
-        drawPanel(onlineCtx,new Rect(28,20,400,64),170,12); drawText(onlineCtx,`P1 Punkte: ${Math.floor(snapshot.scores?.[0]||0)}`,'bold 34px Arial',toRGB(colorFor(p1,0)),56,32);
-        drawPanel(onlineCtx,new Rect(WIDTH-548,20,400,64),170,12); drawText(onlineCtx,`P2 Punkte: ${Math.floor(snapshot.scores?.[1]||0)}`,'bold 34px Arial',toRGB(colorFor(p2,1)),WIDTH-300,32);
-    } else {
-        drawPanel(onlineCtx,new Rect(28,20,400,64),170,12); drawText(onlineCtx,p1.alive?'P1: Lebt':'P1: Aus','bold 34px Arial',p1.alive?toRGB(colorFor(p1,0)):toRGB(RED),56,32);
-        drawPanel(onlineCtx,new Rect(WIDTH-548,20,400,64),170,12); drawText(onlineCtx,p2.alive?'P2: Lebt':'P2: Aus','bold 34px Arial',p2.alive?toRGB(colorFor(p2,1)):toRGB(RED),WIDTH-300,32);
-    }
-    if(snapshot.boss) { drawPanel(onlineCtx,new Rect(WIDTH/2-340,16,680,76),190,12); onlineCtx.fillStyle='rgb(10,10,16)'; roundRect(onlineCtx,WIDTH/2-320,52,640,28,8); onlineCtx.fill(); const hp=Math.max(0,Math.min(1,(Number(snapshot.boss.hp)||0)/(Number(snapshot.boss.max_hp||snapshot.boss.maxHp)||1))); onlineCtx.fillStyle=toRGB(RED); roundRect(onlineCtx,WIDTH/2-318,54,636*hp,24,8); onlineCtx.fill(); textCenter(onlineCtx,`DER WÄCHTER: ${Math.max(0,Math.floor(snapshot.boss.hp||0))} / ${Math.floor(snapshot.boss.max_hp||snapshot.boss.maxHp||0)}`,'26px Arial',toRGB(WHITE),WIDTH/2,22); }
-    onlineCtx.restore();
-};
-window.UltimateArenaOriginal.createOnlineBridge = function(options={}) {
-    const modeMap = {'arena-catch':0,'arena-zombie':2,'arena-boss':4};
-    const bridge = {active:true,modeIndex:Number.isInteger(options.modeIndex)?options.modeIndex:(modeMap[options.mode]??0),dirs:[[0,0],[0,0]],onSnapshot:typeof options.onSnapshot==='function'?options.onSnapshot:()=>{}};
+    if(!player1 || !player2 || mode_idx !== mode) { mode_idx = mode; p2_is_bot = false; startGame(); }
+    map_idx = Number.isInteger(snapshot.mapIndex) && MAPS[snapshot.mapIndex] ? snapshot.mapIndex : 0;
+    obstacles = MAPS[map_idx].walls.slice();
+    player1 = restoreOnlinePlayer(snapshot.players[0], 0);
+    player2 = restoreOnlinePlayer(snapshot.players[1], 1);
+    powerups = (snapshot.powerups || []).map(item => Object.assign(new PowerUp(obstacles, mode_idx), item));
+    weapons = (snapshot.weapons || []).map(item => Object.assign(new WeaponDrop(obstacles), item));
+    zombies = (snapshot.zombies || []).map(item => Object.assign(new Zombie(Number(item.x)||0, Number(item.y)||0), item));
+    boss_projs = (snapshot.projectiles || []).map(item => Object.assign(new BossProjectile(Number(item.x)||0, Number(item.y)||0, Number(item.vx)||0, Number(item.vy)||0), item));
+    attacks = (snapshot.attacks || []).map(item => Object.assign(new PlayerAttack(item.type, Number(item.x)||0, Number(item.y)||0), item));
+    boss = snapshot.boss ? Object.assign(new Boss(Number(snapshot.boss.x)||0, Number(snapshot.boss.y)||0), {...snapshot.boss, max_hp:Number(snapshot.boss.maxHp ?? snapshot.boss.max_hp)||undefined}) : null;
+    boss_active = !!boss; boss_defeated = !boss && mode_idx !== 0 && snapshot.result === 'won';
+    catcher_idx = Number.isInteger(snapshot.catcher) ? snapshot.catcher : -1;
+    survived_time = Number(snapshot.elapsed)||0; time_left = Math.max(0, GAME_TIME-survived_time);
+    if(snapshot.state === 'GAME_OVER') { state = 'GAME_OVER'; winner_text = snapshot.result === 'won' ? 'IHR GEWINNT!' : snapshot.result === 'draw' ? 'Unentschieden!' : 'Runde beendet'; winner_color = snapshot.result === 'won' ? YELLOW : snapshot.result === 'draw' ? WHITE : RED; }
+    else if(snapshot.state === 'PAUSED') state = 'PAUSED';
+    else state = 'PLAYING';
+}
+window.UltimateArenaOriginal.getCanvas = () => canvas;
+window.UltimateArenaOriginal.resizeCanvas = () => resize();
+window.UltimateArenaOriginal.applyOnlineSnapshot = applyOnlineArenaSnapshot;
+function makeOnlineBridge(options={}, remoteOnly=false) {
+    const bridge = {active:true,remoteOnly,modeIndex:onlineMode(options),dirs:[[0,0],[0,0]],onSnapshot:typeof options.onSnapshot==='function'?options.onSnapshot:()=>{}};
     onlineArenaBridge=bridge;
     bridge.directions=player=>bridge.dirs[player]||[0,0];
     bridge.setDirection=(player,dir)=>{bridge.dirs[player]=Array.isArray(dir)?[Number(dir[0])||0,Number(dir[1])||0]:[0,0];};
     bridge.start=()=>{if(!bridge.active)return;mode_idx=bridge.modeIndex;p2_is_bot=false;startGame();};
+    bridge.applySnapshot=snapshot=>{if(bridge.active)applyOnlineArenaSnapshot(snapshot);};
     bridge.pause=()=>{if(bridge.active&&state==='PLAYING'){state='PAUSED';pause_start_tick=Date.now();}};
     bridge.resume=()=>{if(bridge.active&&state==='PAUSED'){state='PLAYING';paused_time_total+=Date.now()-pause_start_tick;}};
-    bridge.stop=()=>{bridge.active=false;if(onlineArenaBridge===bridge)onlineArenaBridge=null;if(state==='PLAYING'||state==='PAUSED'||state==='GAME_OVER')state='HUB';};
+    bridge.stop=()=>{bridge.active=false;if(onlineArenaBridge===bridge)onlineArenaBridge=null;if(['ONLINE','PLAYING','PAUSED','GAME_OVER'].includes(state))state='HUB';};
     bridge.snapshot=()=>serializeOnlineArena();
     return bridge;
-};
+}
+window.UltimateArenaOriginal.createOnlineBridge = options => makeOnlineBridge(options, false);
+window.UltimateArenaOriginal.attachOnlineBridge = options => makeOnlineBridge(options, true);
 
 let lastTime = performance.now();
 let deltaAccumulator = 0;
@@ -3679,7 +3682,7 @@ window.HubOnlineConfig = {
 
 </script>
 <script>
-/* Online Rally: inputs go to the authoritative server; only snapshots are rendered. */
+/* Online rooms use the existing game models and the original Arena canvas. */
 (function(root){
   'use strict';
   const CODE=/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/,TOKEN=/^[a-f0-9]{48}$/,SESSION='ua_online_session';
@@ -3752,17 +3755,17 @@ window.HubOnlineConfig = {
     }
     c.fillStyle='#071426';c.fillRect(0,0,g.w,g.h);
   }
-  function drawOnlineArena(c,g,slot,t){
-    if(root.UltimateArenaOriginal?.renderSnapshot){root.UltimateArenaOriginal.renderSnapshot(c,{...g,players:(g.players||[]).map((p,i)=>({...p,base_color:p.base_color||[i?70:70,i?225:160,i?120:255],skin:p.skin||['Kreis','Quadrat'][i]}))},t);return;}
-    c.clearRect(0,0,c.canvas.width,c.canvas.height);
-    c.fillStyle='#121218';c.fillRect(0,0,c.canvas.width,c.canvas.height);
-    onlineText(c,'Original Arena wird geladen …',c.canvas.width/2,c.canvas.height/2,22,'#f2f7ff');
-  }  class View {
+  class View {
     constructor(options={}){
       this.options=options;this.closed=false;this.code=String(options.code||'').toUpperCase();this.gameChoice=options.game||'rally';this.currentGame=this.gameChoice;this.keys=new Set();this.target=null;this.pointerTarget=null;this.pointerStart=null;this.pointer=null;this.snakeDir=['right','left'];this.arenaDirs=[[0,0],[0,0]];this.originalArena=null;this.originalRound='';this.originalSnapshotAt=0;this.selected=0;this.padIndex=null;this.padButtons=[];this.listeners=[];this.signature='';this.connection='offline';this.config=null;this.loading=true;this.error='';this.confirm=false;this.receivedAt=0;this.resultIds=new Set();this.drawGame=new root.ArcadeGames.Rally();this.previous=null;this.qr='';this.lastInput=0;
       this.host=this.el('section',undefined,document.body,'arcade-view online-view');this.host.setAttribute('role','dialog');this.host.setAttribute('aria-modal','true');this.host.setAttribute('aria-label',this.tr('title'));
       this.toolbar=this.el('nav',undefined,this.host,'arcade-toolbar');this.button(this.tr('hub'),()=>this.requestExit(),this.toolbar);this.pauseButton=this.button(this.tr('pause'),()=>this.pause(),this.toolbar);this.muteButton=this.button(this.tr(options.audio?.getSettings().muted?'soundOn':'mute'),()=>{const a=options.audio;a?.setSettings({muted:!a.getSettings().muted});this.muteButton.textContent=this.tr(a?.getSettings().muted?'soundOn':'mute');},this.toolbar);
-      this.stage=this.el('div',undefined,this.host,'arcade-stage');this.canvas=this.el('canvas',undefined,this.stage);this.canvas.width=600;this.canvas.height=800;this.ctx=this.canvas.getContext('2d');this.canvas.tabIndex=0;this.canvas.setAttribute('aria-label',this.tr('title'));
+      this.usesOriginalArenaCanvas=String(this.gameChoice).startsWith('arena');
+      if(this.usesOriginalArenaCanvas)this.host.classList.add('online-original-arena');
+      this.stage=this.el('div',undefined,this.host,'arcade-stage');
+      if(this.usesOriginalArenaCanvas&&root.UltimateArenaOriginal?.getCanvas){this.canvas=root.UltimateArenaOriginal.getCanvas();this.stage.hidden=true;}
+      else {this.canvas=this.el('canvas',undefined,this.stage);this.canvas.width=600;this.canvas.height=800;}
+      this.ctx=this.canvas.getContext('2d');this.canvas.tabIndex=0;this.canvas.setAttribute('aria-label',this.tr('title'));
       this.overlay=this.el('div',undefined,this.host,'arcade-overlay');this.status=this.el('p','',this.host,'online-status');this.status.setAttribute('role','status');this.status.setAttribute('aria-live','polite');this.status.setAttribute('aria-label',this.tr('status'));
       this.resizeQueued=false;const queueResize=()=>{if(this.resizeQueued)return;this.resizeQueued=true;requestAnimationFrame(()=>{this.resizeQueued=false;if(!this.closed)this.resize();});};
       this.listen(window,'resize',queueResize);this.listen(window,'orientationchange',queueResize);if(window.visualViewport){this.listen(window.visualViewport,'resize',queueResize);this.listen(window.visualViewport,'scroll',queueResize);}this.listen(window,'blur',()=>this.pause());this.listen(document,'visibilitychange',()=>{if(document.hidden)this.pause();else queueResize();});this.listen(window,'pagehide',()=>this.close(false));
@@ -3790,19 +3793,24 @@ window.HubOnlineConfig = {
     connect(create=false){if(!this.client)return;const code=String(this.codeInput?.value||this.code).trim().toUpperCase();if(!create&&!CODE.test(code)){this.error='invalid_code';this.refresh();return;}this.error='';this.client.connect(create?'create':'join',create?{game:this.gameChoice==='arena'?'arena-catch':this.gameChoice}:{code});}
     syncOriginalArena(s){
       const type=s?.gameType||this.currentGame, isArena=type.startsWith('arena-'), slot=this.client?.joined?.slot;
-      if(!isArena||slot===undefined||['playing','countdown','paused'].includes(s.phase)===false){if(this.originalArena){this.originalArena.stop?.();this.originalArena=null;}return;}
-      if(slot===0&&root.UltimateArenaOriginal?.createOnlineBridge){
+      if(!isArena||slot===undefined||s.phase==='lobby'){if(this.originalArena){this.originalArena.stop?.();this.originalArena=null;}return;}
+      if(root.UltimateArenaOriginal?.createOnlineBridge&&root.UltimateArenaOriginal?.attachOnlineBridge){
         const id=`${s.code}:${s.round}:${type}`;
         if(s.phase==='playing'&&(!this.originalArena||this.originalRound!==id)){
-          this.originalArena?.stop?.();this.originalRound=id;this.originalArena=root.UltimateArenaOriginal.createOnlineBridge({mode:type,onSnapshot:snapshot=>{const now=performance.now();if(now-this.originalSnapshotAt<45)return;this.originalSnapshotAt=now;this.client?.send('snapshot',{snapshot});}});this.originalArena.start?.();
+          this.originalArena?.stop?.();this.originalRound=id;
+          const options={mode:type};
+          if(slot===0)options.onSnapshot=snapshot=>{const now=performance.now();if(now-this.originalSnapshotAt<45)return;this.originalSnapshotAt=now;this.client?.send('snapshot',{snapshot});};
+          this.originalArena=slot===0?root.UltimateArenaOriginal.createOnlineBridge(options):root.UltimateArenaOriginal.attachOnlineBridge(options);
+          this.originalArena.start?.();
         }
         if(!this.originalArena)return;
+        if(slot===1&&s.game)this.originalArena.applySnapshot?.(s.game);
         if(s.phase==='paused'||s.phase==='countdown')this.originalArena.pause?.();
         else if(s.phase==='playing')this.originalArena.resume?.();
-        const remote=s.game?.inputs?.[1];if(remote)this.originalArena.setDirection?.(1,[remote.dx,remote.dy]);
+        const remote=s.game?.inputs?.[1];if(slot===0&&remote)this.originalArena.setDirection?.(1,[remote.dx,remote.dy]);
       }
     }
-    accept(s){this.currentGame=s.gameType||this.currentGame||'rally';this.previous=this.clientPrevious||s;this.clientPrevious=s;this.receivedAt=performance.now();this.syncOriginalArena(s);
+    accept(s){this.currentGame=s.gameType||this.currentGame||'rally';if(this.currentGame.startsWith('arena-')&&!this.usesOriginalArenaCanvas&&root.UltimateArenaOriginal?.getCanvas){this.usesOriginalArenaCanvas=true;this.host.classList.add('online-original-arena');this.stage.hidden=true;this.canvas=root.UltimateArenaOriginal.getCanvas();this.ctx=this.canvas.getContext('2d');this.resize();}this.previous=this.clientPrevious||s;this.clientPrevious=s;this.receivedAt=performance.now();this.syncOriginalArena(s);
       if(s.phase!=='playing')this.clearInput();const id=s.code+':'+s.round;
       if(s.phase==='over'&&!this.resultIds.has(id)){this.resultIds.add(id);const slot=this.client.joined.slot,coop=(s.gameType||this.currentGame).startsWith('arena-')&&(s.gameType||this.currentGame)!=='arena-catch';this.options.onRoundEnd?.({won:coop?s.game.result==='won':s.game.winner===slot,score:s.game.scores[slot],opponent:s.game.scores[1-slot],seconds:Math.floor(s.game.elapsed)});}
       this.refresh();
@@ -3828,11 +3836,12 @@ window.HubOnlineConfig = {
       if(t-this.lastInput>=50&&this.overlay.hidden){this.lastInput=t;const type=this.currentGame;if(type==='snake')this.client?.input(0,null,{dir:this.snakeDir[this.client?.joined?.slot||0]});else if(type.startsWith('arena-')){const pt=this.pointerTarget;let dx=axis,dy2=dy;if(!dx&&!dy2&&pt){dx=pt.x-.5;dy2=pt.y-.5;const d=Math.hypot(dx,dy2)||1;dx/=d;dy2/=d;}const slot=this.client?.joined?.slot||0;this.arenaDirs[slot]=[dx,dy2];this.originalArena?.setDirection?.(slot,[dx,dy2]);this.client?.input(axis,null,{dx,dy:dy2,targetX:pt?.x,targetY:pt?.y,fire});}else this.client?.input(axis,axis?null:this.target);}
     }
     resize(){
+      if(this.usesOriginalArenaCanvas){root.UltimateArenaOriginal?.resizeCanvas?.();return;}
       const viewport=window.visualViewport;
       const vw=Math.max(1,Number(viewport?.width)||Number(document.documentElement?.clientWidth)||window.innerWidth||1);
       const vh=Math.max(1,Number(viewport?.height)||Number(document.documentElement?.clientHeight)||window.innerHeight||1);
       const landscape=vw>vh*1.15;
-      this.host.className='arcade-view online-view'+(landscape?' online-landscape':'');
+      this.host.className='arcade-view online-view'+(landscape?' online-landscape':'')+(this.usesOriginalArenaCanvas?' online-original-arena':'');
       const hostRect=this.host.getBoundingClientRect();
       const style=typeof getComputedStyle==='function'?getComputedStyle(this.host):{paddingLeft:'0',paddingRight:'0',paddingTop:'0',paddingBottom:'0'};
       const padX=(parseFloat(style.paddingLeft)||0)+(parseFloat(style.paddingRight)||0);
@@ -3852,7 +3861,7 @@ window.HubOnlineConfig = {
       Object.assign(this.canvas.style,{width:width+'px',height:height+'px'});
       Object.assign(this.stage.style,{width:width+'px',height:height+'px',maxWidth:'100%',maxHeight:'100%',margin:'0 auto',overflow:'hidden'});
     }
-    draw(t){const s=this.client?.state,m=this.drawGame,slot=this.client?.joined?.slot||0,flip=slot===1;if(!s)return;const type=s.gameType||this.currentGame;const baseW=type.startsWith('arena-')?1920:type==='snake'?1100:600,baseH=type.startsWith('arena-')?1080:type==='snake'?650:800;if(this.canvas.width!==baseW||this.canvas.height!==baseH){this.canvas.width=baseW;this.canvas.height=baseH;this.resize();}if(type==='rally'){const alpha=this.previous?.round===s.round&&this.previous?.phase===s.phase?Math.min(1,Math.max(0,(t-this.receivedAt)/50)):1;const a=this.previous?.game||s.game;const serverIndex=i=>flip?1-i:i;const serverY=y=>flip?800-y:y;m.paddles=[0,1].map(i=>{const si=serverIndex(i);return a.paddles[si]+(s.game.paddles[si]-a.paddles[si])*alpha;});const jump=Math.abs(s.game.ball.y-a.ball.y)>150||s.game.wait>0;m.ball={...s.game.ball,x:jump?s.game.ball.x:a.ball.x+(s.game.ball.x-a.ball.x)*alpha,y:serverY(jump?s.game.ball.y:a.ball.y+(s.game.ball.y-a.ball.y)*alpha)};m.scores=[0,1].map(i=>s.game.scores[serverIndex(i)]);m.phase=s.phase;m.wait=s.game.wait;root.ArcadeGames.render(this.ctx,m,'rally',t/1000,this.options.motion?.()!==false);return;}if(type==='snake')drawOnlineSnake(this.ctx,s.game,slot,t/1000);else drawOnlineArena(this.ctx,s.game,slot,t/1000);}
+    draw(t){const s=this.client?.state,m=this.drawGame,slot=this.client?.joined?.slot||0,flip=slot===1;if(!s)return;const type=s.gameType||this.currentGame;if(type.startsWith('arena-'))return;const baseW=type==='snake'?1100:600,baseH=type==='snake'?650:800;if(this.canvas.width!==baseW||this.canvas.height!==baseH){this.canvas.width=baseW;this.canvas.height=baseH;this.resize();}if(type==='rally'){const alpha=this.previous?.round===s.round&&this.previous?.phase===s.phase?Math.min(1,Math.max(0,(t-this.receivedAt)/50)):1;const a=this.previous?.game||s.game;const serverIndex=i=>flip?1-i:i;const serverY=y=>flip?800-y:y;m.paddles=[0,1].map(i=>{const si=serverIndex(i);return a.paddles[si]+(s.game.paddles[si]-a.paddles[si])*alpha;});const jump=Math.abs(s.game.ball.y-a.ball.y)>150||s.game.wait>0;m.ball={...s.game.ball,x:jump?s.game.ball.x:a.ball.x+(s.game.ball.x-a.ball.x)*alpha,y:serverY(jump?s.game.ball.y:a.ball.y+(s.game.ball.y-a.ball.y)*alpha)};m.scores=[0,1].map(i=>s.game.scores[serverIndex(i)]);m.phase=s.phase;m.wait=s.game.wait;root.ArcadeGames.render(this.ctx,m,'rally',t/1000,this.options.motion?.()!==false);return;}if(type==='snake')drawOnlineSnake(this.ctx,s.game,slot,t/1000);}
     refresh(){if(this.closed)return;const s=this.client?.state,j=this.client?.joined,phase=s?.phase||'lobby',key=[this.loading,!!this.config,this.connection,this.error,this.gameChoice,this.currentGame,j?.code,j?.slot,phase,s?.round,s?.countdown,s?.players?.map(p=>p?[p.connected,p.ready,p.away].join(''):'').join('|'),this.qr,this.confirm].join('/');
       this.pauseButton.hidden=!j||phase!=='playing';this.overlay.hidden=!!j&&phase==='playing'&&this.connection==='connected'&&!this.confirm;
       const seconds=Math.max(0,s?.remaining||0),status=j?`${this.tr('you')} · ${this.tr('bottom')} · ${this.tr(this.connection)}${this.ping!==undefined?' · '+this.ping+' ms':''} · ${this.tr('expiry')} ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`:this.tr(this.loading?'loading':this.connection);if(this.status.textContent!==status)this.status.textContent=status;
@@ -4885,7 +4894,7 @@ window.HubOnlineConfig = {
     .arcade-toolbar{display:flex;justify-content:center;gap:7px;flex-wrap:wrap;max-width:100%;min-width:0;padding:8px;box-sizing:border-box;flex-shrink:0}
     .arcade-stage{position:relative;flex:0 0 auto;min-width:0;min-height:0;border:1px solid #314660;border-radius:18px;overflow:hidden;box-sizing:border-box}
     .arcade-stage canvas{position:static;display:block;touch-action:none;max-width:100%;max-height:100%}
-    .online-view{gap:0}.online-view .arcade-stage{margin-inline:auto}
+    .online-view{gap:0}.online-view .arcade-stage{margin-inline:auto}.online-original-arena{background:transparent!important;pointer-events:none}.online-original-arena .arcade-toolbar,.online-original-arena .online-status,.online-original-arena .arcade-overlay{pointer-events:auto}.online-original-arena .arcade-toolbar{position:fixed;top:max(10px,env(safe-area-inset-top));right:max(10px,env(safe-area-inset-right));z-index:3}
     .arcade-overlay{position:fixed;inset:0;overflow:auto;touch-action:pan-y;z-index:2;background:#071020d9;padding:max(20px,env(safe-area-inset-top)) 16px max(20px,env(safe-area-inset-bottom));display:flex;align-items:safe center;justify-content:center;box-sizing:border-box;backdrop-filter:blur(8px)}
     .arcade-sheet{box-sizing:border-box;margin:auto;width:100%;max-width:510px;background:linear-gradient(150deg,#1d344b,#111c33);padding:clamp(20px,4vw,40px);border:1px solid #486384;border-radius:25px;box-shadow:0 24px 80px #0006}
     .arcade-sheet small,.device-screen small{color:#8fe1dc;letter-spacing:.16em;font-weight:700;font-size:12px}
