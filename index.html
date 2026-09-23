@@ -1055,6 +1055,7 @@ let state = "HUB"; // Startet im Hub-Screen!
 // Online sessions use this same Arena state machine. The room transport only
 // supplies the two input vectors and carries the snapshot produced below.
 let onlineArenaBridge = null;
+let onlineArenaLobby = null;
 let highscores = load_highscores();
 let stats = load_stats();
 if(stats.mouse_ctrl === undefined) stats.mouse_ctrl = true;
@@ -1632,7 +1633,9 @@ function draw() {
         btnState.start = drawAnimatedButton(ctx, btns.start, "SPIEL STARTEN", mousePos, btnState.start, "start");
         
 
-        textCenter(ctx, "Spieler 1", "bold 34px Arial", toRGB(WHITE), p1cx, 766);
+        const onlineP1 = onlineArenaLobby?.players?.[0];
+        const onlineP2 = onlineArenaLobby?.players?.[1];
+        textCenter(ctx, onlineP1?.name || "Spieler 1", "bold 34px Arial", toRGB(WHITE), p1cx, 766);
         textCenter(ctx, "WASD  /  Maus  /  Gamepad 1", "26px Arial", "rgb(185,188,210)", p1cx, 808);
         blitGlow(ctx, p1cx, 888, 118, COLORS[p1_color_idx][1], 70);
         drawSkinShape(ctx, p1cx, 888, 54, COLORS[p1_color_idx][1], SKINS[p1_skin_idx]); drawSkinShape(ctx, p1cx, 888, 54, WHITE, SKINS[p1_skin_idx], 3);
@@ -1640,15 +1643,25 @@ function draw() {
         drawSmallSelector(ctx, p1cx, 1010, `Farbe: ${COLORS[p1_color_idx][0]}`, btns.p1cL, btns.p1cR, mousePos);
 
         if(![1,3].includes(mode_idx)) {
-            let p2t = p2_is_bot ? `Spieler 2: COMPUTER (${BotController.LEVELS[bot_level].name})` : "Spieler 2: MENSCH  (Taste P)";
+            let p2t = onlineP2 ? (onlineP2.name || "Spieler 2") : (p2_is_bot ? `Spieler 2: COMPUTER (${BotController.LEVELS[bot_level].name})` : "Spieler 2: MENSCH  (Taste P)");
             btnState.p2type = drawAnimatedButton(ctx, btns.p2type, p2t, mousePos, btnState.p2type);
-            textCenter(ctx, p2_is_bot?"Steuert sich selbst - Stärke in den Einstellungen":"Pfeiltasten  /  Gamepad 2", "26px Arial", "rgb(185,188,210)", p2cx, 816, 620);
+            textCenter(ctx, onlineP2 ? (onlineP2.ready ? "BEREIT · ONLINE" : "WARTET · ONLINE") : (p2_is_bot?"Steuert sich selbst - Stärke in den Einstellungen":"Pfeiltasten  /  Gamepad 2"), "26px Arial", "rgb(185,188,210)", p2cx, 816);
             blitGlow(ctx, p2cx, 888, 118, COLORS[p2_color_idx][1], 70);
             drawSkinShape(ctx, p2cx, 888, 54, COLORS[p2_color_idx][1], SKINS[p2_skin_idx]); drawSkinShape(ctx, p2cx, 888, 54, WHITE, SKINS[p2_skin_idx], 3);
             drawSmallSelector(ctx, p2cx, 952, `Skin: ${SKINS[p2_skin_idx]}`, btns.p2sL, btns.p2sR, mousePos);
             drawSmallSelector(ctx, p2cx, 1010, `Farbe: ${COLORS[p2_color_idx][0]}`, btns.p2cL, btns.p2cR, mousePos);
         } else textCenter(ctx, "--- Spieler 2 inaktiv ---", "bold 34px Arial", toRGB(NEUTRAL_COLOR), p2cx, 880);
 
+        if(onlineArenaLobby?.active) {
+            drawPanel(ctx, new Rect(cx-430, 24, 860, 94), 205, 18);
+            const modeName = ({'arena-catch':'FANGEN','arena-zombie':'ZOMBIE-KOOP','arena-boss':'BOSSKAMPF'})[onlineArenaLobby.gameType] || 'ONLINE';
+            textCenter(ctx, `ONLINE-RAUM ${onlineArenaLobby.code||''} · ${modeName}`, "bold 28px Arial", toRGB(CYAN), cx, 54);
+            textCenter(ctx, onlineArenaLobby.phase==='lobby' ? "Beide wählen denselben Modus und drücken Bereit" : "Verbundene Original-Arena", "22px Arial", toRGB(WHITE), cx, 91);
+            blitGlow(ctx, 220, 220, 70, COLORS[p1_color_idx][1], 38); drawSkinShape(ctx, 220, 220, 34, COLORS[p1_color_idx][1], SKINS[p1_skin_idx]);
+            blitGlow(ctx, WIDTH-220, 220, 70, COLORS[p2_color_idx][1], 38); drawSkinShape(ctx, WIDTH-220, 220, 34, COLORS[p2_color_idx][1], SKINS[p2_skin_idx]);
+            textCenter(ctx, onlineP1?.name || 'Spieler 1', "bold 24px Arial", toRGB(WHITE), 220, 274);
+            textCenter(ctx, onlineP2?.name || 'Spieler 2', "bold 24px Arial", toRGB(WHITE), WIDTH-220, 274);
+        }
         btnState.backToHub = drawAnimatedButton(ctx, btns.backToHub, "Zurück zum Hub", mousePos, btnState.backToHub);
         btnState.highscore = drawAnimatedButton(ctx, btns.hs, "Highscores", mousePos, btnState.highscore);
         btnState.achievements = drawAnimatedButton(ctx, btns.ach, "Erfolge", mousePos, btnState.achievements);
@@ -1770,6 +1783,16 @@ function applyOnlineArenaSnapshot(snapshot) {
 window.UltimateArenaOriginal.getCanvas = () => canvas;
 window.UltimateArenaOriginal.resizeCanvas = () => resize();
 window.UltimateArenaOriginal.applyOnlineSnapshot = applyOnlineArenaSnapshot;
+window.UltimateArenaOriginal.setOnlineLobby = info => {
+    onlineArenaLobby = info && info.active ? info : null;
+    if(onlineArenaLobby) {
+        const modeMap = {'arena-catch':0,'arena-zombie':2,'arena-boss':4};
+        if(Number.isInteger(modeMap[onlineArenaLobby.gameType])) mode_idx = modeMap[onlineArenaLobby.gameType];
+        p2_is_bot = false;
+        if(state !== 'PLAYING' && state !== 'PAUSED' && state !== 'GAME_OVER') state = 'MENU';
+    }
+};
+window.UltimateArenaOriginal.clearOnlineLobby = () => { onlineArenaLobby = null; if(state === 'MENU' && !onlineArenaBridge) state = 'HUB'; };
 function makeOnlineBridge(options={}, remoteOnly=false) {
     const bridge = {active:true,remoteOnly,modeIndex:onlineMode(options),dirs:[[0,0],[0,0]],onSnapshot:typeof options.onSnapshot==='function'?options.onSnapshot:()=>{}};
     onlineArenaBridge=bridge;
@@ -3698,7 +3721,7 @@ window.HubOnlineConfig = {
     if(!g||g.w!==expected[0]||g.h!==expected[1]||!Array.isArray(g.scores)||g.scores.length!==2||!g.scores.every(Number.isFinite)||!Number.isFinite(g.elapsed)||(g.winner!==null&&!([0,1].includes(g.winner))))return false;
     if(type==='rally')return Array.isArray(g.paddles)&&g.paddles.length===2&&g.paddles.every(n=>n>=0&&n<=600)&&g.scores.every(n=>Number.isInteger(n)&&n>=0&&n<=7)&&['x','y','vx','vy'].every(k=>Number.isFinite(g.ball?.[k])&&Math.abs(g.ball[k])<3000)&&['wait','hits','longest'].every(k=>Number.isFinite(g[k]));
     if(type==='snake')return Number.isInteger(g.cols)&&Number.isInteger(g.rows)&&g.settings&&Array.isArray(g.snakes)&&(g.snakes.length===0||g.snakes.length===2&&g.snakes.every(s=>Array.isArray(s.positions)&&s.positions.length<500&&s.positions.every(p=>Array.isArray(p)&&p.length===2&&p.every(Number.isInteger))&&typeof s.dead==='boolean'&&Number.isFinite(s.score)))&&(g.food===null||g.food&&Array.isArray(g.food.position)&&g.food.position.length===2&&g.food.position.every(Number.isInteger));
-    if(type.startsWith('arena-'))return Array.isArray(g.players)&&(g.players.length===0||g.players.length===2&&g.players.every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)&&typeof p.alive==='boolean'&&Number.isInteger(p.lives)&&Number.isFinite(p.score)))&&Array.isArray(g.zombies)&&g.zombies.length<100&&g.zombies.every(z=>Number.isFinite(z.x)&&Number.isFinite(z.y))&&(g.boss===null||g.boss&&['x','y','hp','maxHp'].every(k=>Number.isFinite(g.boss[k])))&&Number.isInteger(g.catcher)&&['won','lost','draw',null].includes(g.result);
+    if(type.startsWith('arena-'))return Array.isArray(g.players)&&(g.players.length===0||g.players.length===2&&g.players.every(p=>Number.isFinite(p.x)&&Number.isFinite(p.y)&&typeof p.alive==='boolean'&&Number.isFinite(p.score)))&&Array.isArray(g.zombies)&&g.zombies.length<100&&g.zombies.every(z=>Number.isFinite(z.x)&&Number.isFinite(z.y))&&(g.boss===null||g.boss&&['x','y','hp','maxHp'].every(k=>Number.isFinite(g.boss[k])))&&Number.isInteger(g.catcher)&&['won','lost','draw',null].includes(g.result);
     return false;
   }
   class Client {
@@ -3731,6 +3754,8 @@ window.HubOnlineConfig = {
       ws.onerror=()=>{if(this.socket===ws)this.emit('onError','network');};
       ws.onclose=()=>{if(this.socket!==ws||this.closed)return;this.clearTimers();this.socket=null;if(this.joined){if(!this.deadline)this.deadline=Date.now()+30000;if(Date.now()<this.deadline){this.emit('onConnection','reconnecting');this.retry=this.env.setTimeout(()=>this.connect('resume',{code:this.joined.code,token:this.joined.token}),Math.min(4000,1000+this.attempt++*500));return;}this.clearSaved();this.joined=null;this.emit('onClosed','disconnected');}else this.emit('onConnection','offline');};
     }
+    profile(name){const value=String(name??'').trim().slice(0,18);if(this.socket?.readyState===1)this.send('profile',{name:value});}
+    vote(game){if(this.socket?.readyState===1)this.send('vote',{game});}
     input(axis=0,target=null,extra={}){if(this.state?.phase==='playing'){const payload={seq:++this.seq,axis:Math.max(-1,Math.min(1,axis||0)),target:Number.isFinite(target)?Math.max(0,Math.min(1,target)):null};for(const key of ['dx','dy','targetX','targetY'])if(Number.isFinite(extra[key]))payload[key]=Math.max(-1,Math.min(1,extra[key]));if(['up','down','left','right'].includes(extra.dir))payload.dir=extra.dir;if(extra.fire===true)payload.fire=true;this.send('input',payload);}}
     clearTimers(){for(const k of ['retry','timeout']){if(this[k]!==null)this.env.clearTimeout(this[k]);this[k]=null;}if(this.heartbeat!==null)this.env.clearInterval(this.heartbeat);this.heartbeat=null;}
     disconnect(){this.clearTimers();const ws=this.socket;this.socket=null;ws?.close();if(!this.closed)this.emit('onConnection','offline');}
@@ -3743,6 +3768,7 @@ window.HubOnlineConfig = {
     es:{title:'Neon Rally · En línea',intro:'Dos dispositivos. Una pista. Gana quien llegue a 7.',create:'Crear sala',join:'Unirse',code:'Código de sala',codeHint:'6 caracteres, por ejemplo ABC234',ready:'Listo',resume:'Listo para continuar',again:'Revancha · Listo',wait:'Esperando al segundo jugador',waitReady:'Ambos jugadores deben estar listos.',room:'Tu sala',you:'Eres el jugador',bottom:'abajo',top:'arriba',opponent:'oponente',connected:'Conectado',connecting:'Conectando …',reconnecting:'Conexión perdida. Reconectando …',offline:'Desconectado',pause:'Pausa',paused:'Partida en pausa',countdown:'Empieza pronto',won:'¡Has ganado!',lost:'Gana el otro jugador',copy:'Copiar invitación',copied:'Enlace copiado',copyHint:'Selecciona y copia el enlace',qr:'Escanea para unirte a esta sala',hub:'Centro de juegos',back:'Volver',exit:'¿Salir de la sala?',exitNote:'La sala se cerrará para ambos jugadores.',cancel:'Quedarse',leave:'Salir de la sala',unconfigured:'El modo en línea aún no está configurado. Hay que desplegar el servidor y conectarlo a este sitio.',notice:'Al unirte, tu dispositivo se conecta al servidor. Se procesan controles, puntos y un identificador temporal para la partida. Sin cuentas ni chat.',control:'A / D o flechas · Táctil: arrastrar · Mando: stick izquierdo · Esc / Start: pausa',expiry:'La sala caduca en',not_found:'Esta sala ya no existe.',invalid_code:'Introduce un código válido de 6 caracteres.',full:'La sala está llena.',busy:'Servidor lleno. Inténtalo más tarde.',rate:'Demasiados intentos. Espera un minuto.',expired:'Terminó el plazo de reconexión. Crea otra sala.',already_connected:'La sesión ya está conectada en otra pestaña.',network:'No se puede acceder al servidor. Revisa conexión y configuración.',protocol:'La versión del juego es diferente. Recarga la página.',left:'El otro jugador ha salido.',disconnected:'El otro jugador no volvió a tiempo.',closed:'La sala se ha cerrado.',error:'Esta acción no está disponible.',sound:'Sonido',mute:'Silenciar',soundOn:'Activar sonido',status:'Estado de sala',online:'Jugar en línea',loading:'Preparando conexión …'}
   };
   for(const [language,words] of Object.entries({de:['Noch nicht bereit','Diese Sitzung wurde in einem anderen Tab wiederverbunden.'],en:['Not ready yet','This session reconnected in another tab.'],fr:['Pas encore prêt','Cette session a été reconnectée dans un autre onglet.'],es:['Aún no está listo','Esta sesión se ha reconectado en otra pestaña.']})){COPY[language].notReady=words[0];COPY[language].replaced=words[1];}
+  for(const [language,words] of Object.entries({de:['Dein Name','Zum Beispiel Manuel'],en:['Your name','For example Alex'],fr:['Votre nom','Par exemple Alex'],es:['Tu nombre','Por ejemplo Alex']})){COPY[language].name=words[0];COPY[language].nameHint=words[1];}
   function onlineText(c,label,x,y,size,color='#eef6ff'){c.fillStyle=color;c.font=`700 ${size}px system-ui,Arial`;c.textAlign='center';c.textBaseline='middle';c.fillText(String(label),x,y);}
   function drawOnlineSnake(c,g,slot,t){
     const model={...g,settings:g.settings||{theme:0,grid:0,background:0},backgroundTheme:g.backgroundTheme,obstacleTheme:g.obstacleTheme,leaves:g.leaves||[],obstacles:g.obstacles||[],particles:g.particles||[],texts:g.texts||[],snakes:g.snakes||[],food:g.food||null,bonusFood:g.bonusFood||null};
@@ -3757,7 +3783,7 @@ window.HubOnlineConfig = {
   }
   class View {
     constructor(options={}){
-      this.options=options;this.closed=false;this.code=String(options.code||'').toUpperCase();this.gameChoice=options.game||'rally';this.currentGame=this.gameChoice;this.keys=new Set();this.target=null;this.pointerTarget=null;this.pointerStart=null;this.pointer=null;this.snakeDir=['right','left'];this.arenaDirs=[[0,0],[0,0]];this.originalArena=null;this.originalRound='';this.originalSnapshotAt=0;this.selected=0;this.padIndex=null;this.padButtons=[];this.listeners=[];this.signature='';this.connection='offline';this.config=null;this.loading=true;this.error='';this.confirm=false;this.receivedAt=0;this.resultIds=new Set();this.drawGame=new root.ArcadeGames.Rally();this.previous=null;this.qr='';this.lastInput=0;
+      this.options=options;this.closed=false;this.code=String(options.code||'').toUpperCase();this.autoJoin=options.autoJoin===true&&CODE.test(this.code);this.gameChoice=options.game||'rally';this.currentGame=this.gameChoice;this.playerName=String(options.name||'').trim().slice(0,18)||'Spieler';this.keys=new Set();this.target=null;this.pointerTarget=null;this.pointerStart=null;this.pointer=null;this.snakeDir=['right','left'];this.arenaDirs=[[0,0],[0,0]];this.originalArena=null;this.originalRound='';this.originalSnapshotAt=0;this.selected=0;this.padIndex=null;this.padButtons=[];this.listeners=[];this.signature='';this.connection='offline';this.config=null;this.loading=true;this.error='';this.confirm=false;this.receivedAt=0;this.resultIds=new Set();this.drawGame=new root.ArcadeGames.Rally();this.previous=null;this.qr='';this.lastInput=0;
       this.host=this.el('section',undefined,document.body,'arcade-view online-view');this.host.setAttribute('role','dialog');this.host.setAttribute('aria-modal','true');this.host.setAttribute('aria-label',this.tr('title'));
       this.toolbar=this.el('nav',undefined,this.host,'arcade-toolbar');this.button(this.tr('hub'),()=>this.requestExit(),this.toolbar);this.pauseButton=this.button(this.tr('pause'),()=>this.pause(),this.toolbar);this.muteButton=this.button(this.tr(options.audio?.getSettings().muted?'soundOn':'mute'),()=>{const a=options.audio;a?.setSettings({muted:!a.getSettings().muted});this.muteButton.textContent=this.tr(a?.getSettings().muted?'soundOn':'mute');},this.toolbar);
       this.usesOriginalArenaCanvas=String(this.gameChoice).startsWith('arena');
@@ -3786,14 +3812,16 @@ window.HubOnlineConfig = {
         }
         if(config.serverUrl){config.serverUrl=endpoint(config.serverUrl,root.location);const site=new URL(config.siteUrl||root.location.href);if(!['https:','http:'].includes(site.protocol)||site.username||site.password)throw Error();site.hash='';config.siteUrl=site.href;this.config=config;}
       }catch{}if(this.closed)return;this.loading=false;
-      if(this.config){this.client=new Client(this.config,{onConnection:s=>{this.connection=s;if(s!=='connected')this.clearInput();this.refresh();},onError:s=>{this.error=s;this.refresh();},onJoined:j=>{this.error='';this.code=j.code;this.qr='';this.refresh();},onQR:image=>{this.qr=image;this.refresh();},onClosed:s=>{this.error=s;this.qr='';this.confirm=false;this.clearInput();this.refresh();},onPing:ms=>{this.ping=ms;},onSound:e=>{this.options.onSound?.(e.name,e.player===this.client?.joined?.slot);},onState:s=>this.accept(s)});
-        const saved=this.client.saved();if(saved&&(!this.code||saved.code===this.code))this.client.connect('resume',{code:saved.code,token:saved.token});
+      if(this.config){this.client=new Client(this.config,{onConnection:s=>{this.connection=s;if(s!=='connected')this.clearInput();this.refresh();},onError:s=>{this.error=s;this.refresh();},onJoined:j=>{this.error='';this.code=j.code;this.qr='';this.client.profile(this.playerName);if(this.gameChoice==='arena')this.client.vote('arena-catch');this.refresh();},onQR:image=>{this.qr=image;this.refresh();},onClosed:s=>{this.error=s;this.qr='';this.confirm=false;this.clearInput();this.refresh();},onPing:ms=>{this.ping=ms;},onSound:e=>{this.options.onSound?.(e.name,e.player===this.client?.joined?.slot);},onState:s=>this.accept(s)});
+        const saved=this.client.saved();if(saved&&(!this.code||saved.code===this.code))this.client.connect('resume',{code:saved.code,token:saved.token});else if(this.autoJoin)this.client.connect('join',{code:this.code});
       }this.refresh();
     }
     connect(create=false){if(!this.client)return;const code=String(this.codeInput?.value||this.code).trim().toUpperCase();if(!create&&!CODE.test(code)){this.error='invalid_code';this.refresh();return;}this.error='';this.client.connect(create?'create':'join',create?{game:this.gameChoice==='arena'?'arena-catch':this.gameChoice}:{code});}
     syncOriginalArena(s){
       const type=s?.gameType||this.currentGame, isArena=type.startsWith('arena-'), slot=this.client?.joined?.slot;
-      if(!isArena||slot===undefined||s.phase==='lobby'){if(this.originalArena){this.originalArena.stop?.();this.originalArena=null;}return;}
+      if(!isArena||slot===undefined){if(this.originalArena){this.originalArena.stop?.();this.originalArena=null;}root.UltimateArenaOriginal?.clearOnlineLobby?.();return;}
+      root.UltimateArenaOriginal?.setOnlineLobby?.({active:true,code:s.code,gameType:type,phase:s.phase,players:s.players||[],round:s.round||0});
+      if(s.phase==='lobby'){if(this.originalArena){this.originalArena.stop?.();this.originalArena=null;}return;}
       if(root.UltimateArenaOriginal?.createOnlineBridge&&root.UltimateArenaOriginal?.attachOnlineBridge){
         const id=`${s.code}:${s.round}:${type}`;
         if(s.phase==='playing'&&(!this.originalArena||this.originalRound!==id)){
@@ -3862,7 +3890,7 @@ window.HubOnlineConfig = {
       Object.assign(this.stage.style,{width:width+'px',height:height+'px',maxWidth:'100%',maxHeight:'100%',margin:'0 auto',overflow:'hidden'});
     }
     draw(t){const s=this.client?.state,m=this.drawGame,slot=this.client?.joined?.slot||0,flip=slot===1;if(!s)return;const type=s.gameType||this.currentGame;if(type.startsWith('arena-'))return;const baseW=type==='snake'?1100:600,baseH=type==='snake'?650:800;if(this.canvas.width!==baseW||this.canvas.height!==baseH){this.canvas.width=baseW;this.canvas.height=baseH;this.resize();}if(type==='rally'){const alpha=this.previous?.round===s.round&&this.previous?.phase===s.phase?Math.min(1,Math.max(0,(t-this.receivedAt)/50)):1;const a=this.previous?.game||s.game;const serverIndex=i=>flip?1-i:i;const serverY=y=>flip?800-y:y;m.paddles=[0,1].map(i=>{const si=serverIndex(i);return a.paddles[si]+(s.game.paddles[si]-a.paddles[si])*alpha;});const jump=Math.abs(s.game.ball.y-a.ball.y)>150||s.game.wait>0;m.ball={...s.game.ball,x:jump?s.game.ball.x:a.ball.x+(s.game.ball.x-a.ball.x)*alpha,y:serverY(jump?s.game.ball.y:a.ball.y+(s.game.ball.y-a.ball.y)*alpha)};m.scores=[0,1].map(i=>s.game.scores[serverIndex(i)]);m.phase=s.phase;m.wait=s.game.wait;root.ArcadeGames.render(this.ctx,m,'rally',t/1000,this.options.motion?.()!==false);return;}if(type==='snake')drawOnlineSnake(this.ctx,s.game,slot,t/1000);}
-    refresh(){if(this.closed)return;const s=this.client?.state,j=this.client?.joined,phase=s?.phase||'lobby',key=[this.loading,!!this.config,this.connection,this.error,this.gameChoice,this.currentGame,j?.code,j?.slot,phase,s?.round,s?.countdown,s?.players?.map(p=>p?[p.connected,p.ready,p.away].join(''):'').join('|'),this.qr,this.confirm].join('/');
+    refresh(){if(this.closed)return;const s=this.client?.state,j=this.client?.joined,phase=s?.phase||'lobby',key=[this.loading,!!this.config,this.connection,this.error,this.gameChoice,this.currentGame,this.playerName,j?.code,j?.slot,phase,s?.round,s?.countdown,s?.players?.map(p=>p?[p.connected,p.ready,p.away,p.name,p.vote].join(''):'').join('|'),this.qr,this.confirm].join('/');
       this.pauseButton.hidden=!j||phase!=='playing';this.overlay.hidden=!!j&&phase==='playing'&&this.connection==='connected'&&!this.confirm;
       const seconds=Math.max(0,s?.remaining||0),status=j?`${this.tr('you')} · ${this.tr('bottom')} · ${this.tr(this.connection)}${this.ping!==undefined?' · '+this.ping+' ms':''} · ${this.tr('expiry')} ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`:this.tr(this.loading?'loading':this.connection);if(this.status.textContent!==status)this.status.textContent=status;
       if(key===this.signature)return;this.signature=key;this.selected=0;this.overlay.replaceChildren();if(this.overlay.hidden)return;
@@ -3879,8 +3907,10 @@ window.HubOnlineConfig = {
         if(this.connection!=='connected')this.el('p',this.tr(this.connection),card);
         this.el('p',this.tr('room'),card);const code=this.el('strong',j.code,card,'online-room-code');code.setAttribute('aria-label',this.tr('code')+' '+j.code);
         this.el('p',this.currentGame==='rally'?this.tr('you')+' '+this.tr('bottom')+' · '+this.tr('opponent')+' '+this.tr('top'):'Du bist markiert · der Gegner bleibt sichtbar',card);
-        const players=this.el('ul',undefined,card);for(let i=0;i<2;i++){const p=s?.players?.[i];this.el('li','P'+(i+1)+' · '+this.tr(!p||!p.connected?'offline':p.ready?'ready':'notReady'),players);}
+        const nameLabel=this.el('label',this.tr('name'),card);const nameInput=this.el('input',undefined,nameLabel);nameInput.value=this.playerName;nameInput.maxLength=18;nameInput.placeholder=this.tr('nameHint');nameInput.setAttribute('aria-label',this.tr('name'));nameInput.autocomplete='nickname';nameInput.addEventListener('input',()=>{this.playerName=nameInput.value.slice(0,18);this.client?.profile(this.playerName);});
+        const players=this.el('ul',undefined,card);for(let i=0;i<2;i++){const p=s?.players?.[i];const label=p?.name||('Spieler '+(i+1));this.el('li','P'+(i+1)+' · '+label+' · '+this.tr(!p||!p.connected?'offline':p.ready?'ready':'notReady'),players);}
         if(phase==='lobby'){
+          if(this.currentGame.startsWith('arena-')||this.gameChoice==='arena'){const voteTitle=this.el('p','Gemeinsam wählen:',card,'arcade-help');const row=this.el('div',undefined,card,'online-mode-picker');for(const [game,label] of [['arena-catch','Fangen'],['arena-zombie','Zombie-Koop'],['arena-boss','Bosskampf']]){const b=this.button(label,()=>this.client?.vote(game),row);b.className=s?.players?.[j.slot]?.vote===game?'primary':'';}this.el('p','Beide müssen denselben Modus wählen.',card,'arcade-help');}
           const invite=new URL(inviteUrl(this.config.siteUrl,j.code));const link=this.el('input',undefined,card);link.value=invite.href;link.readOnly=true;link.setAttribute('aria-label',this.tr('copy'));link.className='online-invite-input';
           const open=this.el('a',invite.href,card,'online-invite-link');open.href=invite.href;open.target='_blank';open.rel='noopener noreferrer';open.textContent=invite.href;
           if(this.qr){const image=this.el('img',undefined,card,'online-qr');image.src=this.qr;image.width=240;image.height=240;image.alt=this.tr('qr');}
@@ -3893,7 +3923,7 @@ window.HubOnlineConfig = {
       }
       this.menuControls()[0]?.focus();
     }
-    close(leave=true){if(this.closed)return;this.closed=true;this.abort?.abort();cancelAnimationFrame(this.raf);this.originalArena?.stop?.();this.originalArena=null;this.client?.destroy(leave);this.listeners.forEach(fn=>fn());this.host.remove();this.options.onPause?.();this.options.onExit?.();}
+    close(leave=true){if(this.closed)return;this.closed=true;this.abort?.abort();cancelAnimationFrame(this.raf);this.originalArena?.stop?.();this.originalArena=null;root.UltimateArenaOriginal?.clearOnlineLobby?.();this.client?.destroy(leave);this.listeners.forEach(fn=>fn());this.host.remove();this.options.onPause?.();this.options.onExit?.();}
   }
   const api={Client,View,COPY,endpoint,inviteUrl,validState,open:o=>new View(o)};
   if(typeof module==='object'&&module.exports)module.exports=api;else root.HubOnline=api;
@@ -4547,7 +4577,7 @@ window.HubOnlineConfig = {
     function openOnline(game='rally',code=''){
         if(CODE_SAFE(game)){code=game;game='rally';}
         if(onlineView)return;
-        go('ONLINE');onlineView=HubOnline.open({game,code,language:()=>HubI18n.language,audio:HubAudio,motion:()=>HubFeedback.getSettings().motion&&!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
+        go('ONLINE');onlineView=HubOnline.open({game,code,autoJoin:CODE_SAFE(code),language:()=>HubI18n.language,audio:HubAudio,motion:()=>HubFeedback.getSettings().motion&&!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
             onSound:(name,mine)=>{HubAudio.play(name);if(mine&&['rally_hit','rally_point','win'].includes(name))HubFeedback.pulse(name==='rally_hit'?'bounce':name==='win'?'win':'combo',[onlineView?.pad()]);},
             onPause:()=>HubFeedback.stop(),onExit:()=>{onlineView=null;go('HUB');},onRoundEnd:r=>{const key=onlineView.client.state.code+':'+onlineView.client.state.round;if(stats.online_last_result===key)return;stats.online_last_result=key;const gameType=onlineView.client.state.gameType||'rally';if(gameType==='rally'){stats.rally_games=(Number(stats.rally_games)||0)+1;stats.rally_online_games=(Number(stats.rally_online_games)||0)+1;if(r.won)stats.rally_online_wins=(Number(stats.rally_online_wins)||0)+1;}else if(gameType==='snake'){stats.snake_games=(Number(stats.snake_games)||0)+1;stats.snake_online_games=(Number(stats.snake_online_games)||0)+1;stats.snake_best=Math.max(Number(stats.snake_best)||0,Number(r.score)||0,Number(r.opponent)||0);}else{stats.arena_online_games=(Number(stats.arena_online_games)||0)+1;if(r.won)stats.arena_online_wins=(Number(stats.arena_online_wins)||0)+1;}save_stats(stats);}
         });
@@ -4894,7 +4924,7 @@ window.HubOnlineConfig = {
     .arcade-toolbar{display:flex;justify-content:center;gap:7px;flex-wrap:wrap;max-width:100%;min-width:0;padding:8px;box-sizing:border-box;flex-shrink:0}
     .arcade-stage{position:relative;flex:0 0 auto;min-width:0;min-height:0;border:1px solid #314660;border-radius:18px;overflow:hidden;box-sizing:border-box}
     .arcade-stage canvas{position:static;display:block;touch-action:none;max-width:100%;max-height:100%}
-    .online-view{gap:0}.online-view .arcade-stage{margin-inline:auto}.online-original-arena{background:transparent!important;pointer-events:none}.online-original-arena .arcade-toolbar,.online-original-arena .online-status,.online-original-arena .arcade-overlay{pointer-events:auto}.online-original-arena .arcade-toolbar{position:fixed;top:max(10px,env(safe-area-inset-top));right:max(10px,env(safe-area-inset-right));z-index:3}
+    .online-view{gap:0}.online-view .arcade-stage{margin-inline:auto}.online-original-arena{background:transparent!important;pointer-events:none}.online-original-arena .arcade-toolbar,.online-original-arena .online-status,.online-original-arena .arcade-overlay{pointer-events:auto}.online-original-arena .arcade-overlay{background:linear-gradient(90deg,rgba(7,16,32,.94),rgba(7,16,32,.7) 34%,rgba(7,16,32,.12) 70%,transparent);align-items:flex-start;justify-content:flex-start;padding:clamp(18px,4vw,48px)}.online-original-arena .arcade-sheet{width:min(390px,100%);margin:0;background:rgba(17,28,51,.78)}.online-original-arena .arcade-toolbar{position:fixed;top:max(10px,env(safe-area-inset-top));right:max(10px,env(safe-area-inset-right));z-index:3}
     .arcade-overlay{position:fixed;inset:0;overflow:auto;touch-action:pan-y;z-index:2;background:#071020d9;padding:max(20px,env(safe-area-inset-top)) 16px max(20px,env(safe-area-inset-bottom));display:flex;align-items:safe center;justify-content:center;box-sizing:border-box;backdrop-filter:blur(8px)}
     .arcade-sheet{box-sizing:border-box;margin:auto;width:100%;max-width:510px;background:linear-gradient(150deg,#1d344b,#111c33);padding:clamp(20px,4vw,40px);border:1px solid #486384;border-radius:25px;box-shadow:0 24px 80px #0006}
     .arcade-sheet small,.device-screen small{color:#8fe1dc;letter-spacing:.16em;font-weight:700;font-size:12px}
@@ -4908,7 +4938,7 @@ window.HubOnlineConfig = {
     .device-play{position:fixed;inset:0;z-index:5;pointer-events:none;color:white;font:600 14px system-ui}.device-play button{pointer-events:auto}.device-pause{position:absolute;right:max(12px,env(safe-area-inset-right));top:max(10px,env(safe-area-inset-top))}.device-hud{position:absolute;left:14px;top:22px;max-width:calc(100% - 120px);overflow-wrap:anywhere}.device-stick{position:absolute;bottom:max(18px,env(safe-area-inset-bottom));width:112px;height:112px;min-height:112px!important;border-radius:50%!important;background:radial-gradient(circle,#37627e 0 30%,#14283be6 31%)!important;border:2px solid #639eb6!important;touch-action:none!important;user-select:none;-webkit-user-select:none;box-shadow:0 6px 24px #0004}.device-stick:first-of-type{left:25px}.device-stick-p1{left:25px}.device-stick-p2{right:25px;border-color:#d7a0dd!important}.device-stick.active{background:radial-gradient(circle,#8dd5df 0 30%,#214964e6 31%)!important}.device-touch-hint{position:absolute;bottom:18px;width:100%;text-align:center;pointer-events:none;font-size:12px;color:#a0b5c8}
     .hub-game-toolbar button{min-height:44px!important}.device-game-menu .device-result{font-size:20px;color:#ffda91}.snake-touch-pair{display:flex;flex-wrap:wrap;justify-content:center;gap:6px}.snake-touch-pair button{min-width:44px;touch-action:manipulation}
     @media(max-width:960px){.device-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-    @media(max-width:560px){.device-grid{grid-template-columns:1fr;gap:16px}.device-head h1{font-size:34px}.device-actions button{flex:1}.device-screen{padding-left:16px;padding-right:16px}.game-tile-content{padding:16px}.device-footer button{flex:1 1 140px}.arcade-toolbar button{font-size:13px;padding:8px 10px}.arcade-toolbar{gap:5px}.arcade-sheet{border-radius:20px;padding:20px 16px}.online-view .arcade-stage{flex-shrink:1;max-width:calc(100vw - 16px);max-height:calc(100dvh - 100px)}.online-view .arcade-stage canvas{max-width:100%;max-height:100%;height:auto}.device-option{grid-template-columns:1fr}.device-option button{max-width:100%;width:100%}}
+    @media(max-width:560px){.device-grid{grid-template-columns:1fr;gap:16px}.device-head h1{font-size:34px}.device-actions button{flex:1}.device-screen{padding-left:16px;padding-right:16px}.game-tile-content{padding:16px}.device-footer button{flex:1 1 140px}.arcade-toolbar button{font-size:13px;padding:8px 10px}.arcade-toolbar{gap:5px}.arcade-sheet{border-radius:20px;padding:20px 16px}.online-view .arcade-stage{flex-shrink:1;max-width:calc(100vw - 16px);max-height:calc(100dvh - 100px)}.online-view .arcade-stage canvas{max-width:100%;max-height:100%;height:auto}.online-original-arena .arcade-overlay{align-items:flex-end;padding:8px;background:linear-gradient(transparent 20%,rgba(7,16,32,.72) 42%,rgba(7,16,32,.94) 70%)}.online-original-arena .arcade-sheet{max-height:62dvh;overflow:auto;padding:14px 12px}.device-option{grid-template-columns:1fr}.device-option button{max-width:100%;width:100%}}
     @media(max-height:500px){.device-stick{width:82px;height:82px;min-height:82px!important;bottom:10px}.arcade-toolbar,.arcade-bottom{padding:4px}.arcade-toolbar button,.arcade-bottom button{min-height:40px;padding:6px 12px}.arcade-sheet{margin:0 auto}.device-screen{padding:16px 24px}}
     @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
   `;document.head.append(style);
@@ -4962,7 +4992,7 @@ window.HubOnlineConfig = {
   const oldDraw=draw;draw=function(){oldDraw();sync();};
   const viewportChanged=()=>{lastSize='';sync();};window.addEventListener('resize',viewportChanged);window.addEventListener('orientationchange',viewportChanged);if(window.visualViewport){window.visualViewport.addEventListener('resize',viewportChanged);window.visualViewport.addEventListener('scroll',viewportChanged);}
   // Native controls handle Space/Enter themselves; game shortcuts must not leak through.
-  const invitation=(()=>{const path=String(window.location?.pathname||'').match(/^\/room\/([ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6})\/?$/i);if(path)return path[1].toUpperCase();const hash=String(window.location?.hash||'').match(/^#room=([ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6})$/i);if(hash)return hash[1].toUpperCase();const query=String(window.location?.search||'').match(/[?&]room=([ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6})(?:&|$)/i)?.[1]?.toUpperCase();return /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(query||'')?query:'';})();if(invitation)setTimeout(()=>{if(state==='HUB')HubActions.openOnline(invitation);},0);
+  const invitation=(()=>{const path=String(window.location?.pathname||'').match(/^\/room\/([ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6})\/?$/i);if(path)return path[1].toUpperCase();const hash=String(window.location?.hash||'').match(/^#room=([ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6})$/i);if(hash)return hash[1].toUpperCase();const query=String(window.location?.search||'').match(/[?&]room=([ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6})(?:&|$)/i)?.[1]?.toUpperCase();return /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(query||'')?query:'';})();if(invitation)setTimeout(()=>{if(state==='HUB')HubActions.openOnline('rally',invitation);},0);
   window.DeviceUI={sync,get screen(){return screen;},get active(){return !screen.hidden;},get buttons(){const all=Array.from(screen.querySelectorAll('button'));if(state==='HUB'){const tiles=all.filter(b=>['Ultimate Arena v2','Snake','Neon Breaker','Neon Rally','Orbit Dash','Prism Merge','Cloud Hop'].includes(b.textContent));return [...tiles,...all.filter(b=>!tiles.includes(b))];}return all;},credits:()=>t(21)};
   sync();
 })();

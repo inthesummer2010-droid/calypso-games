@@ -7,9 +7,9 @@ const randomCode=()=>Array.from({length:6},()=>alphabet[crypto.randomInt(alphabe
 const token=()=>crypto.randomBytes(24).toString('hex');
 const GAME_TYPES=new Set(['rally','snake','arena-catch','arena-zombie','arena-boss']);
 
-// Rally and Snake keep their original models on the server. Ultimate Arena is
-// deliberately different: its original browser state machine is authoritative,
-// while this server only relays its inputs and snapshots.
+// Rally and Snake keep their original models on the server. Ultimate Arena
+// keeps the original browser state machine authoritative; this server only
+// relays its inputs and snapshots so the browser still renders the real game.
 class SnakeDuel {
   constructor({random=Math.random}={}){this.random=random;this.w=1100;this.h=650;this.phase='menu';this.winner=null;this.result=null;this.model=new SnakeModel({...SnakeDefaults,multiplayer:1},{random,onRoundEnd:()=>{}});}
   start(){this.model.start();this.model.countdown=0;this.model.state='playing';this.phase='playing';this.winner=null;this.result=null;}
@@ -48,27 +48,30 @@ class Rooms {
   }
   error(ws,code){this.send(ws,{type:'error',code});}
   player(ws){const at=this.members.get(ws);return at&&{room:at.room,slot:at.slot,p:at.room.players[at.slot]};}
-  snapshot(r){const game=r.game.snapshot? r.game.snapshot() : {w:600,h:800,paddles:[...r.game.paddles],ball:{...r.game.ball},scores:[...r.game.scores],wait:r.game.wait||0,hits:r.game.hits||0,longest:r.game.longest||0,elapsed:r.game.elapsed||0,winner:r.phase==='over'?r.game.winner:null};return {type:'state',v:1,code:r.code,gameType:r.gameType,round:r.round,phase:r.phase,countdown:Math.max(0,Math.ceil((r.countdown-this.now())/1000)),remaining:Math.max(0,Math.ceil((r.expires-this.now())/1000)),players:r.players.map(p=>p?{connected:!!p.ws,ready:p.ready,away:p.away,reconnect:p.ws?0:Math.max(0,Math.ceil((this.reconnectMs-this.now()+p.disconnectedAt)/1000))}:null),game,events:r.events.slice(-16)};}
+  snapshot(r){const game=r.game.snapshot? r.game.snapshot() : {w:600,h:800,paddles:[...r.game.paddles],ball:{...r.game.ball},scores:[...r.game.scores],wait:r.game.wait||0,hits:r.game.hits||0,longest:r.game.longest||0,elapsed:r.game.elapsed||0,winner:r.phase==='over'?r.game.winner:null};return {type:'state',v:1,code:r.code,gameType:r.gameType,round:r.round,phase:r.phase,countdown:Math.max(0,Math.ceil((r.countdown-this.now())/1000)),remaining:Math.max(0,Math.ceil((r.expires-this.now())/1000)),players:r.players.map(p=>p?{connected:!!p.ws,ready:p.ready,away:p.away,reconnect:p.ws?0:Math.max(0,Math.ceil((this.reconnectMs-this.now()+p.disconnectedAt)/1000)),name:p.name,vote:p.vote}:null),game,events:r.events.slice(-16)};}
   broadcast(r){const s=this.snapshot(r);for(const p of r.players)if(p?.ws)this.send(p.ws,s);}
-  newPlayer(ws){return {ws,token:token(),ready:false,away:false,disconnectedAt:0,input:{axis:0,target:null,dx:0,dy:0,dir:null,fire:false},seq:-1,inputAt:0};}
-  joined(ws,r,slot){const p=r.players[slot];this.members.set(ws,{room:r,slot});const invite=new URL(this.siteUrl);invite.pathname='/room/'+encodeURIComponent(r.code);invite.search='';invite.hash='';this.send(ws,{type:'joined',v:1,code:r.code,game:r.gameType,slot,token:p.token,invite:invite.href});this.broadcast(r);}
+  newPlayer(ws,slot=0,game='rally'){return {ws,token:token(),name:`Spieler ${slot+1}`,vote:game,ready:false,away:false,disconnectedAt:0,input:{axis:0,target:null,dx:0,dy:0,dir:null,fire:false},seq:-1,inputAt:0};}
+  joined(ws,r,slot){const p=r.players[slot];this.members.set(ws,{room:r,slot});const invite=new URL(this.siteUrl);invite.pathname='/room/'+encodeURIComponent(r.code);invite.search='';invite.hash='';this.send(ws,{type:'joined',v:1,code:r.code,game:r.gameType,slot,token:p.token,invite:invite.href,name:p.name});this.broadcast(r);}
   create(ws,game='rally'){if(this.player(ws))return this.error(ws,'already_joined');if(this.rooms.size>=this.maxRooms)return this.error(ws,'busy');if(!GAME_TYPES.has(game))return this.error(ws,'invalid_game');let code;do{code=randomCode();}while(this.rooms.has(code));
-    const r={code,gameType:game,players:[this.newPlayer(ws),null],round:0,phase:'lobby',expires:this.now()+this.roomMs,countdown:0,events:[],eventSeq:0};
+    const r={code,gameType:game,players:[this.newPlayer(ws,0,game),null],round:0,phase:'lobby',expires:this.now()+this.roomMs,countdown:0,events:[],eventSeq:0};
     r.game=createGame(game,{onSound:(name,player)=>{r.events.push({id:++r.eventSeq,name,player});r.events=r.events.slice(-16);},onRoundEnd:()=>{r.phase='over';r.players.forEach(p=>{if(p)p.ready=false;});}});
     this.rooms.set(code,r);this.joined(ws,r,0);
   }
-  join(ws,code){if(this.player(ws))return this.error(ws,'already_joined');if(!CODE.test(code||''))return this.error(ws,'invalid_code');const r=this.rooms.get(code);if(!r||r.expires<=this.now())return this.error(ws,'not_found');if(r.players[1])return this.error(ws,'full');r.players[1]=this.newPlayer(ws);this.joined(ws,r,1);}
+  join(ws,code){if(this.player(ws))return this.error(ws,'already_joined');if(!CODE.test(code||''))return this.error(ws,'invalid_code');const r=this.rooms.get(code);if(!r||r.expires<=this.now())return this.error(ws,'not_found');if(r.players[1])return this.error(ws,'full');r.players[1]=this.newPlayer(ws,1,r.gameType);this.joined(ws,r,1);}
   resume(ws,code,key){if(this.player(ws))return this.error(ws,'already_joined');const r=this.rooms.get(code);if(!r||!TOKEN.test(key||''))return this.error(ws,'expired');
     const slot=r.players.findIndex(p=>p&&p.token===key);if(slot<0)return this.error(ws,'expired');const p=r.players[slot];if(!p.ws&&this.now()-p.disconnectedAt>this.reconnectMs)return this.error(ws,'expired');
     if(p.ws){const old=p.ws;this.members.delete(old);this.send(old,{type:'closed',reason:'replaced'});old.close?.(1000,'Session reconnected');if(['playing','countdown'].includes(r.phase)){r.phase='paused';r.game.pause();r.players.forEach(p=>{if(p)p.ready=false;});}}
     p.ws=ws;p.ready=false;p.away=false;p.input={axis:0,target:null,dx:0,dy:0,dir:null,fire:false};p.seq=-1;this.joined(ws,r,slot);
   }
   ready(ws){const a=this.player(ws);if(!a)return this.error(ws,'not_joined');const {room:r,p}=a;if(!['lobby','paused','over'].includes(r.phase))return;p.ready=true;p.away=false;
-    if(r.players.every(p=>p?.ws&&p.ready&&!p.away)){
+    if(r.players.every(p=>p?.ws&&p.ready&&!p.away&&p.vote===r.gameType)){
       if(r.phase!=='paused'||!r.round){r.round++;r.game.start(false);r.events=[];}else r.game.resume();
       r.phase='countdown';r.countdown=this.now()+3000;r.players.forEach(p=>{p.input={axis:0,target:null};p.inputAt=0;});
     }this.broadcast(r);
   }
+  profile(ws,name){const a=this.player(ws);if(!a)return this.error(ws,'not_joined');const clean=String(name??'').replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,18);if(!clean)return this.error(ws,'invalid_name');a.p.name=clean;a.p.ready=false;a.p.away=false;this.broadcast(a.room);}
+  vote(ws,game){const a=this.player(ws);if(!a)return this.error(ws,'not_joined');const r=a.room;if(!['lobby','paused','over'].includes(r.phase)||!GAME_TYPES.has(game))return this.error(ws,'invalid_game');a.p.vote=game;a.p.ready=false;a.p.away=false;
+    const votes=r.players.filter(p=>p?.ws).map(p=>p.vote||r.gameType);if(votes.length===2&&votes[0]===votes[1]&&votes[0]!==r.gameType){r.gameType=votes[0];r.game=createGame(r.gameType,{onSound:(name,player)=>{r.events.push({id:++r.eventSeq,name,player});r.events=r.events.slice(-16);},onRoundEnd:()=>{r.phase='over';r.players.forEach(p=>{if(p)p.ready=false;});}});r.round=0;r.phase='lobby';r.countdown=0;r.events=[];r.players.forEach(p=>{if(p){p.vote=r.gameType;p.ready=false;}});}this.broadcast(r);}
   pause(ws){const a=this.player(ws);if(!a)return;const r=a.room;
     // Losing focus while the lobby is open must not cancel a player's ready state.
     // Only an active countdown or match can be paused.
@@ -137,7 +140,7 @@ function createServer(options={}){
       let m;try{m=JSON.parse(raw.toString());}catch{ws.close(1008,'Invalid JSON');return;}
       if(!m||typeof m!=='object'||Array.isArray(m)||m.v!==1||typeof m.type!=='string'){ws.close(1008,'Unsupported protocol');return;}
       if(['create','join','resume'].includes(m.type)&&!rate(roomAttempts,ws.clientAddress,40,60000)){rooms.error(ws,'rate');return;}
-      if(m.type==='create')rooms.create(ws,m.game);else if(m.type==='join')rooms.join(ws,m.code);else if(m.type==='resume')rooms.resume(ws,m.code,m.token);else if(m.type==='ready')rooms.ready(ws);else if(m.type==='input')rooms.input(ws,m);else if(m.type==='snapshot')rooms.setSnapshot(ws,m.snapshot);else if(m.type==='pause')rooms.pause(ws);else if(m.type==='leave')rooms.leave(ws);else if(m.type==='ping')safeSend(ws,{type:'pong',at:Number.isFinite(m.at)?m.at:0});else if(m.type==='qr'){
+      if(m.type==='create')rooms.create(ws,m.game);else if(m.type==='join')rooms.join(ws,m.code);else if(m.type==='resume')rooms.resume(ws,m.code,m.token);else if(m.type==='profile')rooms.profile(ws,m.name);else if(m.type==='vote')rooms.vote(ws,m.game);else if(m.type==='ready')rooms.ready(ws);else if(m.type==='input')rooms.input(ws,m);else if(m.type==='snapshot')rooms.setSnapshot(ws,m.snapshot);else if(m.type==='pause')rooms.pause(ws);else if(m.type==='leave')rooms.leave(ws);else if(m.type==='ping')safeSend(ws,{type:'pong',at:Number.isFinite(m.at)?m.at:0});else if(m.type==='qr'){
         const a=rooms.player(ws);if(!a||ws.qrPending||ws.qrRoom===a.room.code)return;ws.qrPending=true;const code=a.room.code;
         const invite=new URL(site.href);invite.pathname='/room/'+encodeURIComponent(code);invite.search='';invite.hash='';
         QRCode.toDataURL(invite.href,{errorCorrectionLevel:'M',margin:4,width:296}).then(image=>{if(rooms.player(ws)?.room.code===code){safeSend(ws,{type:'qr',code,image,invite:invite.href});ws.qrRoom=code;}}).catch(()=>rooms.error(ws,'qr')).finally(()=>ws.qrPending=false);
