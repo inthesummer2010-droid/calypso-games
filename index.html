@@ -1700,6 +1700,51 @@ function draw() {
     ctx.restore();
 }
 
+// The online room reuses this renderer instead of maintaining a second Arena
+// drawing language.  It receives an authoritative snapshot, recreates the
+// original game objects, and calls the same Player/Zombie/Boss/PowerUp/Weapon
+// draw methods used by the local game.
+window.UltimateArenaOriginal = window.UltimateArenaOriginal || {};
+window.UltimateArenaOriginal.renderSnapshot = function(onlineCtx, snapshot, nowSeconds=0) {
+    const sw = Number(snapshot.w) || WIDTH, sh = Number(snapshot.h) || HEIGHT;
+    const sx = WIDTH / sw, sy = HEIGHT / sh;
+    const mode = Number.isInteger(snapshot.modeIndex) ? snapshot.modeIndex : (snapshot.mode === 'arena-catch' ? 0 : snapshot.mode === 'arena-boss' ? 4 : 2);
+    const map = MAPS[Number.isInteger(snapshot.mapIndex) ? snapshot.mapIndex : 0] || MAPS[0];
+    const colorFor = (p, i) => Array.isArray(p?.base_color) ? p.base_color : (i ? COLORS[1][1] : COLORS[0][1]);
+    const skinFor = (p, i) => typeof p?.skin === 'string' ? p.skin : (i ? SKINS[1] : SKINS[0]);
+    const playerFrom = (p, i) => {
+        const q = new Player(Number(p?.x)||0, Number(p?.y)||0, colorFor(p,i), {}, i ? 'P2' : 'P1', skinFor(p,i));
+        Object.assign(q, p || {}); q.base_color = colorFor(p,i); q.skin = skinFor(p,i); q.radius = Number(p?.radius)||q.base_radius;
+        return q;
+    };
+    const powerupFrom = item => { const q = new PowerUp(map.walls, mode); Object.assign(q, item || {}); q.x=Number(item?.x)||0; q.y=Number(item?.y)||0; return q; };
+    const weaponFrom = item => { const q = new WeaponDrop(map.walls); Object.assign(q, item || {}); q.x=Number(item?.x)||0; q.y=Number(item?.y)||0; return q; };
+    onlineCtx.save(); onlineCtx.setTransform(sx,0,0,sy,0,0); onlineCtx.clearRect(0,0,WIDTH,HEIGHT); onlineCtx.drawImage(BACKGROUND,0,0);
+    (map.walls||[]).forEach(w => drawWall(onlineCtx,w));
+    if(mode===0 && Number(snapshot.catcher) < 0) {
+        const p = Math.sin((nowSeconds||0)*5)*8, orb = new Rect(WIDTH/2-24-p/2, HEIGHT/2-24-p/2, 48+p, 48+p);
+        blitGlow(onlineCtx, WIDTH/2, HEIGHT/2, 95, PURPLE, 110); onlineCtx.beginPath(); onlineCtx.ellipse(orb.centerx,orb.centery,orb.w/2,orb.h/2,0,0,Math.PI*2); onlineCtx.fillStyle=toRGB(PURPLE); onlineCtx.fill(); onlineCtx.lineWidth=3; onlineCtx.strokeStyle=toRGB(WHITE); onlineCtx.stroke();
+    }
+    (snapshot.powerups||[]).map(powerupFrom).forEach(p=>p.draw(onlineCtx));
+    (snapshot.weapons||[]).map(weaponFrom).forEach(w=>w.draw(onlineCtx));
+    (snapshot.zombies||[]).map(z=>Object.assign(new Zombie(Number(z.x)||0,Number(z.y)||0),z)).forEach(z=>z.draw(onlineCtx));
+    (snapshot.projectiles||[]).map(p=>Object.assign(new BossProjectile(Number(p.x)||0,Number(p.y)||0,Number(p.vx)||0,Number(p.vy)||0),p)).forEach(p=>p.draw(onlineCtx));
+    (snapshot.attacks||[]).map(a=>Object.assign(new PlayerAttack(a.type,Number(a.x)||0,Number(a.y)||0),a)).forEach(a=>a.draw(onlineCtx));
+    if(snapshot.boss) Object.assign(new Boss(Number(snapshot.boss.x)||0,Number(snapshot.boss.y)||0),snapshot.boss).draw(onlineCtx);
+    (snapshot.players||[]).forEach((p,i)=>playerFrom(p,i).draw(onlineCtx, Number(snapshot.catcher) < 0 ? -1 : mode===0 ? (Number(snapshot.catcher)===i ? 0 : 1) : 1));
+    onlineCtx.drawImage(VIGNETTE,0,0);
+    const p1=snapshot.players?.[0]||{}, p2=snapshot.players?.[1]||{};
+    if(mode===0) {
+        drawPanel(onlineCtx,new Rect(28,20,400,64),170,12); drawText(onlineCtx,`P1 Punkte: ${Math.floor(snapshot.scores?.[0]||0)}`,'bold 34px Arial',toRGB(colorFor(p1,0)),56,32);
+        drawPanel(onlineCtx,new Rect(WIDTH-548,20,400,64),170,12); drawText(onlineCtx,`P2 Punkte: ${Math.floor(snapshot.scores?.[1]||0)}`,'bold 34px Arial',toRGB(colorFor(p2,1)),WIDTH-300,32);
+    } else {
+        drawPanel(onlineCtx,new Rect(28,20,400,64),170,12); drawText(onlineCtx,p1.alive?'P1: Lebt':'P1: Aus','bold 34px Arial',p1.alive?toRGB(colorFor(p1,0)):toRGB(RED),56,32);
+        drawPanel(onlineCtx,new Rect(WIDTH-548,20,400,64),170,12); drawText(onlineCtx,p2.alive?'P2: Lebt':'P2: Aus','bold 34px Arial',p2.alive?toRGB(colorFor(p2,1)):toRGB(RED),WIDTH-300,32);
+    }
+    if(snapshot.boss) { drawPanel(onlineCtx,new Rect(WIDTH/2-340,16,680,76),190,12); onlineCtx.fillStyle='rgb(10,10,16)'; roundRect(onlineCtx,WIDTH/2-320,52,640,28,8); onlineCtx.fill(); const hp=Math.max(0,Math.min(1,(Number(snapshot.boss.hp)||0)/(Number(snapshot.boss.max_hp||snapshot.boss.maxHp)||1))); onlineCtx.fillStyle=toRGB(RED); roundRect(onlineCtx,WIDTH/2-318,54,636*hp,24,8); onlineCtx.fill(); textCenter(onlineCtx,`DER WÄCHTER: ${Math.max(0,Math.floor(snapshot.boss.hp||0))} / ${Math.floor(snapshot.boss.max_hp||snapshot.boss.maxHp||0)}`,'26px Arial',toRGB(WHITE),WIDTH/2,22); }
+    onlineCtx.restore();
+};
+
 let lastTime = performance.now();
 let deltaAccumulator = 0;
 
@@ -3608,7 +3653,7 @@ window.HubOnlineConfig = {
   function validState(m){
     if(!m?.type||m.type!=='state'||m.v!==1||!CODE.test(m.code)||!Number.isSafeInteger(m.round)||m.round<0||!PHASES.includes(m.phase)||!Number.isFinite(m.countdown)||!Number.isFinite(m.remaining)||!Array.isArray(m.players)||m.players.length!==2||!m.players.every(p=>p===null||p&&['connected','ready','away'].every(k=>typeof p[k]==='boolean')))return false;
     const type=m.gameType||'rally',g=m.game;
-    const expected=type==='snake'||type.startsWith('arena-')?[1100,650]:[600,800];
+    const expected=type==='snake'?[1100,650]:type.startsWith('arena-')?[1920,1080]:[600,800];
     if(!g||g.w!==expected[0]||g.h!==expected[1]||!Array.isArray(g.scores)||g.scores.length!==2||!g.scores.every(Number.isFinite)||!Number.isFinite(g.elapsed)||(g.winner!==null&&!([0,1].includes(g.winner))))return false;
     if(type==='rally')return Array.isArray(g.paddles)&&g.paddles.length===2&&g.paddles.every(n=>n>=0&&n<=600)&&g.scores.every(n=>Number.isInteger(n)&&n>=0&&n<=7)&&['x','y','vx','vy'].every(k=>Number.isFinite(g.ball?.[k])&&Math.abs(g.ball[k])<3000)&&['wait','hits','longest'].every(k=>Number.isFinite(g[k]));
     if(type==='snake')return Number.isInteger(g.cols)&&Number.isInteger(g.rows)&&g.settings&&Array.isArray(g.snakes)&&(g.snakes.length===0||g.snakes.length===2&&g.snakes.every(s=>Array.isArray(s.positions)&&s.positions.length<500&&s.positions.every(p=>Array.isArray(p)&&p.length===2&&p.every(Number.isInteger))&&typeof s.dead==='boolean'&&Number.isFinite(s.score)))&&(g.food===null||g.food&&Array.isArray(g.food.position)&&g.food.position.length===2&&g.food.position.every(Number.isInteger));
@@ -3670,6 +3715,7 @@ window.HubOnlineConfig = {
     c.fillStyle='#071426';c.fillRect(0,0,g.w,g.h);
   }
   function drawOnlineArena(c,g,slot,t){
+    if(root.UltimateArenaOriginal?.renderSnapshot){root.UltimateArenaOriginal.renderSnapshot(c,{...g,players:(g.players||[]).map((p,i)=>({...p,base_color:p.base_color||[i?70:70,i?225:160,i?120:255],skin:p.skin||['Kreis','Quadrat'][i]}))},t);return;}
     const w=g.w,h=g.h;c.fillStyle='#08111f';c.fillRect(0,0,w,h);
     const grad=c.createLinearGradient(0,0,w,h);grad.addColorStop(0,'#123344');grad.addColorStop(1,'#26172f');c.fillStyle=grad;c.fillRect(18,56,w-36,h-88);
     c.strokeStyle='#41667a';c.lineWidth=3;c.strokeRect(30,68,w-60,h-112);

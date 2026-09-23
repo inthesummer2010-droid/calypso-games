@@ -4,5 +4,6 @@
 !server.cjs
 !arcade.js
 !snake.js
+!arena-core.js
 !index.html
 !Dockerfile
