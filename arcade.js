@@ -23,7 +23,9 @@
       if(this.wait>0){this.wait=Math.max(0,this.wait-dt);return;}
       const b=this.ball,oldY=b.y;b.x+=b.vx*dt;b.y+=b.vy*dt;
       if((b.x<22&&b.vx<0)||(b.x>this.w-22&&b.vx>0)){b.x=clamp(b.x,22,this.w-22);b.vx=-b.vx;this.sound('bounce');}
-      const p=b.vy>0?0:1,line=p===0?this.h-70:100;
+      // Match the visible front edge of each paddle. The ball center reaches
+      // the surface only after its ten-pixel radius touches the drawn bar.
+      const p=b.vy>0?0:1,line=p===0?this.h-64-10:84+16+10;
       if((p===0?oldY<=line&&b.y>=line:oldY>=line&&b.y<=line)&&Math.abs(b.x-this.paddles[p])<=half+10){
         const offset=clamp((b.x-this.paddles[p])/half,-1,1),speed=Math.min(850,Math.hypot(b.vx,b.vy)+24),angle=offset*1.02;
         b.y=line;b.vx=Math.sin(angle)*speed;b.vy=Math.cos(angle)*speed*(p===0?-1:1);this.hits++;this.rally++;this.longest=Math.max(this.longest,this.rally);this.sound('rally_hit',p);
@@ -50,7 +52,7 @@
       this.spawn-=dt;this.starSpawn-=dt;
       if(this.spawn<=0){const r=18+this.random()*18;this.objects.push({kind:'rock',x:30+this.random()*(this.w-60),y:55-r,r,speed:180+Math.min(220,this.time*2)+this.random()*70,angle:this.random()*6.28,spin:this.random()*2-1});this.spawn=Math.max(.28,.85-this.time*.006);}
       if(this.starSpawn<=0){this.objects.push({kind:'star',x:30+this.random()*(this.w-60),y:50,r:13,speed:180,angle:0,spin:2});this.starSpawn=.95;}
-      for(const o of this.objects){o.y+=o.speed*dt;o.angle+=o.spin*dt;const hit=Math.hypot(o.x-this.ship.x,o.y-this.ship.y)<o.r+(this.shield?43:17);
+      for(const o of this.objects){o.y+=o.speed*dt;o.angle+=o.spin*dt;const hit=Math.hypot(o.x-this.ship.x,o.y-this.ship.y)<o.r+(this.shield?45:20);
         if(!hit)continue;
         if(o.kind==='star'){o.dead=true;this.stars++;this.combo++;this.maxCombo=Math.max(this.maxCombo,this.combo);this.points+=100+Math.min(10,this.combo)*10;this.sound('orbit_star');}
         else if(this.shield){o.dead=true;this.points+=25;this.sound('brick');}
