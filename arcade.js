@@ -2,8 +2,23 @@
 (function(root){
   'use strict';
   const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
+  const GAME_WORLDS={
+    rally:[
+      {id:'court',names:['Mitternachtshof','Midnight Court','Terrain nocturne','Cancha nocturna'],unlock:null,base:'#091323',glow:'#133947',accent:'#61eadf',opponent:'#e3a5ff',floor:['#322341','#102c37','#164548'],line:'#b2d5e712',border:'#6dabb550',orb:['#fff','#fff4c5','#d9a876'],shield:'#72ffff',panel:'#101b30e8'},
+      {id:'sunset-court',names:['Abendcourt','Sunset Court','Terrain du couchant','Cancha del ocaso'],unlock:{key:'rally_games',value:5},base:'#181426',glow:'#533044',accent:'#ffbd78',opponent:'#a5d6ff',floor:['#664154','#412b48','#291d39'],line:'#ffe2c512',border:'#f7b68d50',orb:['#fff8e8','#ffe4a6','#ef9c68'],shield:'#ffdfa0',panel:'#2e2037e8'},
+      {id:'aurora-court',names:['Polarlichtcourt','Aurora Court','Terrain boréal','Cancha aurora'],unlock:{key:'rally_wins',value:3},base:'#071a2a',glow:'#164b5c',accent:'#8cf5d2',opponent:'#d4a5ff',floor:['#193c50','#123548','#0c2739'],line:'#b9ffe312',border:'#7be6d350',orb:['#fff','#d9fff3','#8ed7d2'],shield:'#a5ffe7',panel:'#09283be8'}
+    ],
+    orbit:[
+      {id:'deep-space',names:['Tiefenraum','Deep Space','Espace profond','Espacio profundo'],unlock:null,base:'#091323',glow:'#242644',accent:'#ffc772',star:'#d6e9ff',planet:['#ad98e9','#373466','#c7b5ef'],rock:['#bb98ae','#7e667f','#4c4264'],ship:['#619ccd','#dcf7ff','#619ccd'],shield:'#72ffff',flame:'#ffab68',opponent:'#ff9b94'},
+      {id:'nebula',names:['Nebelmeer','Nebula Sea','Mer de nébuleuses','Mar de nebulosas'],unlock:{key:'orbit_stars',value:40},base:'#130f28',glow:'#422456',accent:'#ff9cda',star:'#f0d8ff',planet:['#ef83c9','#522c83','#ffb5e8'],rock:['#d19ab9','#86547e','#53375f'],ship:['#9c72c6','#f5d7ff','#8870df'],shield:'#ffb6ed',flame:'#ffa0d5',opponent:'#ff9b94'},
+      {id:'moonlight',names:['Mondlichtbahn','Moonlight Run','Piste lunaire','Ruta lunar'],unlock:{key:'orbit_time',value:180},base:'#09182d',glow:'#284c71',accent:'#98d8ff',star:'#e2f5ff',planet:['#c4e0f5','#4b638c','#d8f0ff'],rock:['#a8b8cc','#697e9a','#384d70'],ship:['#6fa9d4','#e0f7ff','#6f90ca'],shield:'#a9eaff',flame:'#96e4ff',opponent:'#c8b6ff'}
+    ]
+  };
+  const gameWorld=(kind,id)=>GAME_WORLDS[kind]?.find(world=>world.id===id)||GAME_WORLDS[kind]?.[0];
+  const worldName=(world,language='de')=>world?.names?.[{de:0,en:1,fr:2,es:3}[language]??0]||world?.names?.[0]||'';
+  const worldIsUnlocked=(world,stats={})=>!world?.unlock||Number(stats[world.unlock.key])>=world.unlock.value;
   class Rally {
-    constructor(options={}){this.options=options;this.random=options.random||Math.random;this.w=600;this.h=800;this.phase='menu';this.scores=[0,0];this.paddles=[300,300];this.ball={x:300,y:400,vx:180,vy:390};this.hits=0;this.elapsed=0;this.trail=[];this.solo=true;this.difficulty=1;}
+    constructor(options={}){this.options=options;this.random=options.random||Math.random;this.w=600;this.h=800;this.phase='menu';this.scores=[0,0];this.paddles=[300,300];this.ball={x:300,y:400,vx:180,vy:390};this.hits=0;this.elapsed=0;this.trail=[];this.solo=true;this.difficulty=1;const selected=typeof options.world==='function'?options.world():options.world;this.worldId=gameWorld('rally',selected||'court').id;}
     resize(w,h){const scale=w/this.w;this.paddles=this.paddles.map(x=>x*scale);this.ball.x*=scale;this.ball.y*=h/this.h;this.w=w;this.h=h;this.trail=[];}
     get paddleWidth(){return clamp(this.w*.24,110,205);}
     sound(name,player){try{this.options.onSound?.(name,player);}catch{/* Device feedback must never interrupt a round. */}}
@@ -34,7 +49,7 @@
     }
   }
   class Orbit {
-    constructor(options={}){this.options=options;this.random=options.random||Math.random;this.w=600;this.h=800;this.phase='menu';this.ship={x:300,y:650};this.objects=[];this.time=0;this.score=0;this.lives=3;this.cooldown=0;this.shield=0;this.invincible=0;this.stars=0;}
+    constructor(options={}){this.options=options;this.random=options.random||Math.random;this.w=600;this.h=800;this.phase='menu';this.ship={x:300,y:650};this.objects=[];this.time=0;this.score=0;this.lives=3;this.cooldown=0;this.shield=0;this.invincible=0;this.stars=0;const selected=typeof options.world==='function'?options.world():options.world;this.worldId=gameWorld('orbit',selected||'deep-space').id;}
     resize(w,h){const sx=w/this.w,sy=h/this.h;this.ship.x*=sx;this.ship.y*=sy;this.objects.forEach(o=>{o.x*=sx;o.y*=sy;});this.w=w;this.h=h;}
     sound(name){try{this.options.onSound?.(name);}catch{/* Optional audio may be unavailable. */}}
     start(){this.phase='playing';this.ship={x:this.w/2,y:this.h*.78};this.objects=[];this.time=0;this.points=0;this.score=0;this.lives=3;this.cooldown=0;this.shield=0;this.invincible=1.5;this.spawn=1;this.starSpawn=.5;this.stars=0;this.combo=0;this.maxCombo=0;this.reported=false;this.sound('start');}
@@ -67,44 +82,48 @@
     fr:{hub:'Hub des jeux',play:'Jouer',pause:'Pause',resume:'Continuer',again:'Rejouer',exit:'Quitter la partie ?',exitNote:'Cette partie inachevée ne sera pas enregistrée comme terminée.',back:'Retour au jeu',solo:'Contre l’ordinateur',duo:'Deux joueurs',easy:'Détendu',normal:'Normal',hard:'Rapide',rally:'Le premier à 7 points gagne.',rallyControl:'En bas : A / D · En haut : ← / →. Au toucher, chacun déplace sa raquette dans sa moitié du terrain. Deux manettes : un stick gauche chacun.',orbit:'Ramassez les étoiles. Évitez les météores. Trois vies.',orbitControl:'WASD / flèches, stick gauche ou glisser sur le terrain. Bouclier : Espace, A ou bouton bouclier.',shield:'Bouclier',ready:'Prêt',score:'Score',best:'Record',over:'Partie terminée',wins:'gagne !',p1:'Joueur 1',p2:'Joueur 2',computer:'Ordinateur',music:'Musique',sound:'Son',on:'activé',off:'coupé',controllers:'Manettes',serve:'Service',stars:'Étoiles',time:'Secondes',mode:'Joueurs',difficulty:'Rythme',hint:'Start : pause · B : retour · Croix : menu · A : choisir',new:'NOUVEAU',secret:'Un petit salut de l’espace ✦'},
     es:{hub:'Centro de juegos',play:'Jugar',pause:'Pausa',resume:'Continuar',again:'Otra partida',exit:'¿Salir de la partida?',exitNote:'Esta partida sin terminar no se guardará como completada.',back:'Volver al juego',solo:'Contra el ordenador',duo:'Dos jugadores',easy:'Relajado',normal:'Normal',hard:'Rápido',rally:'Gana quien llegue a 7 puntos.',rallyControl:'Abajo: A / D · Arriba: ← / →. Con pantalla táctil, cada jugador mueve su pala en su mitad del campo. Dos mandos: un stick izquierdo cada uno.',orbit:'Recoge estrellas. Esquiva meteoritos. Tres vidas.',orbitControl:'WASD / flechas, stick izquierdo o arrastrar por el campo. Escudo: Espacio, A o botón de escudo.',shield:'Escudo',ready:'Listo',score:'Puntos',best:'Récord',over:'Partida terminada',wins:'¡gana!',p1:'Jugador 1',p2:'Jugador 2',computer:'Ordenador',music:'Música',sound:'Sonido',on:'activado',off:'desactivado',controllers:'Mandos',serve:'Saque',stars:'Estrellas',time:'Segundos',mode:'Jugadores',difficulty:'Ritmo',hint:'Start: pausa · B: volver · Cruceta: menú · A: elegir',new:'NUEVO',secret:'Un saludo desde el espacio ✦'}
   };
+  Object.assign(COPY.de,{world:'Welt',prev:'Zurück',next:'Weiter',unlocked:'Freigeschaltet',locked:'Gesperrt',worldHint:'Spiele weitere Runden, um neue Looks freizuschalten.',unlockGames:'Spiele',unlockWins:'Erreiche',unlockStars:'Sammle',unlockTime:'Überlebe',rounds:'Runden',soloWins:'Solo-Siege',seconds:'Sekunden'});
+  Object.assign(COPY.en,{world:'World',prev:'Previous',next:'Next',unlocked:'Unlocked',locked:'Locked',worldHint:'Play more rounds to unlock new looks.',unlockGames:'Play',unlockWins:'Get',unlockStars:'Collect',unlockTime:'Survive',rounds:'rounds',soloWins:'solo wins',seconds:'seconds'});
+  Object.assign(COPY.fr,{world:'Monde',prev:'Précédent',next:'Suivant',unlocked:'Débloqué',locked:'Verrouillé',worldHint:'Jouez d’autres parties pour débloquer de nouveaux styles.',unlockGames:'Jouez',unlockWins:'Obtenez',unlockStars:'Ramassez',unlockTime:'Survivez',rounds:'parties',soloWins:'victoires en solo',seconds:'secondes'});
+  Object.assign(COPY.es,{world:'Mundo',prev:'Anterior',next:'Siguiente',unlocked:'Desbloqueado',locked:'Bloqueado',worldHint:'Juega más rondas para desbloquear nuevos estilos.',unlockGames:'Juega',unlockWins:'Consigue',unlockStars:'Reúne',unlockTime:'Sobrevive',rounds:'partidas',soloWins:'victorias en solitario',seconds:'segundos'});
   function box(c,x,y,w,h,r,color){c.fillStyle=color;c.beginPath();c.roundRect(x,y,w,h,r);c.fill();}
   function text(c,label,x,y,size,color='#eef6ff',max){c.fillStyle=color;c.font=`600 ${size}px system-ui,Arial`;c.textAlign='center';c.textBaseline='middle';c.fillText(String(label),x,y,max);}
   function star(c,x,y,r,color,angle=0){c.save();c.translate(x,y);c.rotate(angle);c.beginPath();for(let i=0;i<10;i++){const a=i*Math.PI/5-Math.PI/2,rr=i%2?r*.45:r;c.lineTo(Math.cos(a)*rr,Math.sin(a)*rr);}c.closePath();c.fillStyle=color;c.fill();c.restore();}
   function render(c,m,kind,t=0,motion=true){
-    const w=m.w,h=m.h,color=kind==='rally'?'#61eadf':'#ffc772';c.fillStyle='#091323';c.fillRect(0,0,w,h);
-    const g=c.createRadialGradient(w*.5,h*.45,0,w*.5,h*.45,h*.8);g.addColorStop(0,kind==='rally'?'#133947':'#242644');g.addColorStop(1,'#091323');c.fillStyle=g;c.fillRect(0,0,w,h);
-    if(kind==='orbit')for(let i=0;i<45;i++){const x=(i*173.37)%w,y=80+(i*97.71+(motion?t*([12,20,32][i%3]):0))%(h-80);c.globalAlpha=.2+(i%4)*.12;c.fillStyle='#d6e9ff';c.fillRect(x,y,i%3===0?3:2,2);}c.globalAlpha=1;
+    const w=m.w,h=m.h,theme=gameWorld(kind,m.worldId),color=theme.accent;c.fillStyle=theme.base;c.fillRect(0,0,w,h);
+    const g=c.createRadialGradient(w*.5,h*.45,0,w*.5,h*.45,h*.8);g.addColorStop(0,theme.glow);g.addColorStop(1,theme.base);c.fillStyle=g;c.fillRect(0,0,w,h);
+    if(kind==='orbit')for(let i=0;i<45;i++){const x=(i*173.37)%w,y=80+(i*97.71+(motion?t*([12,20,32][i%3]):0))%(h-80);c.globalAlpha=.2+(i%4)*.12;c.fillStyle=theme.star;c.fillRect(x,y,i%3===0?3:2,2);}c.globalAlpha=1;
     if(kind==='rally'){
       // A lit court replaces the space backdrop; paddle geometry is unchanged.
-      const floor=c.createLinearGradient(0,80,0,h);floor.addColorStop(0,'#322341');floor.addColorStop(.48,'#102c37');floor.addColorStop(1,'#164548');box(c,20,78,w-40,h-96,18,floor);
-      c.strokeStyle='#b2d5e712';c.lineWidth=1;for(let x=40;x<w;x+=44){c.beginPath();c.moveTo(x,100);c.lineTo(x,h-30);c.stroke();}
-      c.strokeStyle='#6dabb550';c.lineWidth=2;c.beginPath();c.roundRect(32,110,w-64,h-154,12);c.stroke();c.beginPath();c.arc(w/2,h/2,62,0,Math.PI*2);c.stroke();c.setLineDash([7,12]);c.beginPath();c.moveTo(28,h/2);c.lineTo(w-28,h/2);c.stroke();c.setLineDash([]);
+      const floor=c.createLinearGradient(0,80,0,h);floor.addColorStop(0,theme.floor[0]);floor.addColorStop(.48,theme.floor[1]);floor.addColorStop(1,theme.floor[2]);box(c,20,78,w-40,h-96,18,floor);
+      c.strokeStyle=theme.line;c.lineWidth=1;for(let x=40;x<w;x+=44){c.beginPath();c.moveTo(x,100);c.lineTo(x,h-30);c.stroke();}
+      c.strokeStyle=theme.border;c.lineWidth=2;c.beginPath();c.roundRect(32,110,w-64,h-154,12);c.stroke();c.beginPath();c.arc(w/2,h/2,62,0,Math.PI*2);c.stroke();c.setLineDash([7,12]);c.beginPath();c.moveTo(28,h/2);c.lineTo(w-28,h/2);c.stroke();c.setLineDash([]);
       for(const x of [11,w-16]){box(c,x,80,5,h-96,3,'#244a61');for(let y=118;y<h-45;y+=64){box(c,x,y,5,20,2,y<h/2?'#bd8dc4':'#69bfb7');}}
-      for(let p=0;p<2;p++){const pc=p?'#e3a5ff':color,y=p?84:h-64,x=m.paddles[p]-m.paddleWidth/2;
+      for(let p=0;p<2;p++){const pc=p?theme.opponent:color,y=p?84:h-64,x=m.paddles[p]-m.paddleWidth/2;
         c.shadowColor=pc;c.shadowBlur=motion?15:0;const metal=c.createLinearGradient(0,y,0,y+16);metal.addColorStop(0,'#efffff');metal.addColorStop(.3,pc);metal.addColorStop(1,p?'#774b93':'#236b71');box(c,x,y,m.paddleWidth,16,8,metal);c.shadowBlur=0;
         box(c,x+16,y+5,m.paddleWidth-32,7,3,'#173247');box(c,m.paddles[p]-15,y+7,30,2,1,pc);for(const ex of [x+8,x+m.paddleWidth-8]){c.fillStyle='#efffff';c.beginPath();c.arc(ex,y+8,2,0,7);c.fill();}
       }
-      const b=m.ball;if(motion)for(const [i,p] of m.trail.entries()){c.globalAlpha=(i+1)/(m.trail.length+1)*.25;c.fillStyle='#c8fff2';c.beginPath();c.arc(p.x,p.y,3+i*.55,0,7);c.fill();}c.globalAlpha=1;c.shadowColor='#fff';c.shadowBlur=motion?18:0;const orb=c.createRadialGradient(b.x-3,b.y-3,1,b.x,b.y,10);orb.addColorStop(0,'#fff');orb.addColorStop(.5,'#fff4c5');orb.addColorStop(1,'#d9a876');c.beginPath();c.arc(b.x,b.y,10,0,Math.PI*2);c.fillStyle=orb;c.fill();c.shadowBlur=0;
-      box(c,12,10,w-24,57,13,'#101b30e8');text(c,`${m.scores[0]}  :  ${m.scores[1]}`,w/2,36,32,'#f2f8ff');text(c,'P1',w*.18,29,15,color);text(c,'P2',w*.82,29,15,'#e3a5ff');
-      for(let p=0;p<2;p++)for(let i=0;i<7;i++)box(c,w*(p?.82:.18)-37+i*11,45,8,5,2,i<m.scores[p]?(p?'#e3a5ff':color):'#354456');
+      const b=m.ball;if(motion)for(const [i,p] of m.trail.entries()){c.globalAlpha=(i+1)/(m.trail.length+1)*.25;c.fillStyle=theme.orb[1];c.beginPath();c.arc(p.x,p.y,3+i*.55,0,7);c.fill();}c.globalAlpha=1;c.shadowColor=theme.orb[0];c.shadowBlur=motion?18:0;const orb=c.createRadialGradient(b.x-3,b.y-3,1,b.x,b.y,10);orb.addColorStop(0,theme.orb[0]);orb.addColorStop(.5,theme.orb[1]);orb.addColorStop(1,theme.orb[2]);c.beginPath();c.arc(b.x,b.y,10,0,Math.PI*2);c.fillStyle=orb;c.fill();c.shadowBlur=0;
+      box(c,12,10,w-24,57,13,theme.panel);text(c,`${m.scores[0]}  :  ${m.scores[1]}`,w/2,36,32,'#f2f8ff');text(c,'P1',w*.18,29,15,color);text(c,'P2',w*.82,29,15,theme.opponent);
+      for(let p=0;p<2;p++)for(let i=0;i<7;i++)box(c,w*(p?.82:.18)-37+i*11,45,8,5,2,i<m.scores[p]?(p?theme.opponent:color):'#354456');
       if(m.wait>0&&m.phase==='playing')text(c,String(Math.ceil(m.wait)),w/2,h/2-65,56,color);
     }else{
       // A quiet ringed planet stays behind every collectible and hazard.
-      c.save();c.globalAlpha=.18;c.translate(w*.79,h*.3);c.rotate(-.3);const planet=c.createLinearGradient(-75,-75,75,75);planet.addColorStop(0,'#ad98e9');planet.addColorStop(1,'#373466');c.fillStyle=planet;c.beginPath();c.arc(0,0,66,0,7);c.fill();c.strokeStyle='#c7b5ef';c.lineWidth=8;c.beginPath();c.ellipse(0,0,109,24,0,0,7);c.stroke();c.restore();
+      c.save();c.globalAlpha=.18;c.translate(w*.79,h*.3);c.rotate(-.3);const planet=c.createLinearGradient(-75,-75,75,75);planet.addColorStop(0,theme.planet[0]);planet.addColorStop(1,theme.planet[1]);c.fillStyle=planet;c.beginPath();c.arc(0,0,66,0,7);c.fill();c.strokeStyle=theme.planet[2];c.lineWidth=8;c.beginPath();c.ellipse(0,0,109,24,0,0,7);c.stroke();c.restore();
       for(const o of m.objects){
-        if(o.kind==='star'){c.save();c.shadowColor='#ffd16d';c.shadowBlur=motion?14:0;star(c,o.x,o.y,o.r,'#ffd16d',o.angle);c.shadowBlur=0;star(c,o.x-1,o.y-2,o.r*.48,'#fff1be',o.angle);c.restore();continue;}
-        c.save();c.translate(o.x,o.y);c.rotate(o.angle);const rock=c.createLinearGradient(-o.r,-o.r,o.r,o.r);rock.addColorStop(0,'#bb98ae');rock.addColorStop(.45,'#7e667f');rock.addColorStop(1,'#4c4264');c.beginPath();for(let i=0;i<9;i++){const a=i/9*Math.PI*2,r=o.r*(i%2?.83:1);c.lineTo(Math.cos(a)*r,Math.sin(a)*r);}c.closePath();c.fillStyle=rock;c.strokeStyle='#d4adc0';c.lineWidth=2;c.fill();c.stroke();
+        if(o.kind==='star'){c.save();c.shadowColor=theme.accent;c.shadowBlur=motion?14:0;star(c,o.x,o.y,o.r,theme.accent,o.angle);c.shadowBlur=0;star(c,o.x-1,o.y-2,o.r*.48,theme.star,o.angle);c.restore();continue;}
+        c.save();c.translate(o.x,o.y);c.rotate(o.angle);const rock=c.createLinearGradient(-o.r,-o.r,o.r,o.r);rock.addColorStop(0,theme.rock[0]);rock.addColorStop(.45,theme.rock[1]);rock.addColorStop(1,theme.rock[2]);c.beginPath();for(let i=0;i<9;i++){const a=i/9*Math.PI*2,r=o.r*(i%2?.83:1);c.lineTo(Math.cos(a)*r,Math.sin(a)*r);}c.closePath();c.fillStyle=rock;c.strokeStyle=theme.star;c.lineWidth=2;c.fill();c.stroke();
         for(const [x,y,r] of [[-.24,-.15,.24],[.3,.28,.15],[.24,-.39,.1]]){c.fillStyle='#3d354d99';c.beginPath();c.arc(o.r*x,o.r*y,o.r*r,0,7);c.fill();c.strokeStyle='#ddbbcb77';c.lineWidth=1;c.beginPath();c.arc(o.r*x,o.r*y+1,o.r*r,.25,2.7);c.stroke();}c.restore();
       }
       const s=m.ship;c.save();c.translate(s.x,s.y);
-      if(m.shield){c.strokeStyle='#72ffff';c.lineWidth=4;c.beginPath();c.arc(0,0,44,0,7);c.stroke();c.fillStyle='#75f8ee22';c.fill();}
-      if(!m.invincible||!motion||Math.floor(t*12)%2){c.fillStyle='#ffab68';c.beginPath();c.moveTo(-8,16);c.lineTo(0,32+(motion?Math.sin(t*35)*8:0));c.lineTo(8,16);c.fill();c.fillStyle='#fff3b0';c.beginPath();c.moveTo(-4,17);c.lineTo(0,29);c.lineTo(4,17);c.fill();const hull=c.createLinearGradient(-20,0,20,0);hull.addColorStop(0,'#619ccd');hull.addColorStop(.5,'#dcf7ff');hull.addColorStop(1,'#619ccd');c.fillStyle=hull;c.beginPath();c.moveTo(0,-23);c.lineTo(20,19);c.lineTo(0,10);c.lineTo(-20,19);c.closePath();c.fill();c.strokeStyle='#e6faff';c.lineWidth=1.5;c.stroke();box(c,-5,-10,10,19,5,'#4568a2');box(c,-3,-8,3,9,2,'#9ce4ff');c.fillStyle='#ff9b94';for(const x of [-13,13]){c.beginPath();c.arc(x,12,2,0,7);c.fill();}}c.restore();
+      if(m.shield){c.strokeStyle=theme.shield;c.lineWidth=4;c.beginPath();c.arc(0,0,44,0,7);c.stroke();c.fillStyle=theme.shield+'22';c.fill();}
+      if(!m.invincible||!motion||Math.floor(t*12)%2){c.fillStyle=theme.flame;c.beginPath();c.moveTo(-8,16);c.lineTo(0,32+(motion?Math.sin(t*35)*8:0));c.lineTo(8,16);c.fill();c.fillStyle=theme.star;c.beginPath();c.moveTo(-4,17);c.lineTo(0,29);c.lineTo(4,17);c.fill();const hull=c.createLinearGradient(-20,0,20,0);hull.addColorStop(0,theme.ship[0]);hull.addColorStop(.5,theme.ship[1]);hull.addColorStop(1,theme.ship[2]);c.fillStyle=hull;c.beginPath();c.moveTo(0,-23);c.lineTo(20,19);c.lineTo(0,10);c.lineTo(-20,19);c.closePath();c.fill();c.strokeStyle=theme.star;c.lineWidth=1.5;c.stroke();box(c,-5,-10,10,19,5,theme.planet[1]);box(c,-3,-8,3,9,2,theme.accent);c.fillStyle=theme.opponent||'#ff9b94';for(const x of [-13,13]){c.beginPath();c.arc(x,12,2,0,7);c.fill();}}c.restore();
       box(c,12,12,w-24,60,14,'#0b142bd9');text(c,String(m.score).padStart(5,'0'),w*.28,42,30,color);text(c,'♥'.repeat(m.lives),w*.77,42,25,'#ff8fae');
     }
   }
   class View {
     constructor(kind,options={}){
-      this.kind=kind;this.options=options;this.closed=false;this.keys={};this.targets=[null,null];this.touchPoints=new Map();this.padSlots=[null,null];this.padHistory=new Map();this.selected=0;this.signature='';this.confirm=false;this.solo=true;this.difficulty=1;this.best=options.best||0;this.secretBuffer='';this.secretUntil=0;this.fx=[];this.secretStamp=0;this.secretCooldown=0;
+      this.kind=kind;this.options=options;this.closed=false;this.keys={};this.targets=[null,null];this.touchPoints=new Map();this.padSlots=[null,null];this.padHistory=new Map();this.selected=0;this.signature='';this.confirm=false;this.solo=true;this.difficulty=1;this.best=options.best||0;this.secretBuffer='';this.secretUntil=0;this.fx=[];this.secretStamp=0;this.secretCooldown=0;this.worlds=GAME_WORLDS[kind]||[];const worldOption=options.world;const wanted=typeof worldOption==='function'?worldOption():worldOption;this.worldIndex=Math.max(0,this.worlds.findIndex(world=>world.id===wanted));
       this.model=new (kind==='rally'?Rally:Orbit)({...options,onSound:(name,player)=>{options.onSound?.(name,player);if(['rally_hit','rally_point','orbit_star','damage','brick'].includes(name)&&this.model){const p=this.model.ball||this.model.ship;for(let i=0;i<12;i++)this.fx.push({x:p.x,y:p.y,vx:Math.cos(i/12*Math.PI*2)*110,vy:Math.sin(i/12*Math.PI*2)*110,life:.45,color:name==='damage'?'#ff8faa':this.kind==='rally'?'#84fff4':'#ffe2a4'});this.fx=this.fx.slice(-72);}},onRoundEnd:r=>{this.best=Math.max(this.best,r.score);options.onRoundEnd?.(r);}});
       this.host=this.el('section',undefined,document.body,'arcade-view');this.host.setAttribute('aria-label',this.title);this.host.setAttribute('role','dialog');this.host.setAttribute('aria-modal','true');
       this.toolbar=this.el('nav',undefined,this.host,'arcade-toolbar');this.button(this.tr('hub'),()=>this.requestExit(),this.toolbar);this.pauseButton=this.button(this.tr('pause'),()=>this.togglePause(),this.toolbar);
@@ -130,7 +149,11 @@
     clearInput(){this.keys={};this.targets=[null,null];this.target=null;this.touchPoints.clear();}
     pause(){this.model.pause();this.clearInput();this.options.onPause?.();this.refresh();}
     togglePause(){if(this.confirm)return;if(this.model.phase==='playing')this.pause();else if(this.model.phase==='paused'){this.clearInput();this.model.resume();}this.refresh();}
-    start(){this.clearInput();this.confirm=false;this.secretUntil=0;this.fx=[];this.model.start(this.solo,this.difficulty);this.refresh();this.canvas.focus();}
+    currentWorld(){return gameWorld(this.kind,this.worlds[this.worldIndex]?.id);}
+    worldUnlocked(world=this.currentWorld()){let stats={};try{stats=this.options.stats?.()||{};}catch{}return worldIsUnlocked(world,stats);}
+    worldRequirement(world=this.currentWorld()){const key=world.unlock?.key,value=world.unlock?.value;if(key==='rally_games')return `${this.tr('unlockGames')} ${value} ${this.tr('rounds')}`;if(key==='rally_wins')return `${this.tr('unlockWins')} ${value} ${this.tr('soloWins')}`;if(key==='orbit_stars')return `${this.tr('unlockStars')} ${value} ${this.tr('stars')}`;if(key==='orbit_time')return `${this.tr('unlockTime')} ${value} ${this.tr('seconds')}`;return this.tr('locked');}
+    cycleWorld(delta){this.worldIndex=(this.worldIndex+delta+this.worlds.length)%this.worlds.length;this.model.worldId=this.currentWorld().id;if(this.worldUnlocked())this.options.onWorldChange?.(this.currentWorld().id);this.signature='';this.refresh();}
+    start(){if(!this.worldUnlocked()){this.status.textContent=this.tr('locked')+' · '+this.worldRequirement();return;}this.model.worldId=this.currentWorld().id;this.clearInput();this.confirm=false;this.secretUntil=0;this.fx=[];this.model.start(this.solo,this.difficulty);this.refresh();this.canvas.focus();}
     requestExit(){if(['playing','paused'].includes(this.model.phase)){this.pause();this.confirm=true;this.refresh();}else this.exit();}
     exit(){this.close();this.options.onExit?.();}
     close(){if(this.closed)return;this.closed=true;cancelAnimationFrame(this.raf);this.listeners.forEach(fn=>fn());this.clearInput();this.host.remove();this.options.onPause?.();}
@@ -170,14 +193,14 @@
       if(this.model.phase==='playing'){for(const p of this.fx){p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt;}this.fx=this.fx.filter(p=>p.life>0);if(this.kind==='rally'){this.model.trail.push({...this.model.ball});if(this.model.trail.length>9)this.model.trail.shift();}}
       this.refresh();
     }
-    refresh(){const m=this.model,key=m.phase+'|'+this.confirm+'|'+this.solo+'|'+this.difficulty;this.pauseButton.hidden=!['playing','paused'].includes(m.phase);this.pauseButton.textContent=this.tr(m.phase==='paused'?'resume':'pause');
+    refresh(){const m=this.model,key=m.phase+'|'+this.confirm+'|'+this.solo+'|'+this.difficulty+'|'+this.worldIndex;this.pauseButton.hidden=!['playing','paused'].includes(m.phase);this.pauseButton.textContent=this.tr(m.phase==='paused'?'resume':'pause');
       if(this.kind==='orbit'){this.shieldButton.disabled=m.phase!=='playing'||m.cooldown>0;this.shieldButton.textContent=this.tr('shield')+' · '+(m.cooldown>0?Math.ceil(m.cooldown)+' s':this.tr('ready'));}
       const caption=performance.now()<this.secretUntil?this.tr('secret'):this.kind==='rally'?this.tr('rally'):this.tr('best')+': '+this.best;if(this.status.textContent!==caption)this.status.textContent=caption;
       if(key===this.signature)return;this.signature=key;this.selected=0;this.overlay.replaceChildren();this.overlay.hidden=m.phase==='playing'&&!this.confirm;if(this.overlay.hidden)return;
       const card=this.el('section',undefined,this.overlay,'arcade-sheet');this.el('small',this.kind==='rally'?'04 / COURT CLUB':'05 / DEEP SPACE',card);const title=this.el('h1',this.title,card);let taps=0,stamp=0;title.addEventListener('pointerdown',()=>{if(m.phase!=='menu')return;const now=performance.now();if(now-stamp>900)taps=0;stamp=now;if(++taps===5){this.secret();taps=0;}});
       if(this.confirm){this.el('h2',this.tr('exit'),card);this.el('p',this.tr('exitNote'),card);this.button(this.tr('back'),()=>{this.confirm=false;this.clearInput();m.resume();},card);this.button(this.tr('hub'),()=>this.exit(),card);}
       else if(m.phase==='menu'){
-        this.el('p',this.tr(this.kind),card);this.button(this.tr('play'),()=>this.start(),card).className='primary';
+        this.el('p',this.tr(this.kind),card);const play=this.button(this.tr('play'),()=>this.start(),card);play.className='primary';play.disabled=!this.worldUnlocked();if(this.worlds.length){const row=this.el('div',undefined,card,'world-picker'),left=this.button('◀',()=>this.cycleWorld(-1),row);left.setAttribute('aria-label',this.tr('world')+' '+this.tr('prev'));this.el('strong',`${this.tr('world')}: ${worldName(this.currentWorld(),this.options.language?.()||'de')}`,row);const right=this.button('▶',()=>this.cycleWorld(1),row);right.setAttribute('aria-label',this.tr('world')+' '+this.tr('next'));this.el('small',this.worldUnlocked()?this.tr('unlocked'):this.tr('locked')+' · '+this.worldRequirement(),row);this.el('p',this.tr('worldHint'),card,'arcade-help');}
         if(this.kind==='rally'){this.button(this.tr('mode')+': '+this.tr(this.solo?'solo':'duo'),()=>{this.solo=!this.solo;},card);if(this.solo)this.button(this.tr('difficulty')+': '+this.tr(['easy','normal','hard'][this.difficulty]),()=>{this.difficulty=(this.difficulty+1)%3;},card);}
         this.el('p',this.tr(this.kind+'Control'),card,'arcade-help');this.el('p',this.tr('hint'),card,'arcade-help');this.button(this.tr('hub'),()=>this.exit(),card);
       }else if(m.phase==='paused'){this.el('h2',this.tr('pause'),card);this.button(this.tr('resume'),()=>this.togglePause(),card).className='primary';this.button(this.tr('hub'),()=>this.requestExit(),card);}
@@ -190,6 +213,6 @@
       if(!this.secretArt.hidden){const c=this.secretArt.getContext('2d'),x=70,y=45+(motion?Math.sin(performance.now()/250)*7:0);c.clearRect(0,0,140,100);c.fillStyle='#b4ffce';c.beginPath();c.ellipse(x,y,46,15,0,0,7);c.fill();c.fillStyle='#9be0ff';c.beginPath();c.ellipse(x,y-10,22,19,0,Math.PI,0);c.fill();for(let i=0;i<3;i++)star(c,38+i*32,y+4,4,'#4c6389');star(c,24,15,7,'#ffdc84');star(c,114,77,5,'#ffdc84');}
     }
   }
-  const api={Rally,Orbit,View,COPY,render,open:(kind,options)=>new View(kind,options)};
+  const api={Rally,Orbit,View,COPY,GAME_WORLDS,gameWorld,worldIsUnlocked,worldName,render,open:(kind,options)=>new View(kind,options)};
   if(typeof module==='object'&&module.exports)module.exports=api;else root.ArcadeGames=api;
 })(typeof window==='object'?window:globalThis);
