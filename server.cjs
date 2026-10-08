@@ -1,11 +1,11 @@
 'use strict';
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
-const {WebSocketServer}=require('ws'),QRCode=require('qrcode'),{Rally}=require('./arcade.js'),{Model:SnakeModel,DEFAULTS:SnakeDefaults}=require('./snake.js');
+const {WebSocketServer}=require('ws'),QRCode=require('qrcode'),{Rally}=require('./arcade.js'),{Model:SnakeModel,DEFAULTS:SnakeDefaults}=require('./snake.js'),{TowerDefense}=require('./bonus-games.js'),{Model:MinigolfModel}=require('./minigolf.js');
 const CODE=/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/,TOKEN=/^[a-f0-9]{48}$/;
 const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const randomCode=()=>Array.from({length:6},()=>alphabet[crypto.randomInt(alphabet.length)]).join('');
 const token=()=>crypto.randomBytes(24).toString('hex');
-const GAME_TYPES=new Set(['rally','snake','arena-catch','arena-zombie','arena-boss']);
+const GAME_TYPES=new Set(['rally','snake','tower','minigolf','arena-catch','arena-zombie','arena-boss']);
 
 // Rally and Snake keep their original models on the server. Ultimate Arena
 // keeps the original browser state machine authoritative; this server only
@@ -17,6 +17,43 @@ class SnakeDuel {
   resume(){if(this.phase==='paused'){this.phase='playing';this.model.resume();}}
   update(dt,inputs=[]){if(this.phase!=='playing')return;inputs.forEach((v,i)=>{if(v?.dir)this.model.setDirection(i+1,v.dir);});this.model.frame(dt);if(this.model.state==='gameover'){this.phase='over';const scores=this.model.snakes.map(s=>s.score||0);this.winner=scores[0]===scores[1]?null:scores[0]>scores[1]?0:1;this.result=this.winner===null?'draw':'won';}}
   snapshot(){const m=this.model;return {w:this.w,h:this.h,cols:44,rows:26,theme:m.settings.theme,settings:{...m.settings},snakes:m.snakes.map(s=>({positions:s.positions.map(p=>[p[0],p[1]]),direction:s.direction,lastDirection:s.lastDirection,dead:s.dead,score:s.score||0,base:s.base,head:s.head,border:s.border,gulp:s.gulp||0,tongue:s.tongue||0})),food:m.food?{position:[...m.food.position],bonus:!!m.food.bonus,phase:m.food.phase||0,color:m.food.color}:null,bonusFood:m.bonusFood?{position:[...m.bonusFood.position],bonus:true,phase:m.bonusFood.phase||0,color:m.bonusFood.color}:null,obstacles:m.obstacles.map(p=>[p[0],p[1]]),particles:m.particles.map(p=>({...p})),texts:m.texts.map(p=>({...p})),leaves:m.leaves.map(p=>({...p})),scores:m.snakes.length?m.snakes.map(s=>s.score||0):[0,0],elapsed:m.duration||0,winner:this.winner,result:this.result,state:m.state};}
+}
+
+// Tower co-op runs the existing TowerDefense model. Both players send small,
+// validated actions; the server owns gold, waves, enemy movement and damage.
+class TowerCoop {
+  constructor(options={}){this.phase='menu';this.w=900;this.h=600;this.winner=null;this.result=null;this.model=new TowerDefense({random:options.random||Math.random,stats:()=>({tower_games:30}),map:'meadow',challengeId:'balanced',onRoundEnd:r=>{this.phase='over';this.result=r.won?'won':'lost';}});}
+  start(){this.model.start();this.phase='playing';this.winner=null;this.result=null;}
+  pause(){if(this.phase==='playing'){this.phase='paused';this.model.pause();}}
+  resume(){if(this.phase==='paused'){this.phase='playing';this.model.resume();}}
+  action(msg){if(this.phase!=='playing'||!msg||typeof msg!=='object')return false;const m=this.model;
+    if(msg.action==='select'&&typeof msg.tower==='string'&&m.loadout.includes(msg.tower)){m.selectType(msg.tower);return true;}
+    if(msg.action==='place'&&Number.isFinite(msg.x)&&Number.isFinite(msg.y)&&msg.x>=0&&msg.x<=this.w&&msg.y>=0&&msg.y<=this.h)return m.placeAt(msg.x,msg.y);
+    if(msg.action==='wave')return m.startWave();
+    if(msg.action==='sell')return m.sell();
+    return false;
+  }
+  update(dt){if(this.phase!=='playing')return;this.model.update(dt);if(this.model.phase==='won'||this.model.phase==='over'){this.phase='over';this.result=this.model.phase==='won'?'won':'lost';}}
+  snapshot(){const m=this.model,cleanEnemy=e=>({type:e.type,x:e.x,y:e.y,hp:e.hp,maxHp:e.maxHp,progress:e.progress,slow:e.slow||0,markTime:e.markTime||0,hit:e.hit||0,healthReveal:e.healthReveal||0,dead:!!e.dead,poisonTime:e.poisonTime||0}),cleanTower=t=>({x:t.x,y:t.y,spot:m.spots.indexOf(t.spot),type:t.type,level:t.level,cooldown:t.cooldown,shots:t.shots,flash:t.flash,invested:t.invested,fusionTypes:t.fusionTypes||null});
+    return {w:this.w,h:this.h,scores:[m.score,m.gold],elapsed:m.time||0,winner:null,result:this.result,state:m.phase,phase:m.phase,mapId:m.mapId,challengeId:m.challengeId,loadout:[...m.loadout],selectedType:m.selectedType,selectedTower:m.selectedTower?m.towers.indexOf(m.selectedTower):-1,wave:m.wave,maxWaves:m.maxWaves,waveActive:m.waveActive,gold:m.gold,lives:m.lives,score:m.score,kills:m.kills,built:m.built,upgrades:m.upgrades,sold:m.sold,bosses:m.bosses,morphs:m.morphs,maxGold:m.maxGold,maxTowerTypes:m.maxTowerTypes,specialHits:m.specialHits,message:m.message,endless:m.endless,path:m.path.map(p=>({...p})),spots:m.spots.map(p=>({...p})),towers:m.towers.map(cleanTower),enemies:m.enemies.filter(e=>!e.dead).map(cleanEnemy),projectiles:m.projectiles.slice(-100).map(p=>({x:p.x,y:p.y,originX:p.originX,originY:p.originY,type:p.type,color:p.color,age:p.age,targetX:p.target?.x,targetY:p.target?.y,fusionTypes:p.fusionTypes||null})),effects:m.effects.slice(-80).map(e=>({...e})),particles:m.particles.slice(-180).map(p=>({...p}))};
+  }
+}
+
+// The online cup runs the very same model as the local cup. Only the active
+// player may send one shot; balls, penalties, turn order and results stay here.
+class MinigolfDuel {
+  constructor(options={}){this.phase='menu';this.w=900;this.h=600;this.winner=null;this.result=null;this.options=options;this.model=new MinigolfModel({players:2,courseCount:9,onSound:options.onSound,onEnd:r=>{this.phase='over';this.winner=r.winner;this.result=r.winners.length>1?'draw':'won';options.onRoundEnd?.(r);}});}
+  configurePlayers(count){if(!Number.isInteger(count)||count<2||count>4)return false;this.model.players=count;return true;}
+  start(){this.model.start();this.phase='playing';this.winner=null;this.result=null;}
+  pause(){if(this.phase==='playing'){this.phase='paused';this.model.pause();}}
+  resume(){if(this.phase==='paused'){this.phase='playing';this.model.resume();}}
+  action(msg,slot){
+    if(this.phase!=='playing'||this.model.phase!=='playing'||!msg||msg.action!=='putt'||slot!==this.model.player||!Number.isSafeInteger(msg.turnId)||msg.turnId!==this.model.turnId||!Array.isArray(msg.aim)||msg.aim.length!==2||!msg.aim.every(n=>Number.isFinite(n)&&Math.abs(n)<=1.00001)||!Number.isFinite(msg.power)||msg.power<0||msg.power>1)return false;
+    const length=Math.hypot(...msg.aim);if(length<.99||length>1.01)return false;
+    return this.model.putt(msg.aim,msg.power,msg.turnId);
+  }
+  update(dt){if(this.phase!=='playing')return;this.model.update(dt);if(this.model.phase==='over')this.phase='over';}
+  snapshot(){const m=this.model,s=m.snapshot();return {...s,w:this.w,h:this.h,state:m.phase,scores:m.turns.map((row,i)=>row.reduce((sum,n)=>sum+n,0)+(m.balls[i]?.sunk?0:m.balls[i]?.strokes||0)),elapsed:m.time,winner:this.winner,result:this.result,roundResult:s.result};}
 }
 
 // Online Arena uses the original browser game as the authority. The server
@@ -39,7 +76,7 @@ class OriginalArenaRelay {
   snapshot(){if(this.latest)return {...this.latest,inputs:this.inputs.map(v=>({...v}))};return {w:this.w,h:this.h,mode:this.mode,modeIndex:this.mode==='arena-catch'?0:this.mode==='arena-boss'?4:2,mapIndex:0,players:[],scores:[0,0],elapsed:0,catcher:-1,orb:{x:this.w/2,y:this.h/2},powerups:[],weapons:[],projectiles:[],attacks:[],boss:null,zombies:[],winner:null,result:null,state:'PLAYING',inputs:this.inputs.map(v=>({...v}))};}
 }
 
-function createGame(type,options={}){if(type==='snake')return new SnakeDuel(options);if(type.startsWith('arena-'))return new OriginalArenaRelay(type,options);return new Rally(options);}
+function createGame(type,options={}){if(type==='snake')return new SnakeDuel(options);if(type==='tower')return new TowerCoop(options);if(type==='minigolf')return new MinigolfDuel(options);if(type.startsWith('arena-'))return new OriginalArenaRelay(type,options);return new Rally(options);}
 function publicUrl(value,local=false){const u=new URL(value);if(u.username||u.password||u.search||u.hash||!['https:',...(local?['http:']:[])].includes(u.protocol))throw Error('Use an HTTPS public URL without credentials, query or fragment.');return u;}
 
 class Rooms {
@@ -53,25 +90,26 @@ class Rooms {
   newPlayer(ws,slot=0,game='rally'){return {ws,token:token(),name:`Spieler ${slot+1}`,vote:game,ready:false,away:false,disconnectedAt:0,input:{axis:0,target:null,dx:0,dy:0,dir:null,fire:false},seq:-1,inputAt:0};}
   joined(ws,r,slot){const p=r.players[slot];this.members.set(ws,{room:r,slot});const invite=new URL(this.siteUrl);invite.pathname='/room/'+encodeURIComponent(r.code);invite.search='';invite.hash='';this.send(ws,{type:'joined',v:1,code:r.code,game:r.gameType,slot,token:p.token,invite:invite.href,name:p.name});this.broadcast(r);}
   create(ws,game='rally'){if(this.player(ws))return this.error(ws,'already_joined');if(this.rooms.size>=this.maxRooms)return this.error(ws,'busy');if(!GAME_TYPES.has(game))return this.error(ws,'invalid_game');let code;do{code=randomCode();}while(this.rooms.has(code));
-    const r={code,gameType:game,players:[this.newPlayer(ws,0,game),null],round:0,phase:'lobby',expires:this.now()+this.roomMs,countdown:0,events:[],eventSeq:0};
+    const r={code,gameType:game,players:[this.newPlayer(ws,0,game),...Array(game==='minigolf'?3:1).fill(null)],round:0,phase:'lobby',expires:this.now()+this.roomMs,countdown:0,events:[],eventSeq:0};
     r.game=createGame(game,{onSound:(name,player)=>{r.events.push({id:++r.eventSeq,name,player});r.events=r.events.slice(-16);},onRoundEnd:()=>{r.phase='over';r.players.forEach(p=>{if(p)p.ready=false;});}});
     this.rooms.set(code,r);this.joined(ws,r,0);
   }
-  join(ws,code){if(this.player(ws))return this.error(ws,'already_joined');if(!CODE.test(code||''))return this.error(ws,'invalid_code');const r=this.rooms.get(code);if(!r||r.expires<=this.now())return this.error(ws,'not_found');if(r.players[1])return this.error(ws,'full');r.players[1]=this.newPlayer(ws,1,r.gameType);this.joined(ws,r,1);}
+  join(ws,code){if(this.player(ws))return this.error(ws,'already_joined');if(!CODE.test(code||''))return this.error(ws,'invalid_code');const r=this.rooms.get(code);if(!r||r.expires<=this.now())return this.error(ws,'not_found');const slot=r.players.findIndex(p=>!p);if(slot<0)return this.error(ws,'full');if(r.gameType==='minigolf'&&!['lobby','over'].includes(r.phase))return this.error(ws,'already_started');r.players[slot]=this.newPlayer(ws,slot,r.gameType);if(r.gameType==='minigolf')r.players.forEach(p=>{if(p)p.ready=false;});this.joined(ws,r,slot);}
   resume(ws,code,key){if(this.player(ws))return this.error(ws,'already_joined');const r=this.rooms.get(code);if(!r||!TOKEN.test(key||''))return this.error(ws,'expired');
     const slot=r.players.findIndex(p=>p&&p.token===key);if(slot<0)return this.error(ws,'expired');const p=r.players[slot];if(!p.ws&&this.now()-p.disconnectedAt>this.reconnectMs)return this.error(ws,'expired');
     if(p.ws){const old=p.ws;this.members.delete(old);this.send(old,{type:'closed',reason:'replaced'});old.close?.(1000,'Session reconnected');if(['playing','countdown'].includes(r.phase)){r.phase='paused';r.game.pause();r.players.forEach(p=>{if(p)p.ready=false;});}}
     p.ws=ws;p.ready=false;p.away=false;p.input={axis:0,target:null,dx:0,dy:0,dir:null,fire:false};p.seq=-1;this.joined(ws,r,slot);
   }
   ready(ws){const a=this.player(ws);if(!a)return this.error(ws,'not_joined');const {room:r,p}=a;if(!['lobby','paused','over'].includes(r.phase))return;p.ready=true;p.away=false;
-    if(r.players.every(p=>p?.ws&&p.ready&&!p.away&&p.vote===r.gameType)){
-      if(r.phase!=='paused'||!r.round){r.round++;r.game.start(false);r.events=[];}else r.game.resume();
-      r.phase='countdown';r.countdown=this.now()+3000;r.players.forEach(p=>{p.input={axis:0,target:null};p.inputAt=0;});
+    const occupied=r.players.filter(Boolean),required=r.gameType==='minigolf'?occupied.length:r.players.length;
+    if(required>=2&&occupied.length===required&&occupied.every(p=>p.ws&&p.ready&&!p.away&&p.vote===r.gameType)){
+      if(r.phase!=='paused'||!r.round){r.game.configurePlayers?.(occupied.length);r.round++;r.game.start(false);r.events=[];}else r.game.resume();
+      r.phase='countdown';r.countdown=this.now()+3000;occupied.forEach(p=>{p.input={axis:0,target:null};p.inputAt=0;});
     }this.broadcast(r);
   }
   profile(ws,name){const a=this.player(ws);if(!a)return this.error(ws,'not_joined');const clean=String(name??'').replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,18);if(!clean)return this.error(ws,'invalid_name');a.p.name=clean;a.p.ready=false;a.p.away=false;this.broadcast(a.room);}
-  vote(ws,game){const a=this.player(ws);if(!a)return this.error(ws,'not_joined');const r=a.room;if(!['lobby','paused','over'].includes(r.phase)||!GAME_TYPES.has(game))return this.error(ws,'invalid_game');a.p.vote=game;a.p.ready=false;a.p.away=false;
-    const votes=r.players.filter(p=>p?.ws).map(p=>p.vote||r.gameType);if(votes.length===2&&votes[0]===votes[1]&&votes[0]!==r.gameType){r.gameType=votes[0];r.game=createGame(r.gameType,{onSound:(name,player)=>{r.events.push({id:++r.eventSeq,name,player});r.events=r.events.slice(-16);},onRoundEnd:()=>{r.phase='over';r.players.forEach(p=>{if(p)p.ready=false;});}});r.round=0;r.phase='lobby';r.countdown=0;r.events=[];r.players.forEach(p=>{if(p){p.vote=r.gameType;p.ready=false;}});}this.broadcast(r);}
+  vote(ws,game){const a=this.player(ws);if(!a)return this.error(ws,'not_joined');const r=a.room;if(!['lobby','paused','over'].includes(r.phase)||!GAME_TYPES.has(game))return this.error(ws,'invalid_game');const occupied=r.players.filter(Boolean);if(game!=='minigolf'&&occupied.length>2)return this.error(ws,'too_many_players');a.p.vote=game;a.p.ready=false;a.p.away=false;
+    const votes=occupied.filter(p=>p.ws).map(p=>p.vote||r.gameType);if(votes.length===occupied.length&&votes.length>=2&&votes.every(v=>v===votes[0])&&votes[0]!==r.gameType){r.gameType=votes[0];r.players=r.gameType==='minigolf'?[...occupied,...Array(4-occupied.length).fill(null)]:[...occupied,...Array(2-occupied.length).fill(null)];r.game=createGame(r.gameType,{onSound:(name,player)=>{r.events.push({id:++r.eventSeq,name,player});r.events=r.events.slice(-16);},onRoundEnd:()=>{r.phase='over';r.players.forEach(p=>{if(p)p.ready=false;});}});r.round=0;r.phase='lobby';r.countdown=0;r.events=[];r.players.forEach(p=>{if(p){p.vote=r.gameType;p.ready=false;}});}this.broadcast(r);}
   pause(ws){const a=this.player(ws);if(!a)return;const r=a.room;
     // Losing focus while the lobby is open must not cancel a player's ready state.
     // Only an active countdown or match can be paused.
@@ -82,6 +120,7 @@ class Rooms {
   input(ws,msg){const a=this.player(ws);if(!a||a.room.phase!=='playing')return;const p=a.p;const validNumber=(v,max=1)=>Number.isFinite(v)&&Math.abs(v)<=max;if(!Number.isSafeInteger(msg.seq)||msg.seq<0||msg.seq<=p.seq||msg.seq>1e9||!validNumber(msg.axis)||!(msg.target===null||Number.isFinite(msg.target)&&msg.target>=0&&msg.target<=1)||!(msg.dx===undefined||validNumber(msg.dx))||!(msg.dy===undefined||validNumber(msg.dy))||!(msg.targetX===undefined||validNumber(msg.targetX))||!(msg.targetY===undefined||validNumber(msg.targetY))||!(msg.dir===undefined||['up','down','left','right'].includes(msg.dir)))return;
     p.seq=msg.seq;p.input={axis:msg.axis,target:msg.axis?null:msg.target===null?null:msg.target*600,dx:msg.dx||0,dy:msg.dy||0,targetX:msg.targetX,targetY:msg.targetY,dir:msg.dir||null,fire:msg.fire===true};p.inputAt=this.now();
   }
+  gameAction(ws,msg){const a=this.player(ws);if(!a||!['tower','minigolf'].includes(a.room.gameType)||a.room.phase!=='playing')return;const p=a.p;if(!msg||typeof msg!=='object'||this.now()-(p.lastActionAt||0)<45)return;p.lastActionAt=this.now();if(!a.room.game.action(msg,a.slot))this.error(ws,'invalid_action');}
   setSnapshot(ws,snapshot){const a=this.player(ws);if(!a||a.slot!==0||a.room.phase!=='playing'||!a.room.game.setSnapshot)return;if(!a.room.game.setSnapshot(snapshot))this.error(ws,'invalid_snapshot');}
   leave(ws){const a=this.player(ws);if(!a)return;this.members.delete(ws);a.p.ws=null;this.destroy(a.room,'left');}
   disconnect(ws){const a=this.player(ws);if(!a)return;this.members.delete(ws);a.p.ws=null;a.p.disconnectedAt=this.now();a.p.ready=false;a.p.input={axis:0,target:null};
@@ -92,7 +131,7 @@ class Rooms {
     if(r.expires<=this.now()){this.destroy(r,'expired');continue;}
     if(r.players.some(p=>p&&!p.ws&&this.now()-p.disconnectedAt>=this.reconnectMs)){this.destroy(r,'disconnected');continue;}
     if(r.phase==='countdown'&&this.now()>=r.countdown)r.phase='playing';
-    if(r.phase==='playing'){const inputs=r.players.map(p=>this.now()-p.inputAt>600?{axis:0,target:null,dx:0,dy:0,dir:null,fire:false}:p.input);if(r.gameType==='rally')r.game.update(dt,{axes:inputs.map(p=>p.axis),targets:inputs.map(p=>p.target)});else r.game.update(dt,inputs);if(r.game.phase==='over'){r.phase='over';r.players.forEach(p=>{if(p)p.ready=false;});}}
+    if(r.phase==='playing'){const inputs=r.players.map(p=>!p||this.now()-p.inputAt>600?{axis:0,target:null,dx:0,dy:0,dir:null,fire:false}:p.input);if(r.gameType==='rally')r.game.update(dt,{axes:inputs.map(p=>p.axis),targets:inputs.map(p=>p.target)});else r.game.update(dt,inputs);if(r.game.phase==='over'){r.phase='over';r.players.forEach(p=>{if(p)p.ready=false;});}}
   }}
 }
 
@@ -125,6 +164,9 @@ function createServer(options={}){
   });
   function originAllowed(origin){if(allowed.has(origin))return true;if(local){try{const u=new URL(origin);return u.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(u.hostname)&&u.port===String(server.address().port);}catch{}}return false;}
   function rate(map,key,max,windowMs){const now=Date.now(),old=map.get(key);if(!old||now>=old.end){if(map.size>10000){for(const [k,v]of map)if(now>=v.end)map.delete(k);if(map.size>10000)return false;}map.set(key,{count:1,end:now+windowMs});return true;}return ++old.count<=max;}
+  // Expired connection-address counters must not wait for another request or
+  // for a large map. A 60-second window is retained for at most one more heartbeat.
+  function clearExpiredRates(){const now=Date.now();for(const map of [addresses,roomAttempts])for(const [ip,entry]of map)if(now>=entry.end)map.delete(ip);}
   server.on('upgrade',(req,socket,head)=>{
     let url;try{url=new URL(req.url,'http://internal');}catch{socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');return;}
     if(url.pathname!=='/play'||!originAllowed(req.headers.origin)){socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');return;}
@@ -140,7 +182,7 @@ function createServer(options={}){
       let m;try{m=JSON.parse(raw.toString());}catch{ws.close(1008,'Invalid JSON');return;}
       if(!m||typeof m!=='object'||Array.isArray(m)||m.v!==1||typeof m.type!=='string'){ws.close(1008,'Unsupported protocol');return;}
       if(['create','join','resume'].includes(m.type)&&!rate(roomAttempts,ws.clientAddress,40,60000)){rooms.error(ws,'rate');return;}
-      if(m.type==='create')rooms.create(ws,m.game);else if(m.type==='join')rooms.join(ws,m.code);else if(m.type==='resume')rooms.resume(ws,m.code,m.token);else if(m.type==='profile')rooms.profile(ws,m.name);else if(m.type==='vote')rooms.vote(ws,m.game);else if(m.type==='ready')rooms.ready(ws);else if(m.type==='input')rooms.input(ws,m);else if(m.type==='snapshot')rooms.setSnapshot(ws,m.snapshot);else if(m.type==='pause')rooms.pause(ws);else if(m.type==='leave')rooms.leave(ws);else if(m.type==='ping')safeSend(ws,{type:'pong',at:Number.isFinite(m.at)?m.at:0});else if(m.type==='qr'){
+       if(m.type==='create')rooms.create(ws,m.game);else if(m.type==='join')rooms.join(ws,m.code);else if(m.type==='resume')rooms.resume(ws,m.code,m.token);else if(m.type==='profile')rooms.profile(ws,m.name);else if(m.type==='vote')rooms.vote(ws,m.game);else if(m.type==='ready')rooms.ready(ws);else if(m.type==='input')rooms.input(ws,m);else if(m.type==='action')rooms.gameAction(ws,m);else if(m.type==='snapshot')rooms.setSnapshot(ws,m.snapshot);else if(m.type==='pause')rooms.pause(ws);else if(m.type==='leave')rooms.leave(ws);else if(m.type==='ping')safeSend(ws,{type:'pong',at:Number.isFinite(m.at)?m.at:0});else if(m.type==='qr'){
         const a=rooms.player(ws);if(!a||ws.qrPending||ws.qrRoom===a.room.code)return;ws.qrPending=true;const code=a.room.code;
         const invite=new URL(site.href);invite.pathname='/room/'+encodeURIComponent(code);invite.search='';invite.hash='';
         QRCode.toDataURL(invite.href,{errorCorrectionLevel:'M',margin:4,width:296}).then(image=>{if(rooms.player(ws)?.room.code===code){safeSend(ws,{type:'qr',code,image,invite:invite.href});ws.qrRoom=code;}}).catch(()=>rooms.error(ws,'qr')).finally(()=>ws.qrPending=false);
@@ -150,12 +192,12 @@ function createServer(options={}){
   });
   let last=performance.now(),acc=0,broadcastAcc=0;
   const loop=setInterval(()=>{const now=performance.now(),elapsed=Math.min(.1,(now-last)/1000);last=now;acc+=elapsed;broadcastAcc+=elapsed;while(acc>=1/60){rooms.tick(1/60);acc-=1/60;}if(broadcastAcc>=1/30){broadcastAcc=0;for(const r of rooms.rooms.values())rooms.broadcast(r);}},1000/60);loop.unref();
-  const heartbeat=setInterval(()=>{for(const ws of connections){if(!ws.alive){ws.terminate();continue;}ws.alive=false;ws.ping();}},10000);heartbeat.unref();
+  const heartbeat=setInterval(()=>{clearExpiredRates();for(const ws of connections){if(!ws.alive){ws.terminate();continue;}ws.alive=false;ws.ping();}},10000);heartbeat.unref();
   // Render routes traffic to the container network interface. Keep local tests
   // on loopback, but never let a production process bind only to localhost.
   const defaultHost=process.env.HOST||(process.env.NODE_ENV==='production'?'0.0.0.0':'127.0.0.1');
-  return {server,rooms,wss,listen:(port=Number(process.env.PORT)||8080,host=defaultHost)=>new Promise(resolve=>server.listen(port,host,()=>resolve(server.address()))),close:()=>new Promise(resolve=>{clearInterval(loop);clearInterval(heartbeat);for(const ws of connections)ws.terminate();wss.close();server.close(resolve);})};
+  return {server,rooms,wss,listen:(port=Number(process.env.PORT)||8080,host=defaultHost)=>new Promise(resolve=>server.listen(port,host,()=>resolve(server.address()))),close:()=>new Promise(resolve=>{clearInterval(loop);clearInterval(heartbeat);addresses.clear();roomAttempts.clear();for(const ws of connections)ws.terminate();wss.close();server.close(resolve);})};
 }
 if(require.main===module){const app=createServer();app.listen().then(a=>console.log(`Arcade room server listening on port ${a.port}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>app.close().then(()=>process.exit(0)));}
-module.exports={Rooms,createServer,SnakeDuel,OriginalArenaRelay};
+module.exports={Rooms,createServer,SnakeDuel,TowerCoop,MinigolfDuel,OriginalArenaRelay};
 

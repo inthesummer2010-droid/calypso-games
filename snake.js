@@ -13,12 +13,13 @@
     { bg:[200,220,240], grid:[180,200,220], ui:[150,180,210], outer:[100,150,200], inner:[200,240,255], shadow:true }
   ];
   const OPTIONS = [
-    ['mode',['classic','speedrun','maze'],0], ['theme',['jungle','neon','retro','ice'],0],
+    ['mode',['classic','speedrun','maze','survival','mirror','fruit_frenzy'],0], ['theme',['jungle','neon','retro','ice'],0],
     ['speed',[5,8,10,12,15,20],2], ['walls',['portal','lethal'],0],
     ['obstacles',[0,5,10,15,25],1], ['multiplayer',['off','on'],0],
     ['color',['green','blue','red'],0], ['grid',['off','on'],0],
     ['particles',['on','off'],0], ['bonus',['on','off'],0],
-    ['apple',['dynamic','image'],0], ['background',['off','on'],0]
+    ['apple',['dynamic','image'],0], ['background',['off','on'],0],
+    ['controls',['wasd','esdf','ijkl'],0]
   ];
   const DEFAULTS = Object.fromEntries(OPTIONS.map(([key,,index]) => [key,index]));
   const DIR = { up:[0,-1], down:[0,1], left:[-1,0], right:[1,0] };
@@ -29,6 +30,10 @@
     fr:{start:'JOUER',settings:'PARAMÈTRES',exit:'RETOUR AU HUB',back:'RETOUR',continue:'CONTINUER',menu:'MENU PRINCIPAL',again:'REJOUER',pause:'P A U S E',gameover:'PARTIE TERMINÉE',score:'Points :',record:'Record :',p1:'Joueur 1 :',p2:'Joueur 2 :',newrecord:'NOUVEAU RECORD',draw:'ÉGALITÉ',win1:'LE JOUEUR 1 GAGNE !',win2:'LE JOUEUR 2 GAGNE !',mode:'Mode de jeu',theme:'Style',speed:'Vitesse de base',walls:'Bord du terrain',obstacles:'Obstacles',multiplayer:'Multijoueur',color:'Couleur J1',grid:'Grille',particles:'Effets',bonus:'Pomme dorée',apple:'Style de pomme',background:'Image de fond',classic:'Classique',speedrun:'Speedrun',maze:'Labyrinthe',jungle:'Jungle',neon:'Néon',retro:'Rétro',ice:'Monde glacé',portal:'Portail',lethal:'Mortel',on:'Oui',off:'Non',green:'Vert',blue:'Bleu',red:'Rouge',dynamic:'Dynamique',image:'Image',controls:'J1 : WASD · J2 : Flèches · Échap / P : Pause',controlsSolo:'WASD / Flèches · Échap / P : Pause',touch:'Commandes',version:'Snake',missing:'Image indisponible : dessin original activé',mode_desc:'Classique, accélération après les pommes ou labyrinthe',theme_desc:'Change le style du jeu',speed_desc:'Vitesse initiale du serpent',walls_desc:'Portail relie les bords ; Mortel termine la partie',obstacles_desc:'Nombre d’obstacles',multiplayer_desc:'Le second joueur utilise les flèches',color_desc:'Couleur du serpent du joueur 1',grid_desc:'Affiche une grille',particles_desc:'Active ou désactive les particules',bonus_desc:'Pomme bonus : 5 points de base, vitesse et combo appliqués',apple_desc:'Pomme dessinée ou image',background_desc:'Image de jungle et feuilles animées',nextRound:'Mode, joueurs, obstacles et couleur du serpent : à la prochaine partie.'},
     es:{start:'JUGAR',settings:'AJUSTES',exit:'VOLVER AL HUB',back:'VOLVER',continue:'CONTINUAR',menu:'MENÚ PRINCIPAL',again:'JUGAR DE NUEVO',pause:'P A U S A',gameover:'FIN DEL JUEGO',score:'Puntos:',record:'Récord:',p1:'Jugador 1:',p2:'Jugador 2:',newrecord:'NUEVO RÉCORD',draw:'EMPATE',win1:'¡GANA EL JUGADOR 1!',win2:'¡GANA EL JUGADOR 2!',mode:'Modo de juego',theme:'Estilo',speed:'Velocidad base',walls:'Borde del campo',obstacles:'Obstáculos',multiplayer:'Multijugador',color:'Color J1',grid:'Cuadrícula',particles:'Efectos',bonus:'Manzana dorada',apple:'Diseño de manzana',background:'Imagen de fondo',classic:'Clásico',speedrun:'Speedrun',maze:'Laberinto',jungle:'Selva',neon:'Neón',retro:'Retro',ice:'Mundo de hielo',portal:'Portal',lethal:'Mortal',on:'Sí',off:'No',green:'Verde',blue:'Azul',red:'Rojo',dynamic:'Dinámico',image:'Imagen',controls:'J1: WASD · J2: Flechas · Esc / P: Pausa',controlsSolo:'WASD / Flechas · Esc / P: Pausa',touch:'Controles',version:'Snake',missing:'Imagen no disponible: dibujo original activo',mode_desc:'Clásico, más rápido con cada manzana o laberinto',theme_desc:'Cambia el aspecto del juego',speed_desc:'Velocidad inicial de la serpiente',walls_desc:'Portal conecta los bordes; Mortal termina la ronda',obstacles_desc:'Número de obstáculos',multiplayer_desc:'El segundo jugador usa las flechas',color_desc:'Color de la serpiente del jugador 1',grid_desc:'Muestra una cuadrícula',particles_desc:'Activa o desactiva las partículas',bonus_desc:'Manzana extra: 5 puntos base, con velocidad y combo',apple_desc:'Manzana dibujada o imagen',background_desc:'Imagen de selva y hojas animadas',nextRound:'Modo, jugadores, obstáculos y color se aplican a la próxima ronda.'}
   };
+  Object.assign(COPY.de,{survival:'Überleben',mirror:'Spiegelsteuerung',fruit_frenzy:'Fruchtwirbel',controls:'Tastaturbelegung',wasd:'WASD',esdf:'ESDF',ijkl:'IJKL',mode_desc:'Klassisch, Speedrun, Labyrinth, Überleben, Spiegelsteuerung oder Fruchtwirbel',controls_desc:'Zusätzliche Tasten für Spieler 1; Pfeiltasten bleiben im Einzelspiel verfügbar.'});
+  Object.assign(COPY.en,{survival:'Survival',mirror:'Mirror controls',fruit_frenzy:'Fruit frenzy',controls:'Keyboard layout',wasd:'WASD',esdf:'ESDF',ijkl:'IJKL',mode_desc:'Classic, speedrun, maze, survival, mirrored controls, or fruit frenzy',controls_desc:'Extra keys for player 1; arrow keys remain available in solo play.'});
+  Object.assign(COPY.fr,{survival:'Survie',mirror:'Commandes miroir',fruit_frenzy:'Pluie de fruits',controls:'Disposition du clavier',wasd:'WASD',esdf:'ESDF',ijkl:'IJKL',mode_desc:'Classique, speedrun, labyrinthe, survie, commandes inversées ou pluie de fruits',controls_desc:'Touches supplémentaires pour le joueur 1 ; les flèches restent disponibles en solo.'});
+  Object.assign(COPY.es,{survival:'Supervivencia',mirror:'Controles espejo',fruit_frenzy:'Lluvia de fruta',controls:'Distribución del teclado',wasd:'WASD',esdf:'ESDF',ijkl:'IJKL',mode_desc:'Clásico, speedrun, laberinto, supervivencia, controles espejo o lluvia de fruta',controls_desc:'Teclas extra para el jugador 1; las flechas siguen disponibles en solitario.'});
   for(const [lang,labels] of Object.entries({de:['Ton: an','Ton: aus'],en:['Sound: on','Sound: off'],fr:['Son : activé','Son : coupé'],es:['Sonido: sí','Sonido: no']}))Object.assign(COPY[lang],{audio_on:labels[0],audio_off:labels[1]});
   const val = (cfg,key) => { const o = OPTIONS.find(o => o[0]===key); return o[1][cfg[key]]; };
   const same = (a,b) => a[0]===b[0] && a[1]===b[1];
@@ -90,8 +95,8 @@
       this.sound('start');
     }
     resume() {this.backgroundTheme=THEMES[this.settings.theme];this.effects=val(this.settings,'particles')==='on';this.makeLeaves();this.state='playing';}
-    setDirection(player,direction) { const s=this.snakes[player-1]; if(s&&!s.dead&&DIR[direction]&&direction!==OPP[s.lastDirection]){if(direction!==s.direction&&this.state==='playing')this.sound('snake_turn',player-1);s.direction=direction;} }
-    currentSpeed() {const base=val(this.settings,'speed');return this.mode==='speedrun'?Math.min(base+20,base+(this.snakes[0].length-1)*.5):base;}
+    setDirection(player,direction) { const s=this.snakes[player-1];if(this.mode==='mirror'&&this.state==='playing'&&Math.floor(this.duration/8)%2===1)direction=({up:'down',down:'up',left:'right',right:'left'})[direction]||direction;if(s&&!s.dead&&DIR[direction]&&direction!==OPP[s.lastDirection]){if(direction!==s.direction&&this.state==='playing')this.sound('snake_turn',player-1);s.direction=direction;} }
+    currentSpeed() {const base=val(this.settings,'speed');if(this.mode==='speedrun')return Math.min(base+20,base+(this.snakes[0].length-1)*.5);if(this.mode==='survival')return Math.min(base+16,base+this.duration*.14);return base;}
     move(s) {
       if(s.dead)return;
       const d=DIR[s.direction], p=[s.positions[0][0]+d[0],s.positions[0][1]+d[1]];
@@ -125,7 +130,7 @@
       for(const s of this.snakes){
         if(same(s.positions[0],this.food.position)){
           this.collect(s,this.food,factor);this.food.position=this.point();this.food.phase=0;
-          if(val(this.settings,'bonus')==='on'&&this.random()<.2&&!this.bonusFood)this.bonusFood=this.makeFood(true);
+          if(val(this.settings,'bonus')==='on'&&this.random()<(this.mode==='fruit_frenzy'?0.45:0.2)&&!this.bonusFood)this.bonusFood=this.makeFood(true);
         }
         if(this.bonusFood&&same(s.positions[0],this.bonusFood.position)){this.collect(s,this.bonusFood,factor);this.bonusFood=null;}
       }
@@ -226,7 +231,7 @@
   class View {
     constructor(options){
       this.options=options;this.closed=false;this.pointerPos=[-100,-100];this.selected=0;this.buttons=[];this.buttonSignature='';this.page='menu';this.settingReturn='menu';this.controllerButtons=[];this.axisDirections='';this.lastGamepadNav=0;
-      this.model=new Model({},options);this.makeDemo();
+      this.model=new Model(options.settings||{},options);this.makeDemo();
       this.host=document.createElement('section');this.host.setAttribute('aria-label','Snake');this.host.setAttribute('role','dialog');this.host.setAttribute('aria-modal','true');
       Object.assign(this.host.style,{position:'fixed',inset:'0',zIndex:'10000',background:'#0f0f14',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',fontFamily:'"Segoe UI",Arial,sans-serif',color:'#f0f0f5',overflow:'hidden'});
       this.wrapper=document.createElement('div');Object.assign(this.wrapper.style,{position:'relative',flex:'0 0 auto'});
@@ -287,7 +292,7 @@
     openSettings(){this.settingReturn=this.page;this.setPage('settings');}
     backSettings(){if(this.settingReturn==='pause')this.setPage('pause');else{this.demo.settings={...this.model.settings};this.demo.backgroundTheme=THEMES[this.model.settings.theme];this.setPage('menu');}}
     menu(){this.model.state='menu';this.makeDemo();this.setPage('menu');}
-    changeSetting(index,delta){const [key,values]=OPTIONS[index];this.model.settings[key]=(this.model.settings[key]+delta+values.length)%values.length;this.buttonSignature='';this.buildButtons();}
+    changeSetting(index,delta){const [key,values]=OPTIONS[index];this.model.settings[key]=(this.model.settings[key]+delta+values.length)%values.length;this.options.onSettingsChange?.({...this.model.settings});this.buttonSignature='';this.buildButtons();}
     buildButtons(){
       const result=[],button=(id,x,y,w,h,label,color,action)=>result.push({id,x,y,w,h,label,color,action:()=>{this.model.sound('click');action();},scale:0});
       if(this.page==='menu'){
@@ -312,30 +317,30 @@
         const node=document.createElement('button');node.type='button';node.textContent=b.label;node.setAttribute('aria-label',b.label);
         Object.assign(node.style,{position:'absolute',left:`${b.x/W*100}%`,top:`${b.y/H*100}%`,width:`${b.w/W*100}%`,height:`${b.h/H*100}%`,pointerEvents:'auto',padding:'0',margin:'0',border:'0',background:'transparent',color:'transparent',fontSize:'1px',cursor:'pointer',borderRadius:'10px'});
         node.addEventListener('click',b.action);node.addEventListener('pointerenter',()=>{this.selected=this.page==='settings'?Math.floor(result.indexOf(b)/2):result.indexOf(b);});
-        node.addEventListener('focus',()=>{this.selected=this.page==='settings'?(b.id==='back'?12:Math.floor(result.indexOf(b)/2)):result.indexOf(b);});
+        node.addEventListener('focus',()=>{this.selected=this.page==='settings'?(b.id==='back'?OPTIONS.length:Math.floor(result.indexOf(b)/2)):result.indexOf(b);});
         node.addEventListener('keydown',e=>{e.stopPropagation();if(e.code==='Space'||e.code==='Enter'){e.preventDefault();b.action();}});this.actions.append(node);
       });}
     }
-    hover(){const [x,y]=this.pointerPos;if(this.page==='settings'){for(let i=0;i<12;i++)if(x>=95&&x<=1005&&y>=122+i*31&&y<=150+i*31)this.selected=i;if(x>=440&&x<=660&&y>=564&&y<=614)this.selected=12;}else{const n=this.buttons.findIndex(b=>x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h);if(n>=0)this.selected=n;}}
+    hover(){const [x,y]=this.pointerPos;if(this.page==='settings'){for(let i=0;i<OPTIONS.length;i++)if(x>=95&&x<=1005&&y>=122+i*31&&y<=150+i*31)this.selected=i;if(x>=440&&x<=660&&y>=564&&y<=614)this.selected=OPTIONS.length;}else{const n=this.buttons.findIndex(b=>x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h);if(n>=0)this.selected=n;}}
     pointer(x,y){const b=this.buttons.find(b=>x>=b.x&&x<=b.x+b.w&&y>=b.y&&y<=b.y+b.h);if(b)b.action();}
     handleKey(code){
       if(this.page==='countdown'||this.page==='dying')return;
       if(this.page==='playing'){
         if(code==='Escape'||code==='KeyP'){this.togglePause();return;}
-        const p1={KeyW:'up',KeyS:'down',KeyA:'left',KeyD:'right'},arrow={ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'};
+        const layouts=[{KeyW:'up',KeyS:'down',KeyA:'left',KeyD:'right'},{KeyE:'up',KeyD:'down',KeyS:'left',KeyF:'right'},{KeyI:'up',KeyK:'down',KeyJ:'left',KeyL:'right'}],p1=layouts[this.model.settings.controls]||layouts[0],arrow={ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'};
         if(p1[code])this.model.setDirection(1,p1[code]);if(arrow[code])this.model.setDirection(this.model.multiplayer?2:1,arrow[code]);return;
       }
       if(code==='Escape'){if(this.page==='settings')this.backSettings();else if(this.page==='pause')this.togglePause();return;}
-      const count=this.page==='settings'?13:this.buttons.length;
+      const count=this.page==='settings'?OPTIONS.length+1:this.buttons.length;
       if(code==='ArrowUp'||code==='KeyW')this.selected=Math.max(0,this.selected-1);
       if(code==='ArrowDown'||code==='KeyS')this.selected=Math.min(count-1,this.selected+1);
-      if(this.page==='settings'&&this.selected<12&&(code==='ArrowLeft'||code==='ArrowRight'))this.changeSetting(this.selected,code==='ArrowRight'?1:-1);
+      if(this.page==='settings'&&this.selected<OPTIONS.length&&(code==='ArrowLeft'||code==='ArrowRight'))this.changeSetting(this.selected,code==='ArrowRight'?1:-1);
       if(this.page==='gameover'){
         if(code==='ArrowLeft'||code==='KeyA')this.selected=Math.max(0,this.selected-1);
         if(code==='ArrowRight'||code==='KeyD')this.selected=Math.min(count-1,this.selected+1);
       }
       if(code==='Space'||code==='Enter'){
-        if(this.page==='settings'){if(this.selected===12)this.backSettings();}
+        if(this.page==='settings'){if(this.selected===OPTIONS.length)this.backSettings();}
         else this.buttons[this.selected]?.action();
       }
     }
@@ -403,16 +408,16 @@
         this.overlay(c,150);text(c,'Snake',554,184,90,BLACK,true,1020);text(c,'Snake',550,180,90,t.shadow?GREEN:BLACK,true,1020);
         this.buttons.forEach((b,i)=>this.drawButton(c,b,i===this.selected));text(c,'Snake',550,590,22,ink,false,600);
       }else if(this.page==='settings'){
-        this.overlay(c,200);rect(c,90,30,920,520,t.shadow?20:0,rgb(t.ui,.96),rgb(ink),3);text(c,this.tr('settings'),550,75,50,t.shadow?GREEN:BLACK,true,820);
+        this.overlay(c,200);rect(c,90,20,920,610,t.shadow?20:0,rgb(t.ui,.96),rgb(ink),3);text(c,this.tr('settings'),550,62,44,t.shadow?GREEN:BLACK,true,820);
         OPTIONS.forEach(([key,values],i)=>{
-          const y=136+i*31,isActive=this.selected===i;if(isActive)rect(c,110,y-16,880,31,5,t.shadow?'rgba(255,255,255,.12)':'rgba(0,0,0,.12)');
-          text(c,this.tr(key),140,y,27,ink,false,470,'left');text(c,'‹',699,y,30,ink,true,32);text(c,'›',915,y,30,ink,true,32);
+          const y=112+i*30,isActive=this.selected===i;if(isActive)rect(c,110,y-15,880,29,5,t.shadow?'rgba(255,255,255,.12)':'rgba(0,0,0,.12)');
+          text(c,this.tr(key),140,y,24,ink,false,470,'left');text(c,'‹',699,y,27,ink,true,32);text(c,'›',915,y,27,ink,true,32);
           const value=values[m.settings[key]],label=typeof value==='number'?value:this.tr(value),color=key==='color'?[GREEN,BLUE,RED][m.settings.color]:(t.shadow?YELLOW:BLACK);
-          text(c,label,810,y,28,color,true,170);
+          text(c,label,810,y,25,color,true,170);
         });
-        const selectedKey=OPTIONS[Math.min(11,this.selected)]?.[0],missing=(selectedKey==='apple'&&val(m.settings,'apple')==='image')||(selectedKey==='background'&&val(m.settings,'background')==='on');
-        text(c,this.tr(missing?'missing':`${selectedKey}_desc`),550,520,19,ink,false,850);
-        this.drawButton(c,this.buttons[this.buttons.length-1],this.selected===12);
+        const selectedKey=OPTIONS[Math.min(OPTIONS.length-1,this.selected)]?.[0],missing=(selectedKey==='apple'&&val(m.settings,'apple')==='image')||(selectedKey==='background'&&val(m.settings,'background')==='on');
+        text(c,this.tr(missing?'missing':`${selectedKey}_desc`),550,512,16,ink,false,850);
+        this.drawButton(c,this.buttons[this.buttons.length-1],this.selected===OPTIONS.length);
         if(this.settingReturn==='pause')text(c,this.tr('nextRound'),550,632,15,ink,false,1040);
       }else if(this.page==='pause'){
         this.overlay(c,180);rect(c,325,100,450,450,t.shadow?20:0,rgb(t.ui,.94),rgb(t.shadow?GREEN:BLACK),3);text(c,this.tr('pause'),550,160,70,ink,true,400);this.buttons.forEach((b,i)=>this.drawButton(c,b,i===this.selected));

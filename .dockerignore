@@ -4,5 +4,7 @@
 !server.cjs
 !arcade.js
 !snake.js
+!bonus-games.js
+!minigolf.js
 !index.html
 !Dockerfile
