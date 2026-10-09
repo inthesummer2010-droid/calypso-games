@@ -6359,6 +6359,81 @@ window.HubOnlineConfig = {
   const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
   const lerp = (a, b, t) => a + (b - a) * t;
 
+  // Geometry stays anchored to the original route, including when a later
+  // block returns to the same location. Scenery can query these corridors
+  // instead of placing a second facade or subway shell across the route.
+  const CORRIDOR_WIDTHS = Object.freeze({ street: 7.8, corner: 7.8, descent: 5.25, ascent: 5.25, station: 12.4, tunnel: 12.4 });
+  const SCENERY_EPSILON = 0.015;
+  function segmentPose(segment, s, lateral = 0) {
+    const progress = clamp((s - segment.startS) / segment.length, 0, 1);
+    const along = segment.length * progress;
+    let heading = segment.heading, x = segment.x, z = segment.z;
+    if (segment.kind === 'corner') {
+      const sign = Math.sign(segment.turnAngle);
+      heading += segment.turnAngle * progress;
+      x += CORNER_RADIUS / sign * (Math.cos(segment.heading) - Math.cos(heading));
+      z += CORNER_RADIUS / sign * (Math.sin(segment.heading) - Math.sin(heading));
+    } else {
+      x += Math.sin(heading) * along;
+      z -= Math.cos(heading) * along;
+    }
+    return {
+      x: x + Math.cos(heading) * lateral,
+      y: segment.y + (segment.rise || 0) * progress,
+      z: z + Math.sin(heading) * lateral,
+      heading, kind: segment.kind, district: segment.district
+    };
+  }
+  function polygonBounds(polygon, minY, maxY) {
+    return {
+      min: [Math.min(...polygon.map(p => p[0])), minY, Math.min(...polygon.map(p => p[1]))],
+      max: [Math.max(...polygon.map(p => p[0])), maxY, Math.max(...polygon.map(p => p[1]))]
+    };
+  }
+  function boundsOverlap(a, b, epsilon = SCENERY_EPSILON) {
+    for (let axis = 0; axis < 3; axis++) {
+      if (a.max[axis] <= b.min[axis] + epsilon || b.max[axis] <= a.min[axis] + epsilon) return false;
+    }
+    return true;
+  }
+  function polygonsOverlap(a, b, epsilon = SCENERY_EPSILON) {
+    // Separating axes of both oriented footprints distinguish a real crossing
+    // from two nearby diagonal lots whose axis-aligned bounds happen to meet.
+    for (const polygon of [a, b]) for (let i = 0; i < polygon.length; i++) {
+      const first = polygon[i], next = polygon[(i + 1) % polygon.length];
+      let nx = -(next[1] - first[1]), nz = next[0] - first[0];
+      const length = Math.hypot(nx, nz);
+      if (length < 1e-9) continue;
+      nx /= length; nz /= length;
+      let aMin = Infinity, aMax = -Infinity, bMin = Infinity, bMax = -Infinity;
+      for (const p of a) { const d = p[0] * nx + p[1] * nz; aMin = Math.min(aMin, d); aMax = Math.max(aMax, d); }
+      for (const p of b) { const d = p[0] * nx + p[1] * nz; bMin = Math.min(bMin, d); bMax = Math.max(bMax, d); }
+      if (aMax <= bMin + epsilon || bMax <= aMin + epsilon) return false;
+    }
+    return true;
+  }
+  function localFootprint(pose, box) {
+    const left = Number(box.left ?? -Number(box.width || 0) / 2), right = Number(box.right ?? Number(box.width || 0) / 2);
+    const front = Number(box.front ?? -Number(box.depth || 0) / 2), back = Number(box.back ?? Number(box.depth || 0) / 2);
+    const heading = Number(pose.heading) || 0, c = Math.cos(heading), s = Math.sin(heading), x = Number(pose.x) || 0, z = Number(pose.z) || 0;
+    const polygon = [[left, front], [right, front], [right, back], [left, back]].map(([xx, zz]) => [x + c * xx - s * zz, z + s * xx + c * zz]);
+    const minY = (Number(pose.y) || 0) + Number(box.bottom ?? .16), maxY = (Number(pose.y) || 0) + Number(box.top ?? 80);
+    return { polygon, bounds: polygonBounds(polygon, minY, maxY) };
+  }
+  function coincidentSurfaceRoads(first, second) {
+    if (first.kind !== second.kind) return false;
+    if (first.kind === 'street') {
+      if (Math.abs(Math.sin(first.heading - second.heading)) > .05) return false;
+      // Parallel roads across a block are separate streets. Only a later lap
+      // on the same centreline is a duplicate incarnation of this geometry.
+      const dx = second.x - first.x, dz = second.z - first.z;
+      return Math.abs(dx * Math.cos(first.heading) + dz * Math.sin(first.heading)) < .6;
+    }
+    if (first.kind !== 'corner' || Math.abs(first.length - second.length) > .5) return false;
+    const a = segmentPose(first, first.startS + first.length / 2), b = segmentPose(second, second.startS + second.length / 2);
+    return Math.hypot(a.x - b.x, a.z - b.z) < .6 && Math.abs(Math.sin(a.heading - b.heading)) < .05;
+  }
+
   class Model {
     constructor(options = {}) {
       if (typeof options === 'function') options = { random: options };
@@ -6397,6 +6472,16 @@ window.HubOnlineConfig = {
       this._accumulator = 0;
       this._inputHeld = {};
       this._ended = false;
+      this.geometryRevision = 0;
+      this.routeRevision = 0;
+      // Render caches do not belong to game saves or paused simulation state.
+      Object.defineProperties(this, {
+        _corridorCache: { value: new WeakMap(), writable: true, configurable: true },
+        _routeFootprints: { value: null, writable: true, configurable: true },
+        _sceneryVisibilityStamp: { value: '', writable: true, configurable: true },
+        _scenerySegmentVisibility: { value: new WeakMap(), writable: true, configurable: true },
+        _sceneryItemVisibility: { value: new WeakMap(), writable: true, configurable: true }
+      });
       this._appendSegment('street', 110, { x: 0, y: 0, z: 0, heading: 0 });
       this._appendJunction(true);
       this._ensurePath(380);
@@ -6519,28 +6604,132 @@ window.HubOnlineConfig = {
       s = Math.max(0, Number(s) || 0);
       const segment = this._segmentAt(s) || (s < this.segments[0]?.startS ? this.segments[0] : this.segments[this.segments.length - 1]);
       if (!segment) return { x: lateral, y: 0, z: -s, heading: 0, kind: 'street', district: 'midtown' };
-      const progress = clamp((s - segment.startS) / segment.length, 0, 1);
-      const along = segment.length * progress;
-      let heading = segment.heading;
-      let x = segment.x;
-      let z = segment.z;
-      if (segment.kind === 'corner') {
-        const sign = Math.sign(segment.turnAngle);
-        heading += segment.turnAngle * progress;
-        x += CORNER_RADIUS / sign * (Math.cos(segment.heading) - Math.cos(heading));
-        z += CORNER_RADIUS / sign * (Math.sin(segment.heading) - Math.sin(heading));
-      } else {
-        x += Math.sin(heading) * along;
-        z -= Math.cos(heading) * along;
+      return segmentPose(segment, s, lateral);
+    }
+
+    _geometryChanged() {
+      this.geometryRevision++;
+      this._routeFootprints = null;
+    }
+
+    segmentFootprints(segment, options = {}) {
+      if (!segment) return [];
+      let cached = this._corridorCache.get(segment);
+      if (!cached) { cached = new Map(); this._corridorCache.set(segment, cached); }
+      const halfWidth = options.halfWidth ?? CORRIDOR_WIDTHS[segment.kind] ?? 7.8;
+      if (cached.has(halfWidth)) return cached.get(halfWidth);
+      const footprints = [];
+      const surface = segment.kind === 'street' || segment.kind === 'corner';
+      const stairs = segment.kind === 'descent' || segment.kind === 'ascent';
+      // Small curved slices follow the actual outer sidewalk; a single broad
+      // corner bounding box would incorrectly erase whole neighboring lots.
+      const stride = segment.kind === 'corner' ? 2 : stairs ? 3 : segment.length;
+      for (let start = segment.startS; start < segment.endS - 1e-8; start += stride) {
+        const end = Math.min(segment.endS, start + stride), a = segmentPose(segment, start), b = segmentPose(segment, end);
+        const edge = (p, side) => [p.x + Math.cos(p.heading) * halfWidth * side, p.z + Math.sin(p.heading) * halfWidth * side];
+        const polygon = [edge(a, -1), edge(a, 1), edge(b, 1), edge(b, -1)];
+        const minY = Math.min(a.y, b.y) + (surface ? 0 : -.9), maxY = Math.max(a.y, b.y) + (surface ? 3 : stairs ? 5 : 5.7);
+        footprints.push({ segment, segmentId: segment.id, kind: segment.kind, startS: start, endS: end, polygon, bounds: polygonBounds(polygon, minY, maxY) });
       }
-      return {
-        x: x + Math.cos(heading) * lateral,
-        y: segment.y + (segment.rise || 0) * progress,
-        z: z + Math.sin(heading) * lateral,
-        heading,
-        kind: segment.kind,
-        district: segment.district
-      };
+      cached.set(halfWidth, footprints);
+      return footprints;
+    }
+
+    routeFootprints() {
+      if (!this._routeFootprints) this._routeFootprints = this.segments.flatMap(segment => this.segmentFootprints(segment));
+      return this._routeFootprints;
+    }
+
+    sceneryFootprintClear(pose, localBox, ownerSegmentId, options = {}) {
+      const footprint = localFootprint(pose, localBox), kinds = options.kinds;
+      const corridors = Number.isFinite(options.halfWidth)
+        ? this.segments.flatMap(segment => this.segmentFootprints(segment, { halfWidth: options.halfWidth }))
+        : this.routeFootprints();
+      for (const corridor of corridors) {
+        if (corridor.segmentId === ownerSegmentId || kinds && !kinds.includes(corridor.kind)) continue;
+        // An old parallel incarnation that is not drawn must not clear the
+        // active street's awnings and stoops as though it were a second road.
+        if (!this.scenerySegmentVisible(corridor.segment, options.distance ?? this.distance)) continue;
+        if (boundsOverlap(footprint.bounds, corridor.bounds) && polygonsOverlap(footprint.polygon, corridor.polygon)) return false;
+      }
+      return true;
+    }
+
+    segmentsOverlap(first, second, options = {}) {
+      if (!first || !second || first === second || first.id === second.id) return false;
+      const epsilon = Number.isFinite(options.epsilon) ? options.epsilon : SCENERY_EPSILON;
+      const footprintOptions = options.roadOnly ? { halfWidth: 4.55 } : {};
+      const firstOptions = Number.isFinite(options.firstHalfWidth) ? { halfWidth: options.firstHalfWidth } : footprintOptions;
+      const secondOptions = Number.isFinite(options.secondHalfWidth) ? { halfWidth: options.secondHalfWidth } : footprintOptions;
+      for (const a of this.segmentFootprints(first, firstOptions)) for (const b of this.segmentFootprints(second, secondOptions)) {
+        if (boundsOverlap(a.bounds, b.bounds, epsilon) && polygonsOverlap(a.polygon, b.polygon, epsilon)) return true;
+      }
+      return false;
+    }
+
+    scenerySegmentVisible(segment, distance = this.distance) {
+      if (!segment) return false;
+      this._prepareSceneryVisibility(distance);
+      if (this._scenerySegmentVisibility.has(segment)) return this._scenerySegmentVisibility.get(segment);
+      const surface = segment.kind === 'street' || segment.kind === 'corner';
+      const stairs = segment.kind === 'descent' || segment.kind === 'ascent';
+      const rank = candidate => Math.max(candidate.startS - distance, distance - candidate.endS, 0);
+      const currentRank = rank(segment);
+      for (const candidate of this.segments) {
+        if (candidate === segment || candidate.id === segment.id) continue;
+        const otherSurface = candidate.kind === 'street' || candidate.kind === 'corner';
+        // Normal underground halls remain below surface buildings. A passed
+        // stair mouth also occupies street level and can obstruct a later turn.
+        const obsoleteStairMouth = stairs && otherSurface && segment.endS < distance;
+        if (surface !== otherSurface && !obsoleteStairMouth) continue;
+        // A perpendicular cross street remains part of the visible city. The
+        // renderer opens its curbs at the crossing instead of erasing a block.
+        if (surface && !coincidentSurfaceRoads(segment, candidate)) continue;
+        const otherRank = rank(candidate);
+        if (otherRank > ITEM_RETAIN_DISTANCE || otherRank > currentRank || otherRank === currentRank && candidate.startS <= segment.startS) continue;
+        // Direct connections intentionally meet at the same doorway/corner.
+        if (Math.abs(candidate.startS - segment.endS) < 1e-5 || Math.abs(segment.startS - candidate.endS) < 1e-5) continue;
+        const overlapOptions = obsoleteStairMouth ? { secondHalfWidth: 4.55 } : { roadOnly: surface };
+        if (this.segmentsOverlap(segment, candidate, overlapOptions)) { this._scenerySegmentVisibility.set(segment, false); return false; }
+      }
+      this._scenerySegmentVisibility.set(segment, true);
+      return true;
+    }
+
+    _prepareSceneryVisibility(distance) {
+      // Changes of the nearest route incarnation are infrequent. A small
+      // travelled-distance bucket avoids repeating polygon comparisons for
+      // every chunk and hazard on every animation frame.
+      const stamp = this.geometryRevision + ':' + Math.floor(distance / 8);
+      if (stamp === this._sceneryVisibilityStamp) return;
+      this._sceneryVisibilityStamp = stamp;
+      this._scenerySegmentVisibility = new WeakMap();
+      this._sceneryItemVisibility = new WeakMap();
+    }
+
+    sceneryItemVisible(item, distance = this.distance) {
+      if (!item || item.hit) return false;
+      // This is a render filter: future hazards and every simulation hit test
+      // retain the original safe-row rules. Only old scenery can be hidden.
+      if (item.s >= distance - 8) return true;
+      this._prepareSceneryVisibility(distance);
+      if (this._sceneryItemVisibility.has(item)) return this._sceneryItemVisibility.get(item);
+      const owner = this._segmentAt(item.s);
+      if (!owner) return false;
+      const at = segmentPose(owner, item.s, (item.lane - 1) * LANE_WIDTH);
+      const footprint = localFootprint(at, { left: -1, right: 1, front: -2, back: 2, bottom: -.05, top: 2.6 });
+      const oldRank = Math.abs(item.s - distance);
+      for (const candidate of this.segments) {
+        const rank = Math.max(candidate.startS - distance, distance - candidate.endS, 0);
+        if (candidate === owner || candidate.id === owner.id || rank > ITEM_RETAIN_DISTANCE || rank >= oldRank) continue;
+        if (Math.abs(candidate.startS - owner.endS) < 1e-5 || Math.abs(owner.startS - candidate.endS) < 1e-5) continue;
+        const surface = candidate.kind === 'street' || candidate.kind === 'corner';
+        for (const corridor of this.segmentFootprints(candidate, surface ? { halfWidth: 4.55 } : {})) {
+          if (boundsOverlap(footprint.bounds, corridor.bounds) && polygonsOverlap(footprint.polygon, corridor.polygon)) { this._sceneryItemVisibility.set(item, false); return false; }
+        }
+      }
+      this._sceneryItemVisibility.set(item, true);
+      return true;
     }
 
     update(dt, input = {}) {
@@ -6627,7 +6816,7 @@ window.HubOnlineConfig = {
       const cutoff = this.distance - PATH_RETAIN_DISTANCE;
       let removed = 0;
       while (removed < this.segments.length - 1 && this.segments[removed].endS < cutoff) removed++;
-      if (removed) this.segments.splice(0, removed);
+      if (removed) { this.segments.splice(0, removed); this._geometryChanged(); }
       removed = 0;
       while (removed < this._junctions.length - 1 && this._junctions[removed].crossed && this._junctions[removed].atS < cutoff) removed++;
       if (removed) this._junctions.splice(0, removed);
@@ -6652,6 +6841,7 @@ window.HubOnlineConfig = {
         ...extra
       };
       this.segments.push(segment);
+      this._geometryChanged();
       return segment;
     }
 
@@ -6699,6 +6889,8 @@ window.HubOnlineConfig = {
     _replan(junction, route) {
       // Everything before the decision line is immutable; replace only its future branch.
       this.segments = this.segments.filter(segment => segment.endS <= junction.atS + 0.00001);
+      this.routeRevision++;
+      this._geometryChanged();
       this._junctions = this._junctions.filter(candidate => candidate.atS <= junction.atS);
       this.items = this.items.filter(item => item.s < junction.atS);
       for (const row of this._spawnedRows) {
@@ -6811,7 +7003,7 @@ window.HubOnlineConfig = {
     }
   }
 
-  return { Model, LANE_WIDTH, CORNER_RADIUS, JUMP_DURATION, JUMP_PEAK, SLIDE_DURATION, HAZARDS, STEP, DISTRICTS, districtAtSurfaceDistance, ITEM_SPAWN_AHEAD, ITEM_RETAIN_DISTANCE, PATH_RETAIN_DISTANCE };
+  return { Model, LANE_WIDTH, CORNER_RADIUS, JUMP_DURATION, JUMP_PEAK, SLIDE_DURATION, HAZARDS, STEP, DISTRICTS, districtAtSurfaceDistance, ITEM_SPAWN_AHEAD, ITEM_RETAIN_DISTANCE, PATH_RETAIN_DISTANCE, CORRIDOR_WIDTHS };
 });
 
 </script>
@@ -6863,6 +7055,19 @@ window.HubOnlineConfig = {
     for(const z of [b.depth*.24,b.depth*.24+.55])mesh.box(b.x,b.height+.38,z,.55,.8,.40,C.brick);
     if(hash(seed+3)>.5){material(mesh,'metal');mesh.cylinder([b.x,b.height+.38,0],[b.x,b.height+1.6,0],.045,C.iron,5);mesh.cylinder([b.x-.58,b.height+1.3,0],[b.x+.58,b.height+1.3,0],.018,C.iron,4);}
   }
+  function rearWing(mesh,b,side,seed,height,col,wall='brick') {
+    // A low storefront can share a lot with offices set back from its roof.
+    // The wing occupies the rear half of the existing lot, never a new lot.
+    const width=b.width*.44,x=b.x+side*b.width*.25,front=x-side*width/2,facing=-side;
+    material(mesh,wall);mesh.box(x,b.height+.34,0,width,height-b.height-.34,b.depth-.10,col);
+    material(mesh,'stone');mesh.box(x,height-.08,0,width+.08,.19,b.depth-.06,tint(col,.81));
+    for(let y=b.height+1.15;y<height-1.55;y+=2.65)for(const z of [-b.depth*.27,b.depth*.27]){
+      material(mesh,'stone');face(mesh,front+facing*.022,y,z,1.46,1.71,C.stone,facing);
+      material(mesh,'glass');face(mesh,front+facing*.037,y+.08,z,1.29,1.54,hash(seed+y+z)>.88?[.67,.61,.42]:C.glass,facing);
+      material(mesh,'metal');face(mesh,front+facing*.048,y+.08,z,.045,1.54,C.stone,facing);
+    }
+    material(mesh,'metal');mesh.box(x,height+.14,b.depth*.19,.90,.52,.76,C.steel);
+  }
   function firehouse(mesh,side,seed,shape) {
     const b=body(mesh,side,shape,12.6,C.brick),f=b.facing,x=b.front+f*.028,d=b.depth;
     material(mesh,'stone');mesh.box(x,3.61,0,.24,.44,d+.05,C.stone);
@@ -6894,8 +7099,25 @@ window.HubOnlineConfig = {
     sign(mesh,'LIBRARY',x+f*.49,3.67,0,d-1,.43,f);
     const span=Math.min(3.2,d*.32);mesh.tri([x+f*.48,4.23,-span],[x+f*.48,4.23,span],[x+f*.48,5.17,0],tint(C.stone,1.03),[f,0,0]);
     for(const y of [5.20,7.61])for(let j=0;j<4;j++)window(mesh,x+f*.03,y,-d/2+.95+j*(d-1.9)/3,1.43,1.91,f,C.stone,hash(seed+j+y)>.84);
-    for(let j=0;j<3;j++)mesh.box(x+f*(.13+j*.18),.17,0,.30,(3-j)*.09,Math.min(3.5,d*.44),C.stone);
-    material(mesh,'metal');mesh.box(b.x,b.height+.4,-d*.19,1.1,.47,1,C.steel);
+    const stepCount=3,tread=.24,rise=.11,stepWidth=Math.min(3.1,d*.37),landingY=.17+stepCount*rise;
+    material(mesh,'stone');mesh.box(x+f*.18,.17,0,.36,stepCount*rise,stepWidth,C.stone);
+    for(let j=0;j<stepCount;j++){
+      const xx=x+f*(.44+j*tread),top=.17+(stepCount-j)*rise;
+      mesh.box(xx,.17,0,tread+.025,top-.17,stepWidth,C.stone);
+      pavement(mesh,xx,top+.005,0,tread+.04,stepWidth,tint(C.stone,1.10));
+    }
+    // The entrance sill and both handrails agree with the highest tread.
+    material(mesh,'metal');face(mesh,x+f*.048,landingY,0,1.28,2.0,C.iron,f);
+    material(mesh,'glass');face(mesh,x+f*.061,landingY+.28,0,1.07,1.51,C.glass,f);
+    material(mesh,'metal');face(mesh,x+f*.075,landingY+.15,0,.047,1.78,C.stone,f);
+    for(const z of [-stepWidth/2-.055,stepWidth/2+.055]){
+      const near=x+f*.30,far=x+f*(.44+(stepCount-.5)*tread),low=.17+rise*.5;
+      mesh.cylinder([near,landingY,z],[near,landingY+.82,z],.024,C.iron,4);
+      mesh.cylinder([far,low,z],[far,low+.82,z],.024,C.iron,4);
+      mesh.cylinder([near,landingY+.82,z],[far,low+.82,z],.026,C.iron,4);
+    }
+    rearWing(mesh,b,side,seed,15.2+Math.floor(hash(seed+8)*3)*2.65,[.69,.67,.57],'stone');
+    material(mesh,'metal');mesh.box(b.x+f*b.width*.17,b.height+.4,-d*.19,1.1,.47,1,C.steel);
   }
   function produce(mesh,x,y,z,col) {
     // Octahedra make a crate of fruit readable with only 24 vertices each.
@@ -6913,8 +7135,10 @@ window.HubOnlineConfig = {
       material(mesh,'wood');mesh.box(x+f*.27,.18,z,.48,.61,1.63,C.wood);mesh.box(x+f*.27,.75,z,.54,.06,1.72,tint(C.wood,1.21));
       material(mesh,null);for(let j=0;j<5;j++)produce(mesh,x+f*.29,.87,z-.62+j*.3,j%2?[.83,.36,.17]:[.47,.62,.24]);
     }
-    material(mesh,'metal');mesh.box(b.x,b.height+.40,d*.17,1.3,.40,1.15,C.steel);
-    material(mesh,'glass');mesh.quad([b.x-.9,b.height+.44,-d*.36],[b.x+.9,b.height+.44,-d*.36],[b.x+.9,b.height+.80,-d*.12],[b.x-.9,b.height+.80,-d*.12],[.33,.48,.46]);
+    rearWing(mesh,b,side,seed,13.8+Math.floor(hash(seed+21)*4)*2.65,[.54,.35,.26]);
+    const skylightX=b.x+f*b.width*.20;
+    material(mesh,'metal');mesh.box(skylightX,b.height+.40,d*.17,1.0,.40,1.15,C.steel);
+    material(mesh,'glass');mesh.quad([skylightX-.64,b.height+.44,-d*.36],[skylightX+.64,b.height+.44,-d*.36],[skylightX+.64,b.height+.80,-d*.12],[skylightX-.64,b.height+.80,-d*.12],[.33,.48,.46]);
   }
   function gallery(mesh,side,seed,shape) {
     const b=body(mesh,side,shape,13.2,[.69,.71,.65],'stone'),f=b.facing,x=b.front+f*.022,d=b.depth;
@@ -6997,25 +7221,36 @@ window.HubOnlineConfig = {
     if(seg.kind!=='corner'||!seg.turnAngle)return;
     const first=model.poseAt(seg.startS),sign=Math.sign(seg.turnAngle),radius=seg.length/Math.abs(seg.turnAngle),setback=Math.max(7.8,number(options.setback,9.1));
     const inner=radius+setback+.32,outer=inner+Math.max(4,number(options.width,6.6))+.10;
-    const area=seg.district||'midtown',height=number(options.height,area==='midtown'?14.1:area==='soho'?11.8:9.2),col=area==='chelsea'?[.57,.31,.23]:area==='soho'?[.71,.71,.63]:[.59,.39,.28];
+    const area=seg.district||'midtown',height=number(options.height,area==='midtown'?16.8:area==='soho'?14.4:12.8),col=area==='chelsea'?[.57,.31,.23]:area==='soho'?[.71,.71,.63]:[.59,.39,.28];
     const centre=[first.x+Math.cos(first.heading)*radius*sign,first.z+Math.sin(first.heading)*radius*sign],y=first.y||0;
     const point=(r,theta,yy)=>[centre[0]-sign*r*Math.cos(theta),y+yy,centre[1]-sign*r*Math.sin(theta)];
     mesh.frame({});material(mesh,area==='soho'?'stone':'brick');
-    const pieces=12;
+    const pieces=12,wedges=[];
     for(let j=0;j<pieces;j++){
-      const a=first.heading+seg.turnAngle*j/pieces,b=first.heading+seg.turnAngle*(j+1)/pieces,m=(a+b)/2,n=[sign*Math.cos(m),0,sign*Math.sin(m)];
-      mesh.quad(point(inner,a,.16),point(inner,b,.16),point(inner,b,height),point(inner,a,height),col,n);
-      mesh.quad(point(outer,b,.16),point(outer,a,.16),point(outer,a,height),point(outer,b,height),tint(col,.88),n.map(v=>-v));
-      material(mesh,'stone');mesh.quad(point(inner,a,height),point(inner,b,height),point(outer,b,height),point(outer,a,height),tint(col,.82),[0,1,0]);
+      const a=first.heading+seg.turnAngle*j/pieces,b=first.heading+seg.turnAngle*(j+1)/pieces,m=(a+b)/2,roof=height+[0,2.6,5.2,2.6][Math.floor(j/3)],half=Math.abs(b-a)/2;
+      // Compare each narrow facade slice rather than the complete curved lot.
+      // The oriented box includes its glazing, but not the empty corner centre.
+      const frontRadius=(inner-.014)*Math.cos(half),near=-sign*frontRadius,far=-sign*outer;
+      const footprint={left:Math.min(near,far),right:Math.max(near,far),front:-outer*Math.sin(half),back:outer*Math.sin(half),bottom:.16,top:roof};
+      const clear=typeof model.sceneryFootprintClear!=='function'||model.sceneryFootprintClear({x:centre[0],y,z:centre[1],heading:m},footprint,seg.id);
+      wedges.push({a,b,m,roof,clear});
+    }
+    for(let j=0;j<pieces;j++){
+      const {a,b,m,roof,clear}=wedges[j];if(!clear)continue;const n=[sign*Math.cos(m),0,sign*Math.sin(m)];
+      mesh.quad(point(inner,a,.16),point(inner,b,.16),point(inner,b,roof),point(inner,a,roof),col,n);
+      mesh.quad(point(outer,b,.16),point(outer,a,.16),point(outer,a,roof),point(outer,b,roof),tint(col,.88),n.map(v=>-v));
+      material(mesh,'stone');mesh.quad(point(inner,a,roof),point(inner,b,roof),point(outer,b,roof),point(outer,a,roof),tint(col,.82),[0,1,0]);
+      if(j%3===0&&wedges[j-1]?.clear){const prior=wedges[j-1].roof;mesh.quad(point(inner,a,Math.min(roof,prior)),point(outer,a,Math.min(roof,prior)),point(outer,a,Math.max(roof,prior)),point(inner,a,Math.max(roof,prior)),tint(col,.87));}
+      if(!wedges[j-1]?.clear)mesh.quad(point(inner,a,.16),point(outer,a,.16),point(outer,a,roof),point(inner,a,roof),col);
+      if(!wedges[j+1]?.clear)mesh.quad(point(inner,b,.16),point(outer,b,.16),point(outer,b,roof),point(inner,b,roof),col);
       material(mesh,area==='soho'?'stone':'brick');
       // Small flat windows give an exposed seam the same urban scale as its neighbors.
-      if(j%2===0)for(const yy of [3.5,6.2]){
+      if(j%2===0)for(let yy=3.5;yy<roof-1.6;yy+=2.7){
         const span=Math.abs(seg.turnAngle)/pieces*.26,lo=m-span,hi=m+span;material(mesh,'glass');
         mesh.quad(point(inner-.014,lo,yy),point(inner-.014,hi,yy),point(inner-.014,hi,yy+1.55),point(inner-.014,lo,yy+1.55),C.glass,n);
         material(mesh,area==='soho'?'stone':'brick');
       }
     }
-    for(const a of [first.heading,first.heading+seg.turnAngle])mesh.quad(point(inner,a,.16),point(outer,a,.16),point(outer,a,height),point(inner,a,height),col);
     material(mesh,null);
   }
   function cornerDetails(mesh,model,seg) {
@@ -7218,15 +7453,21 @@ window.HubOnlineConfig = {
     }
     if(hash(seed+3)>(soho?.18:chelsea?.72:.45))waterTank(mesh,x,h+.45,-d*.23);
     mesh.box(x-side*.6,h+.43,d*.24,1.65,.95,1.5,[.33,.39,.38]);
-    // Downward stoops and pavement furniture fill the gaps between facades.
-    if(hash(seed+24)>(chelsea?.18:.58)){for(let j=0;j<4;j++)mesh.box(facex-side*(.25+j*.26),.18,-d*.37,.43,(4-j)*.16,1.2,[.60,.55,.45]);if(chelsea){for(const zz of [-d*.37-.65,-d*.37+.65])mesh.cylinder([facex-side*.27,.18,zz],[facex-side*1.1,.98,zz],.045,C.iron,6);}}
+    // The tread, landing, door and handrails all rise towards the house.
+    if(hash(seed+24)>(chelsea?.18:.58)){
+      const doorZ=-d*.37;mesh.material('stone');
+      for(let j=0;j<4;j++){const height=(4-j)*.16;mesh.box(facex-side*(.25+j*.26),.18,doorZ,.29,height,1.2,[.60,.55,.45]);mesh.box(facex-side*(.25+j*.26),.18+height,doorZ,.30,.024,1.24,[.76,.71,.61]);}
+      mesh.box(facex-side*.09,.18,doorZ,.18,.64,1.24,[.60,.55,.45]);mesh.material('wood');mesh.facade(facex-side*.155,.83,doorZ,1.03,1.47,[.25,.32,.28],facing);mesh.material(null);
+      for(const zz of [doorZ-.65,doorZ+.65]){mesh.cylinder([facex-side*1.1,.34,zz],[facex-side*1.1,1.22,zz],.036,C.iron,6);mesh.cylinder([facex-side*.16,.82,zz],[facex-side*.16,1.70,zz],.036,C.iron,6);mesh.cylinder([facex-side*1.1,1.22,zz],[facex-side*.16,1.70,zz],.045,C.iron,6);}
+    }
   }
 
   function cornerShop(mesh,model,seg){
     // The inner pavement is only 3.3 m from the turn centre. A compact corner
     // storefront fits there; a regular full-depth building crosses the road.
     const first=model.poseAt(seg.startS),sign=Math.sign(seg.turnAngle),radius=seg.length/Math.abs(seg.turnAngle),outer=-sign;
-    mesh.frame({x:first.x+Math.cos(first.heading)*radius*sign,y:first.y,z:first.z+Math.sin(first.heading)*radius*sign,heading:first.heading+seg.turnAngle/2});
+    const center={x:first.x+Math.cos(first.heading)*radius*sign,y:first.y,z:first.z+Math.sin(first.heading)*radius*sign,heading:first.heading+seg.turnAngle/2};mesh.frame(center);
+    if(model.sceneryFootprintClear&&!model.sceneryFootprintClear(center,{left:-2.04,right:2.04,front:-2.04,back:2.04,bottom:.16,top:11},seg.id))return;
     const col=seg.district==='soho'?[.77,.76,.65]:seg.district==='chelsea'?[.59,.32,.23]:[.66,.44,.31],frame=[.84,.78,.63],glass=[.22,.39,.40];
     mesh.material(seg.district==='soho'?'stone':'brick');mesh.box(0,.16,0,3.8,9.4,3.8,col);mesh.material('stone');mesh.box(0,.16,0,4.02,.26,4.02,frame);mesh.box(0,9.34,0,4.1,.35,4.1,scale(col,.82));mesh.box(0,9.69,0,3.85,.18,3.85,frame);mesh.material(null);
     for(const side of [-1,1])for(const z of [-.95,.95])for(const yy of [3.5,6.1]){mesh.box(side*1.92,yy,z,.08,1.78,1.10,frame);mesh.box(side*1.975,yy+.10,z,.03,1.52,.84,glass);mesh.box(side*2.00,yy+.1,z,.018,1.52,.05,frame);mesh.box(side*2.0,yy+.76,z,.018,.05,.88,frame);}
@@ -7234,12 +7475,20 @@ window.HubOnlineConfig = {
     mesh.box(outer*1.94,.4,0,.07,1.9,2.9,glass);mesh.box(outer*1.995,.4,0,.03,1.9,.07,frame);mesh.box(outer*1.98,2.4,0,.09,.67,3.55,C.green);mesh.sign(district(seg.district).shops[0],outer*2.036,2.44,0,3.36,.48,outer);
     for(let i=0;i<7;i++)mesh.box(outer*2.2,2.22,-1.6+i*.46,.50,.10,.46,i%2?C.walk:C.green);
     mesh.box(-.6,9.87,.5,1.0,.85,.8,[.34,.37,.33]);mesh.cylinder([.8,9.86,-.6],[.8,10.7,-.6],.075,C.iron,7);
+    // A set-back inner block fills the view behind the small corner shop.
+    // Its front corners remain inside the 3.3 m inner pavement boundary.
+    const wingX=-outer*5.55,wingHeight=seg.district==='midtown'?23.6:18.4;
+    if(!model.sceneryFootprintClear||model.sceneryFootprintClear(center,{left:wingX-7,right:wingX+7,front:-2.8,back:2.8,bottom:.16,top:wingHeight+.4},seg.id)){
+      mesh.material(seg.district==='soho'?'stone':'brick');mesh.box(wingX,.16,0,14,wingHeight,5.6,col);mesh.material('stone');mesh.box(wingX,wingHeight-.12,0,14,.25,5.6,scale(col,.83));
+      for(let yy=11.6;yy<wingHeight-1.6;yy+=2.6)for(const zz of [-1.8,0,1.8]){mesh.material('glass');mesh.facade(outer*1.465,yy,zz,1.25,1.65,glass,outer);}mesh.material(null);
+    }
   }
 
-  function skylineBlock(mesh,p,side,seed,setback=34){
+  function skylineBlock(mesh,p,side,seed,setback=34,model,ownerId){
     // These silhouettes belong to a street block, rather than following and
     // rotating with the camera as the former background skyline did.
     mesh.frame(p);const x=side*setback,w=8+hash(seed)*6,d=10+hash(seed+4)*7,h=24+hash(seed+8)*36,col=p.district==='chelsea'?[.54,.42,.33]:p.district==='soho'?[.64,.64,.56]:[.52,.58,.56];
+    if(model?.sceneryFootprintClear&&!model.sceneryFootprintClear(p,{left:x-w/2-.3,right:x+w/2+.3,front:-d/2-.3,back:d/2+.3,bottom:.16,top:h+12},ownerId))return;
     mesh.material(p.district==='midtown'?'stone':'brick');mesh.box(x,-.2,0,w,h,d,col);mesh.material(null);mesh.box(x,h-.2,0,w+.38,.28,d+.38,scale(col,.85));
     for(let floor=3;floor<h-2;floor+=4.2)for(let z=-d/2+1.2;z<d/2-1;z+=2.7){mesh.material('glass');mesh.facade(x-side*(w/2+.035),floor,z,1.05,1.25,[.34,.46,.46],-side);}mesh.material(null);
     if(hash(seed+5)>.5){mesh.box(x,h+.1,0,w*.68,3.4,d*.7,scale(col,.94));mesh.box(x,h+3.5,0,w*.35,3.3,d*.4,scale(col,.88));mesh.cylinder([x,h+6.8,0],[x,h+11.6,0],.08,C.iron,5);}
@@ -7263,38 +7512,52 @@ window.HubOnlineConfig = {
   function underground(mesh,model,seg){
     const station=seg.kind==='station',area=seg.district||'midtown',style=district(area),trim=area==='soho'?[.44,.28,.24]:area==='chelsea'?[.28,.39,.33]:C.green;
     for(let s=seg.startS;s<seg.endS;s+=5){const n=Math.min(5,seg.endS-s),p=model.poseAt(s+n/2);mesh.frame(p);
-      mesh.box(0,-.72,0,station?24:12,.14,n+.04,[.29,.33,.30]);
+      mesh.box(0,-.72,0,24,.14,n+.04,[.29,.33,.30]);
       if(station){mesh.box(0,-.34,0,10.8,.34,n+.04,[.60,.62,.55]);mesh.box(0,.002,0,10.8,.012,n+.04,area==='soho'?[.73,.72,.63]:[.67,.67,.57]);for(let x=-5.0;x<5.2;x+=1.2)mesh.box(x,.017,0,.022,.006,n,[.51,.53,.47]);mesh.box(0,.017,0,10.8,.006,.022,[.51,.53,.47]);}
-      else mesh.box(0,-.13,0,9,.13,n+.04,[.38,.39,.34]);
-      const wall=station?12:5.1;for(const side of [-1,1]){mesh.box(side*wall,-.65,0,.50,6.02,n+.04,station?C.tile:[.43,.49,.46]);mesh.box(side*(wall-.26),.8,0,.05,.22,n,trim);mesh.box(side*(wall-.26),3.35,0,.05,.16,n,trim);for(let yy=.35;yy<5;yy+=.52)mesh.box(side*(wall-.26),yy,0,.025,.016,n,[.68,.72,.66]);}
+      else {mesh.material('tile');mesh.box(0,-.34,0,10.8,.34,n+.04,[.48,.51,.45]);mesh.material(null);for(const side of [-1,1]){mesh.box(side*5.24,.04,0,.17,.82,n+.04,C.iron);mesh.box(side*5.24,.86,0,.22,.05,n+.04,C.steel);}}
+      const wall=12;for(const side of [-1,1]){mesh.box(side*wall,-.65,0,.50,6.02,n+.04,station?C.tile:[.43,.49,.46]);mesh.box(side*(wall-.26),.8,0,.05,.22,n,trim);mesh.box(side*(wall-.26),3.35,0,.05,.16,n,trim);for(let yy=.35;yy<5;yy+=.52)mesh.box(side*(wall-.26),yy,0,.025,.016,n,[.68,.72,.66]);}
       mesh.box(0,5.32,0,wall*2+.55,.35,n+.04,[.27,.35,.34]);mesh.box(0,5.08,0,wall*2,.24,.18,C.iron);mesh.box(-2.7,5.15,0,.25,.055,3.3,[1,.93,.73,.65]);mesh.box(2.7,5.15,0,.25,.055,3.3,[1,.93,.73,.65]);
-      const tracks=station?[-8.1,8.1]:[-2.4,0,2.4];for(const x of tracks){mesh.box(x,station?-.55:-.055,0,station?4.2:2.15,station?.08:.04,n,[.29,.30,.26]);for(const side of [-1,1]){mesh.box(x+side*.72,station?-.30:.024,0,.12,.04,n,C.iron);mesh.box(x+side*.72,station?-.26:.064,0,.078,station?.12:.035,n,C.steel);}for(let ss=Math.ceil(s/.68)*.68;ss<s+n;ss+=.68){const zz=s+n/2-ss;mesh.box(x,station?-.44:-.025,zz,station?2.7:2.15,station?.14:.05,.21,[.34,.30,.23]);}}
+      // Two continuous train tracks flank a separate central walking platform.
+      for(const x of [-8.1,8.1]){mesh.material('stone');mesh.box(x,-.55,0,4.2,.08,n,[.29,.30,.26]);mesh.material('metal');for(const side of [-1,1]){mesh.box(x+side*.72,-.30,0,.12,.04,n,C.iron);mesh.box(x+side*.72,-.26,0,.078,.12,n,C.steel);}mesh.material('wood');for(let ss=Math.ceil(s/.68)*.68;ss<s+n;ss+=.68){const zz=s+n/2-ss;mesh.box(x,-.44,zz,2.7,.14,.21,[.34,.30,.23]);}mesh.material(null);}
       if(station)for(const side of [-1,1]){mesh.box(side*4.75,0,0,.4,5.31,.42,trim);mesh.box(side*4.75,4.9,0,.74,.28,.75,trim);mesh.box(side*4.75,0,0,.61,.28,.62,[.28,.36,.31]);mesh.box(side*5.13,.025,0,.34,.012,n,[.88,.76,.28]);}
     }
-    if(station){
-      // The wide track hall closes around the narrower tunnel opening.
-      // Without these shoulders, a view past the platform sees outside the shell.
-      mesh.frame(model.poseAt(seg.endS));
-      for(const side of [-1,1])mesh.box(side*8.7,-.65,0,7.2,6.02,.50,C.tile);
-    }
+    if(station)railMouths(mesh,model.poseAt(seg.startS),-1);
+    else railMouths(mesh,model.poseAt(seg.endS),1);
     if(station){for(let s=seg.startS+9;s<seg.endS-4;s+=18){const p=model.poseAt(s);mesh.frame(p);mesh.box(0,4.32,0,5.2,.79,.12,C.iron);mesh.sign(style.station,0,4.42,.072,4.85,.59);for(const xx of [-2.0,2.0])mesh.box(xx,5.11,0,.05,.21,.08,C.iron);subwayCar(mesh,p,8.1,0,seg.id);if(Math.floor((s-seg.startS)/18)%2===0)subwayCar(mesh,p,-8.1,0,seg.id+1);mesh.frame(p);mesh.box(-3.95,.28,0,.75,.22,3.1,[.43,.35,.22]);mesh.box(-4.25,.48,0,.15,.6,3.1,[.43,.35,.22]);for(const zz of [-1.1,1.1])mesh.box(-3.95,0,zz,.6,.3,.2,C.iron);mesh.sign('EXIT',-11.73,2.3,0,3.4,.75,1);}}
   }
+  function railMouths(mesh,p,direction){
+    // Side tracks enter their own dark tubes beside the staircase. The centre
+    // opening belongs to pedestrians; trains never drive onto that platform.
+    mesh.frame(p);for(const side of [-1,1]){
+      const x=side*8.1,length=16,z=-direction*length/2;
+      mesh.material('stone');mesh.box(x,-.72,z,4.8,.17,length,[.25,.29,.27]);mesh.box(x,4.6,z,5.2,.55,length,[.29,.34,.31]);
+      for(const edge of [-1,1])mesh.box(x+edge*2.35,-.65,z,.45,5.27,length,[.38,.42,.37]);
+      mesh.material('metal');for(const edge of [-1,1]){mesh.box(x+edge*.72,-.30,z,.12,.04,length,C.iron);mesh.box(x+edge*.72,-.26,z,.078,.12,length,C.steel);}
+      mesh.material('wood');for(let s=.34;s<length;s+=.68)mesh.box(x,-.44,-direction*s,2.7,.14,.21,[.34,.30,.23]);
+      mesh.material(null);mesh.box(x,-.65,-direction*(length-.1),4.7,5.3,.25,[.075,.10,.095]);
+      for(const xx of [side*5.75,side*11.6])mesh.box(xx,-.65,0,1.05,6.02,.48,C.tile);
+    }
+  }
   function sweptBox(mesh,a,b,left,right,bottom,top,col){
-    mesh.frame({});const point=(p,x,y)=>[p.x+Math.cos(p.heading)*x,p.y+y,p.z+Math.sin(p.heading)*x],al=point(a,left,bottom),ar=point(a,right,bottom),bl=point(b,left,bottom),br=point(b,right,bottom),at=point(a,left,top),au=point(a,right,top),bt=point(b,left,top),bu=point(b,right,top);
+    mesh.frame({});const topA=Array.isArray(top)?top[0]:top,topB=Array.isArray(top)?top[1]:top,point=(p,x,y)=>[p.x+Math.cos(p.heading)*x,p.y+y,p.z+Math.sin(p.heading)*x],al=point(a,left,bottom),ar=point(a,right,bottom),bl=point(b,left,bottom),br=point(b,right,bottom),at=point(a,left,topA),au=point(a,right,topA),bt=point(b,left,topB),bu=point(b,right,topB);
     mesh.quad(at,au,bu,bt,col);mesh.quad(al,bl,br,ar,col);mesh.quad(al,at,bt,bl,col);mesh.quad(ar,br,bu,au,col);mesh.quad(al,ar,au,at,col);mesh.quad(bl,bt,bu,br,col);
   }
   function slope(mesh,model,seg){
-    const descent=seg.kind==='descent',ceiling=4.5,wall=[.75,.75,.64];
-    for(let s=seg.startS;s<seg.endS;s+=1.0){const end=Math.min(seg.endS,s+1),a=model.poseAt(s),b=model.poseAt(end);
-      // Closed volumes meet edge-to-edge, including the underside of the stairs.
-      sweptBox(mesh,a,b,-4.5,4.5,-.86,0,[.64,.65,.56]);
-      for(const side of [-1,1]){const inner=side*4.5,outer=side*5.25;sweptBox(mesh,a,b,Math.min(inner,outer),Math.max(inner,outer),-.86,ceiling+.32,wall);mesh.frame({});const from=[a.x+Math.cos(a.heading)*side*4.40,a.y+1.08,a.z+Math.sin(a.heading)*side*4.40],to=[b.x+Math.cos(b.heading)*side*4.40,b.y+1.08,b.z+Math.sin(b.heading)*side*4.40];mesh.cylinder(from,to,.046,C.green,7);}
-      mesh.frame(a);mesh.box(0,.008,0,8.96,.017,.052,[.45,.48,.42]);if(Math.round(s-seg.startS)%3===0)for(const side of [-1,1])mesh.cylinder([side*4.40,.10,0],[side*4.40,1.08,0],.036,C.green,6);
-      const covered=descent?s>=seg.startS+7:s<seg.endS-7;if(covered){sweptBox(mesh,a,b,-5.25,5.25,ceiling,ceiling+.36,[.39,.44,.39]);const mid=model.poseAt((s+end)/2);mesh.frame(mid);if(Math.round(s-seg.startS)%5===0)for(const side of [-1,1])mesh.box(side*2.9,ceiling-.045,0,.70,.035,.40,[1,.93,.73,.5]);}
+    const descent=seg.kind==='descent',ceiling=4.5,wall=[.75,.75,.64],treads=Math.ceil(seg.length/.75),run=seg.length/treads;
+    for(let i=0;i<treads;i++){const s=seg.startS+i*run,end=seg.startS+(i+1)*run,a=model.poseAt(s),b=model.poseAt(end),height=Math.max(a.y,b.y),mid={x:(a.x+b.x)/2,y:height,z:(a.z+b.z)/2,heading:a.heading};
+      // Horizontal treads and exposed vertical risers replace the old slope.
+      // A solid closed base continues beneath the stair without a visible ramp.
+      mesh.frame(mid);mesh.material('stone');mesh.box(0,-.86,0,9,.86,run,[.64,.65,.56]);mesh.material(null);
+      const edge=descent?-run/2+.03:run/2-.03;mesh.box(0,.002,edge,8.96,.018,.06,[.85,.79,.61]);
+      for(const side of [-1,1]){const inner=side*4.5,outer=side*5.25,wallTop=[Math.min(ceiling+.32,.38-a.y),Math.min(ceiling+.32,.38-b.y)];sweptBox(mesh,a,b,Math.min(inner,outer),Math.max(inner,outer),-.86,wallTop,wall);mesh.frame({});const from=[a.x+Math.cos(a.heading)*side*4.40,a.y+1.08,a.z+Math.sin(a.heading)*side*4.40],to=[b.x+Math.cos(b.heading)*side*4.40,b.y+1.08,b.z+Math.sin(b.heading)*side*4.40];mesh.cylinder(from,to,.046,C.green,7);}
+      mesh.frame(a);if(i%4===0)for(const side of [-1,1])mesh.cylinder([side*4.40,.10,0],[side*4.40,1.08,0],.036,C.green,6);
+      // Keep the opening genuinely open: an underground lintel begins only
+      // where it can fit below the street, rather than cutting across the sky.
+      const covered=Math.max(a.y,b.y)+ceiling+.36<-.28;if(covered){sweptBox(mesh,a,b,-5.25,5.25,ceiling,ceiling+.36,[.39,.44,.39]);mesh.frame(model.poseAt((s+end)/2));if(i%7===0)for(const side of [-1,1])mesh.box(side*2.9,ceiling-.045,0,.70,.035,.40,[1,.93,.73,.5]);}
     }
     const bottom=model.poseAt(descent?seg.endS:seg.startS);mesh.frame(bottom);
     // Door jambs and lintel close the transition into the wider station/tunnel.
-    for(const side of [-1,1])mesh.box(side*8.7,-.86,0,7.2,6.55,.48,wall);mesh.box(0,ceiling,0,10.2,1.18,.48,wall);
+    for(const side of [-1,1])for(const x of [5.8,11.7])mesh.box(side*x,-.86,0,1.15,6.55,.48,wall);mesh.box(0,ceiling,0,10.2,1.18,.48,wall);
     subwayPortal(mesh,model.poseAt(descent?seg.startS:seg.endS),!descent);
   }
 
@@ -7306,35 +7569,52 @@ window.HubOnlineConfig = {
     for(const z of [-1.9,1.9]){mesh.material('wood');mesh.box(side*9.4,.63,z,.65,.10,1.7,[.48,.32,.21]);mesh.box(side*9.75,.69,z,.095,.48,1.7,[.48,.32,.21]);mesh.material('metal');for(const zz of [z-.65,z+.65])mesh.box(side*9.4,.21,zz,.59,.42,.065,C.iron);mesh.material(null);}
     mesh.box(side*8.3,.21,0,.11,1.40,.12,C.iron);mesh.box(side*8.3,1.16,0,.12,.43,2.1,C.green);mesh.sign('PARK',side*8.22,1.19,0,1.96,.36,-side);mesh.material(null);
   }
+  function lotClear(model,p,side,shape,ownerId){
+    if(!model.sceneryFootprintClear)return true;
+    const x=side*(shape.setback+shape.width/2);
+    return model.sceneryFootprintClear(p,{left:x-shape.width/2-1.45,right:x+shape.width/2+1.45,front:-shape.depth/2-.3,back:shape.depth/2+.3,bottom:.16,top:90},ownerId);
+  }
   function street(mesh,model,seg){
-    const corner=seg.kind==='corner',step=corner?2.0:4.0,area=seg.district||'midtown',style=district(area),original=seg.original||seg,details=root.NYCityDetails;
+    const corner=seg.kind==='corner',step=corner?1.0:2.0,area=seg.district||'midtown',style=district(area),original=seg.original||seg,details=root.NYCityDetails,stairOpening=['descent','ascent'].includes(seg.overheadKind);
     const each=(offset,stride,endOffset,fn)=>{const first=original.startS+offset,last=Math.min(seg.endS,original.endS-endOffset);for(let s=first+Math.max(0,Math.ceil((seg.startS-first)/stride))*stride;s<last-.00001;s+=stride)fn(s);};
-    for(let s=seg.startS;s<seg.endS;s+=step){const end=Math.min(seg.endS,s+step),a=model.poseAt(s),b=model.poseAt(end),ar=[Math.cos(a.heading),0,Math.sin(a.heading)],br=[Math.cos(b.heading),0,Math.sin(b.heading)];mesh.frame({});
+    const subwayAhead=!seg.surfaceAbove&&!corner&&model.poseAt(original.endS+.01).kind==='descent';
+    const branchS=original.startS+17,branches=corner||stairOpening?[]:[branchS,...(subwayAhead?[original.endS-12]:[])],branchCuts=branches.flatMap(s=>[s-3.25,s+3.25]).sort((a,b)=>a-b);
+    for(let s=seg.startS;s<seg.endS;){const nextCut=branchCuts.find(c=>c>s+.00001)||Infinity,end=Math.min(seg.endS,s+step,nextCut),a=model.poseAt(s),b=model.poseAt(end),ar=[Math.cos(a.heading),0,Math.sin(a.heading)],br=[Math.cos(b.heading),0,Math.sin(b.heading)];mesh.frame({});
       const point=(p,r,x,y)=>[p.x+r[0]*x,p.y+y,p.z+r[2]*x];
-      const groundWidth=corner?8:45;mesh.quad(point(a,ar,-groundWidth,-.25),point(a,ar,groundWidth,-.25),point(b,br,groundWidth,-.25),point(b,br,-groundWidth,-.25),[.61,.59,.50],[0,1,0]);
-      mesh.material(area==='soho'?'brick':'asphalt');mesh.quad(point(a,ar,-4.55,-.03),point(a,ar,4.55,-.03),point(b,br,4.55,-.03),point(b,br,-4.55,-.03),area==='soho'?[.37,.38,.34]:C.road,[0,1,0]);
-      for(const side of [-1,1]){const l=side*4.5,r=side*7.7;mesh.material('concrete');mesh.quad(point(a,ar,l,.16),point(a,ar,r,.16),point(b,br,r,.16),point(b,br,l,.16),C.walk,[0,1,0]);mesh.material('stone');mesh.quad(point(a,ar,l,-.06),point(a,ar,l,.16),point(b,br,l,.16),point(b,br,l,-.06),C.curb);mesh.material(null);mesh.quad(point(a,ar,l,.165),point(a,ar,l+side*.12,.165),point(b,br,l+side*.12,.165),point(b,br,l,.165),[.85,.81,.69],[0,1,0]);}
+      const groundWidth=corner?8:45;
+      for(const span of stairOpening?[[-groundWidth,-5.25],[5.25,groundWidth]]:[[-groundWidth,groundWidth]])mesh.quad(point(a,ar,span[0],-.25),point(a,ar,span[1],-.25),point(b,br,span[1],-.25),point(b,br,span[0],-.25),[.61,.59,.50],[0,1,0]);
+      if(!stairOpening){const plaza=subwayAhead&&(s+end)/2>=original.endS-8;mesh.material(plaza?'concrete':area==='soho'?'brick':'asphalt');mesh.quad(point(a,ar,-4.55,-.03),point(a,ar,4.55,-.03),point(b,br,4.55,-.03),point(b,br,-4.55,-.03),plaza?C.walk:area==='soho'?[.37,.38,.34]:C.road,[0,1,0]);}
+      if(corner||stairOpening||branches.every(branch=>Math.abs((s+end)/2-branch)>=3.25-.00001))for(const side of [-1,1]){
+        const l=side*(stairOpening?5.25:4.5),r=side*7.7,mid=model.poseAt((s+end)/2);
+        if(model.sceneryFootprintClear&&!model.sceneryFootprintClear(mid,{left:Math.min(l,r),right:Math.max(l,r),front:-(end-s)/2,back:(end-s)/2,bottom:.01,top:.30},original.id,{kinds:['street','corner','descent','ascent'],halfWidth:4.55}))continue;
+        mesh.material('concrete');mesh.quad(point(a,ar,l,.16),point(a,ar,r,.16),point(b,br,r,.16),point(b,br,l,.16),C.walk,[0,1,0]);mesh.material('stone');mesh.quad(point(a,ar,l,-.06),point(a,ar,l,.16),point(b,br,l,.16),point(b,br,l,-.06),C.curb);mesh.material(null);mesh.quad(point(a,ar,l,.165),point(a,ar,l+side*.12,.165),point(b,br,l+side*.12,.165),point(b,br,l,.165),[.85,.81,.69],[0,1,0]);}
+      s=end;
     }
-    each(2,5.6,0,s=>{const p=model.poseAt(s);mesh.frame(p);for(const x of [-1.2,1.2])mesh.box(x,.005,0,.075,.008,1.9,C.white);});
+    if(!stairOpening)each(2,5.6,0,s=>{if(subwayAhead&&s>original.endS-10)return;const p=model.poseAt(s);mesh.frame(p);for(const x of [-1.2,1.2])mesh.box(x,.005,0,.075,.008,1.9,C.white);});
     if(corner){
       // The actual curved path has a crossing at both ends and corner street signs.
-      for(const ss of [seg.startS+1,seg.endS-4]){const p=model.poseAt(ss);mesh.frame(p);crosswalk(mesh);lamp(mesh,-5.15,-3.0,1);lamp(mesh,5.15,-3.0,1);streetPost(mesh,area,-5.55,2.8);}
+      for(const ss of [seg.startS-3,seg.endS+3]){const p=model.poseAt(ss);mesh.frame(p);crosswalk(mesh);lamp(mesh,-5.15,-3.0,1);lamp(mesh,5.15,-3.0,1);streetPost(mesh,area,-5.55,2.8);}
       details?.cornerFrontage(mesh,model,seg,{setback:9.1,width:6.6});
-      const outer=-Math.sign(seg.turnAngle);for(const fraction of [.12,.373,.627,.88]){const p=model.poseAt(seg.startS+seg.length*fraction),seed=seg.startS+fraction*731;building(mesh,p,outer,seed,false,{width:6.6,depth:6.4,setback:9.1,floors:(area==='midtown'?5:3)+Math.floor(hash(seed+9)*3)});}
+      const outer=-Math.sign(seg.turnAngle);for(const fraction of [.12,.373,.627,.88]){const p=model.poseAt(seg.startS+seg.length*fraction),seed=seg.startS+fraction*731,shape={width:6.6,depth:6.4,setback:9.1,floors:(area==='midtown'?5:3)+Math.floor(hash(seed+9)*3)};if(lotClear(model,p,outer,shape,original.id))building(mesh,p,outer,seed,false,shape);}
       cornerShop(mesh,model,seg);
       for(const fraction of [.2,.75]){const p=model.poseAt(seg.startS+seg.length*fraction);mesh.frame(p);tree(mesh,outer*6.3,0);}
-      for(const fraction of [.13,.50,.87])skylineBlock(mesh,model.poseAt(seg.startS+seg.length*fraction),outer,seg.startS+fraction*901,38);
+      for(const fraction of [.13,.50,.87])skylineBlock(mesh,model.poseAt(seg.startS+seg.length*fraction),outer,seg.startS+fraction*901,38,model,original.id);
       details?.cornerDetails(mesh,model,seg);
       return;
     }
-    const branchS=original.startS+17;
-    const plazaS=original.startS+6;if(plazaS>=seg.startS&&plazaS<seg.endS){const p=model.poseAt(plazaS);for(const side of [-1,1])pocketPlaza(mesh,p,side);}
-    each(9,11.8,8,s=>{if(Math.abs(s-branchS)<9.2)return;const p=model.poseAt(s),seed=s+Number(seg.id||0)*97;for(const side of [-1,1]){const lotSeed=seed+side*13,shape={width:6.2+hash(lotSeed)*2.2,depth:11.86,setback:8};if(!details?.lot(mesh,p,side,lotSeed,shape))building(mesh,p,side,lotSeed,false,shape);}});
-    each(36,31,32,s=>{const p=model.poseAt(s);for(const side of [-1,1]){skylineBlock(mesh,p,side,s+side*73,32);skylineBlock(mesh,p,side,s+side*181,55);}});
+    const plazaS=original.startS+6;if(!stairOpening&&plazaS>=seg.startS&&plazaS<seg.endS){const p=model.poseAt(plazaS);for(const side of [-1,1])if(!model.sceneryFootprintClear||model.sceneryFootprintClear(p,{left:Math.min(side*8.1,side*16),right:Math.max(side*8.1,side*16),front:-3.3,back:3.3,bottom:.16,top:8},original.id))pocketPlaza(mesh,p,side);}
+    each(9,11.8,8,s=>{if(!stairOpening&&branches.some(branch=>Math.abs(s-branch)<9.2))return;const p=model.poseAt(s),seed=s+Number(seg.id||0)*97;for(const side of [-1,1]){const lotSeed=seed+side*13,shape={width:6.2+hash(lotSeed)*2.2,depth:11.86,setback:8};if(lotClear(model,p,side,shape,original.id)&&!details?.lot(mesh,p,side,lotSeed,shape))building(mesh,p,side,lotSeed,false,shape);}});
+    // The small lot beyond a side street joins its corner to the first full lot.
+    const joinS=original.startS+24.25;if(!stairOpening&&joinS>=seg.startS&&joinS<seg.endS){const p=model.poseAt(joinS);for(const side of [-1,1]){const shape={width:6.7,depth:4.6,setback:8,floors:area==='midtown'?6:4};if(lotClear(model,p,side,shape,original.id))building(mesh,p,side,joinS+side*31,false,shape);}}
+    each(36,31,32,s=>{const p=model.poseAt(s);for(const side of [-1,1]){skylineBlock(mesh,p,side,s+side*73,32,model,original.id);skylineBlock(mesh,p,side,s+side*181,55,model,original.id);}});
     each(3,16,0,s=>{const p=model.poseAt(s);mesh.frame(p);lamp(mesh,-5.15,0,hash(s)>.7?1:0);lamp(mesh,5.15,-5);if(hash(s+2)<style.tree)tree(mesh,-6.15,-6);if(hash(s+11)<style.tree)tree(mesh,6.15,-10);mesh.box(-5.25,.17,-2,.55,.83,.55,C.green);mesh.box(-5.25,.94,-2,.64,.09,.65,[.16,.29,.22]);mesh.box(5.35,.17,-8,.50,.96,.58,[.18,.35,.49]);mesh.sign('NEWS',5.35,.40,-7.699,.42,.32);if(area==='chelsea'){mesh.box(6.1,.25,-3,1.5,.45,.6,[.46,.31,.21]);for(const xx of [5.7,6.1,6.5])mesh.sphere(xx,.85,-3,.3,[.34,.49,.24],7,4);}details?.streetFurniture(mesh,p,s,{district:area});});
-    if(branchS>=seg.startS&&branchS<seg.endS&&original.length>35){
-      const p=model.poseAt(branchS);mesh.frame(p);for(const side of [-1,1]){mesh.material('asphalt');mesh.box(side*12,-.055,0,15,.03,6.5,C.road);mesh.material('concrete');mesh.box(side*12,.16,4.05,15,.12,1.6,C.walk);mesh.box(side*12,.16,-4.05,15,.12,1.6,C.walk);}mesh.material(null);crosswalk(mesh);streetPost(mesh,area,-5.55,2.8);
+    for(const branch of branches)if(branch>=seg.startS&&branch<seg.endS&&original.length>35){
+      const p=model.poseAt(branch);mesh.frame(p);for(const side of [-1,1]){mesh.material('asphalt');mesh.box(side*12,-.06,0,14.9,.03,6.5,C.road);mesh.material('concrete');mesh.box(side*12,.04,4.05,14.9,.12,1.6,C.walk);mesh.box(side*12,.04,-4.05,14.9,.12,1.6,C.walk);mesh.material('stone');for(const z of [-3.25,3.25])mesh.box(side*12,-.06,z,14.9,.22,.08,C.curb);}mesh.material(null);crosswalk(mesh);streetPost(mesh,area,-5.55,5.25);
     }
+    // Traffic turns at a real cross street before a paved pedestrian forecourt.
+    // The station entrance belongs to this plaza rather than an asphalt lane.
+    const forecourtS=original.endS-6.7;
+    if(subwayAhead&&forecourtS>=seg.startS&&forecourtS<seg.endS){const p=model.poseAt(forecourtS);mesh.frame(p);for(const side of [-1,1]){mesh.material('metal');mesh.cylinder([side*4.1,-.03,0],[side*4.1,.78,0],.11,C.green,8);mesh.material(null);mesh.sphere(side*4.1,.80,0,.12,C.gold,8,4);const shape={width:6.7,depth:6.1,setback:8,floors:area==='midtown'?5:4},lotPose=model.poseAt(original.endS-3.05);if(lotClear(model,lotPose,side,shape,original.id))building(mesh,lotPose,side,original.endS+side*53,false,shape);}}
   }
 
   function taxi(mesh,p){
@@ -7373,10 +7653,16 @@ window.HubOnlineConfig = {
     return [hip[0],hip[1]+uy*along-uz*bend,hip[2]+uz*along+uy*bend];
   }
   function footClearance(model,distance,baseY,z,pitch){
-    const c=Math.cos(pitch),s=Math.sin(pitch);let ankle=.14+((model.poseAt?.(Math.max(0,distance-z))?.y||0)-baseY);
+    const c=Math.cos(pitch),s=Math.sin(pitch);let ankle=.14+(walkableHeight(model,Math.max(0,distance-z))-baseY);
     // Ground the rigid shoe at its corners, including the sloped subway floor.
-    for(const y of [-.12,.07])for(const zz of [-.24,.15]){const localY=y*c-zz*s,localZ=y*s+zz*c,ground=(model.poseAt?.(Math.max(0,distance-z-localZ))?.y||0)-baseY;ankle=Math.max(ankle,ground+.018-localY);}
+    for(const y of [-.12,.07])for(const zz of [-.24,.15]){const localY=y*c-zz*s,localZ=y*s+zz*c,ground=walkableHeight(model,Math.max(0,distance-z-localZ))-baseY;ankle=Math.max(ankle,ground+.018-localY);}
     return ankle;
+  }
+  function walkableHeight(model,s){
+    const p=model.poseAt?.(s),seg=model._segmentAt?.(s);
+    if(!seg||!['descent','ascent'].includes(seg.kind))return p?.y||0;
+    const count=Math.ceil(seg.length/.75),run=seg.length/count,index=Math.min(count-1,Math.max(0,Math.floor((s-seg.startS)/run))),t=(index+(seg.rise>0?1:0))/count;
+    return seg.y+(seg.rise||0)*t;
   }
   // Pure and distance-based: speed changes alter cadence without jumping pose.
   function runnerPose(model={}){
@@ -7472,6 +7758,13 @@ window.HubOnlineConfig = {
         const end=Math.min(s+length,seg.endS),part=seg.kind==='street'?{...seg,startS:s,endS:end,length:end-s,original:seg}:seg;
         chunks.push({key:key+':'+index,part,segmentId:seg.id,kind:seg.kind,startS:s,endS:end,bounds:segmentBounds(model,part)});
       }
+      if(['descent','station','tunnel','ascent'].includes(seg.kind)){
+        const aboveModel={poseAt:(s,lateral=0)=>({...model.poseAt(s,lateral),y:0,kind:'street'})},original={...seg,kind:'street',y:0,rise:0,overheadKind:seg.kind};
+        for(let s=seg.startS,index=0;s<seg.endS-.00001;s+=STREAMING.chunkLength,index++){
+          const end=Math.min(s+STREAMING.chunkLength,seg.endS),part={...original,startS:s,endS:end,length:end-s,original,surfaceAbove:true};
+          chunks.push({key:key+':above:'+index,part,segmentId:seg.id,kind:'surfaceAbove',startS:s,endS:end,bounds:segmentBounds(aboveModel,part)});
+        }
+      }
       this.segmentMeta.set(seg,chunks);return chunks;
     }
     bind(buffer){const gl=this.gl,a=this.attributes;gl.bindBuffer(gl.ARRAY_BUFFER,buffer);for(const [name,size,offset] of [['aPosition',3,0],['aNormal',3,12],['aColor',4,24],['aUv',2,40]]){gl.enableVertexAttribArray(a[name]);gl.vertexAttribPointer(a[name],size,gl.FLOAT,false,48,offset);}}
@@ -7480,21 +7773,25 @@ window.HubOnlineConfig = {
       this.stats={builtChunks:0,builtHazards:0,staticBytes:0,dynamicBytes:0,drawnChunks:0,drawnHazards:0};
       const onStairs=base.kind==='descent'||base.kind==='ascent',look=model.poseAt(distance+(onStairs?8:aspect<.75?11:13)),indoor=['station','tunnel','descent','ascent'].includes(base.kind),jump=Number(model.jumpHeight)||0,back=onStairs?6.2:aspect<.8?clamp(6/aspect,8.6,13.5):7.4,cameraGround=model.poseAt(Math.max(0,distance-back)),eyeHeight=onStairs||cameraGround.kind==='descent'||cameraGround.kind==='ascent'?2.2:(aspect<.75?3.4:3.6),extension=Math.max(0,back-distance),lateral=(Number(model.lateral)||0)*.12,desiredEye=[cameraGround.x-Math.sin(cameraGround.heading)*extension+Math.cos(cameraGround.heading)*lateral,cameraGround.y+eyeHeight+Math.min(jump*.17,.30),cameraGround.z+Math.cos(cameraGround.heading)*extension+Math.sin(cameraGround.heading)*lateral],desiredTarget=[look.x+(p.x-base.x)*.05,look.y+1.16,look.z+(p.z-base.z)*.05];
       if(!this.eye||!Number.isFinite(time)||this.lastDistance===undefined||Math.abs(distance-this.lastDistance)>30){this.eye=desiredEye;this.target=desiredTarget;}else{const dt=clamp(time-(this.lastTime||0),.001,.08),ease=1-Math.exp(-dt*12);for(let i=0;i<3;i++){this.eye[i]+=(desiredEye[i]-this.eye[i])*ease;this.target[i]+=(desiredTarget[i]-this.target[i])*ease;}}
-      this.lastTime=time;this.lastDistance=distance;const fog=indoor?[.29,.37,.35]:[.67,.81,.91],fogEnd=indoor?STREAMING.fogInside:STREAMING.fogOutside,matrix=multiply(perspective((aspect<.8?68:64)*Math.PI/180,aspect,.15,260),lookAt(this.eye,this.target));gl.clearColor(fog[0],fog[1],fog[2],1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(this.program);gl.uniformMatrix4fv(this.uniforms.uMatrix,false,matrix);gl.uniform3fv(this.uniforms.uEye,this.eye);gl.uniform3fv(this.uniforms.uFog,fog);gl.uniform3f(this.uniforms.uLight,-.45,.82,.38);gl.uniform1f(this.uniforms.uIndoor,indoor?1:0);gl.uniform1f(this.uniforms.uFogEnd,fogEnd);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.uniform1i(this.uniforms.uAtlas,0);
-      if(!indoor){const key=Math.round(base.x/75)+':'+Math.round(base.z/75)+':'+(model.segments||[]).filter(s=>s.kind==='descent'||s.kind==='ascent').map(s=>s.id+','+s.x+','+s.z).join(';');if(key!==this.terrainKey){if(this.terrain)gl.deleteBuffer(this.terrain.buffer);const ground=new Mesh(this.atlas);terrain(ground,model,base);this.terrain=this.upload(ground);this.terrainKey=key;}this.bind(this.terrain.buffer);gl.drawArrays(gl.TRIANGLES,0,this.terrain.count);}
+      const indoorWeight=onStairs?clamp((.5-this.eye[1])/4,0,1):indoor?1:0;
+      this.lastTime=time;this.lastDistance=distance;const fog=[.67,.81,.91].map((v,i)=>v*(1-indoorWeight)+[.29,.37,.35][i]*indoorWeight),fogEnd=STREAMING.fogOutside*(1-indoorWeight)+STREAMING.fogInside*indoorWeight,matrix=multiply(perspective((aspect<.8?68:64)*Math.PI/180,aspect,.25,320),lookAt(this.eye,this.target));gl.clearColor(fog[0],fog[1],fog[2],1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(this.program);gl.uniformMatrix4fv(this.uniforms.uMatrix,false,matrix);gl.uniform3fv(this.uniforms.uEye,this.eye);gl.uniform3fv(this.uniforms.uFog,fog);gl.uniform3f(this.uniforms.uLight,-.45,.82,.38);gl.uniform1f(this.uniforms.uIndoor,indoorWeight);gl.uniform1f(this.uniforms.uFogEnd,fogEnd);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.uniform1i(this.uniforms.uAtlas,0);
+      {const key=Math.round(base.x/75)+':'+Math.round(base.z/75)+':'+(model.segments||[]).filter(s=>s.kind==='descent'||s.kind==='ascent').map(s=>s.id+','+s.x+','+s.z).join(';');if(key!==this.terrainKey){if(this.terrain)gl.deleteBuffer(this.terrain.buffer);const ground=new Mesh(this.atlas);terrain(ground,model,base);this.terrain=this.upload(ground);this.terrainKey=key;}this.bind(this.terrain.buffer);gl.drawArrays(gl.TRIANGLES,0,this.terrain.count);}
       // Route distance alone cannot tell whether an old street is still in the
       // camera image after a turn. Keep and draw blocks by their world bounds.
       const active=new Set(),candidates=[];
-      for(const seg of model.segments||[])for(const chunk of this.chunks(model,seg)){
+      for(const seg of model.segments||[]){const segmentVisible=!model.scenerySegmentVisible||model.scenerySegmentVisible(seg);if(!segmentVisible&&['descent','ascent'].includes(seg.kind))continue;for(const chunk of this.chunks(model,seg)){
+        if(!segmentVisible&&!chunk.part.surfaceAbove)continue;
+        if(chunk.part.surfaceAbove&&model.scenerySegmentVisible&&!model.scenerySegmentVisible(chunk.part.original))continue;
         const block=this.cache.get(chunk.key),bounds=block?.bounds||chunk.bounds,range=boundsDistance(bounds,this.eye);
         if(range>STREAMING.cacheRadius)continue;active.add(chunk.key);
-        if(!block&&range<=fogEnd+STREAMING.preparePadding)candidates.push({...chunk,priority:range+(inFrustum(bounds,matrix)?0:500)});
-      }
+        if((!block||block.routeRevision!==(model.routeRevision||0))&&range<=fogEnd+STREAMING.preparePadding)candidates.push({...chunk,priority:range+(inFrustum(bounds,matrix)?0:500)});
+      }}
       candidates.sort((a,b)=>a.priority-b.priority);
       for(const chunk of candidates.slice(0,STREAMING.chunksPerFrame)){
         const mesh=new Mesh(this.atlas),seg=chunk.part;
-        if(seg.kind==='descent'||seg.kind==='ascent')slope(mesh,model,seg);else if(seg.kind==='station'||seg.kind==='tunnel')underground(mesh,model,seg);else street(mesh,model,seg);
-        const block={...this.upload(mesh),segmentId:chunk.segmentId,kind:chunk.kind,startS:chunk.startS,endS:chunk.endS};
+        if(seg.surfaceAbove){const aboveModel={poseAt:(s,lateral=0)=>({...model.poseAt(s,lateral),y:0,kind:'street'}),sceneryFootprintClear:model.sceneryFootprintClear?.bind(model)};street(mesh,aboveModel,seg);}
+        else if(seg.kind==='descent'||seg.kind==='ascent')slope(mesh,model,seg);else if(seg.kind==='station'||seg.kind==='tunnel')underground(mesh,model,seg);else street(mesh,model,seg);
+        const block={...this.upload(mesh),segmentId:chunk.segmentId,kind:chunk.kind,startS:chunk.startS,endS:chunk.endS,routeRevision:model.routeRevision||0};const previous=this.cache.get(chunk.key);if(previous)gl.deleteBuffer(previous.buffer);
         // Resolve the conservative estimate once. Reusing that real bound after
         // eviction prevents far chunks from being rebuilt on every frame.
         chunk.bounds.min=block.bounds.min;chunk.bounds.max=block.bounds.max;
@@ -7505,7 +7802,7 @@ window.HubOnlineConfig = {
       for(const [key,block]of this.cache)if(!active.has(key)){gl.deleteBuffer(block.buffer);this.cache.delete(key);}
       const mesh=new Mesh(this.atlas),hazardActive=new Set(),hazardCandidates=[];
       for(const item of model.items||[]){
-        if(item.hit)continue;let meta=this.itemMeta.get(item);
+        if(item.hit||model.sceneryItemVisible&&!model.sceneryItemVisible(item))continue;let meta=this.itemMeta.get(item);
         if(!meta){const ip=model.poseAt(item.s,(item.lane-1)*2.4),bounds={min:[ip.x-3,ip.y-.2,ip.z-3],max:[ip.x+3,ip.y+3,ip.z+3]};meta={ip,bounds,key:item.id+':'+item.type+':'+item.s+':'+item.lane+':'+ip.x+':'+ip.y+':'+ip.z};this.itemMeta.set(item,meta);}
         const {ip,bounds,key}=meta,range=boundsDistance(bounds,this.eye);
         if(range>Math.min(STREAMING.itemRadius,fogEnd+STREAMING.preparePadding))continue;
