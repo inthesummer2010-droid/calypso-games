@@ -1,6 +1,14 @@
 'use strict';
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const {WebSocketServer}=require('ws'),QRCode=require('qrcode'),{Rally}=require('./arcade.js'),{Model:SnakeModel,DEFAULTS:SnakeDefaults}=require('./snake.js'),{TowerDefense}=require('./bonus-games.js'),{Model:MinigolfModel}=require('./minigolf.js');
+const {createSocial}=require('./social-server.cjs');
+const {isIP}=require('node:net');
+// Public Render services are reached through its Cloudflare/load-balancer edge.
+// Trust forwarding data only there; direct/local servers always use the socket.
+function clientAddress(req,trustRender=process.env.RENDER==='true'&&process.env.NODE_ENV==='production'){
+  if(trustRender){const cf=req.headers['cf-connecting-ip'];if(typeof cf==='string'&&isIP(cf.trim()))return cf.trim();const forwarded=req.headers['x-forwarded-for'];if(typeof forwarded==='string'&&forwarded.length<=1024){const last=forwarded.split(',').at(-1).trim();if(isIP(last))return last;}}
+  return req.socket.remoteAddress||'unknown';
+}
 const CODE=/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/,TOKEN=/^[a-f0-9]{48}$/;
 const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const randomCode=()=>Array.from({length:6},()=>alphabet[crypto.randomInt(alphabet.length)]).join('');
@@ -85,23 +93,26 @@ class Rooms {
   }
   error(ws,code){this.send(ws,{type:'error',code});}
   player(ws){const at=this.members.get(ws);return at&&{room:at.room,slot:at.slot,p:at.room.players[at.slot]};}
-  snapshot(r){const game=r.game.snapshot? r.game.snapshot() : {w:600,h:800,paddles:[...r.game.paddles],ball:{...r.game.ball},scores:[...r.game.scores],wait:r.game.wait||0,hits:r.game.hits||0,longest:r.game.longest||0,elapsed:r.game.elapsed||0,winner:r.phase==='over'?r.game.winner:null};return {type:'state',v:1,code:r.code,gameType:r.gameType,round:r.round,phase:r.phase,countdown:Math.max(0,Math.ceil((r.countdown-this.now())/1000)),remaining:Math.max(0,Math.ceil((r.expires-this.now())/1000)),players:r.players.map(p=>p?{connected:!!p.ws,ready:p.ready,away:p.away,reconnect:p.ws?0:Math.max(0,Math.ceil((this.reconnectMs-this.now()+p.disconnectedAt)/1000)),name:p.name,vote:p.vote}:null),game,events:r.events.slice(-16)};}
+  snapshot(r){const game=r.game.snapshot? r.game.snapshot() : {w:600,h:800,paddles:[...r.game.paddles],ball:{...r.game.ball},scores:[...r.game.scores],wait:r.game.wait||0,hits:r.game.hits||0,longest:r.game.longest||0,elapsed:r.game.elapsed||0,winner:r.phase==='over'?r.game.winner:null};return {type:'state',v:1,code:r.code,gameType:r.gameType,capacity:r.capacity,visibility:r.visibility,requiredPlayers:r.requiredPlayers,round:r.round,phase:r.phase,countdown:Math.max(0,Math.ceil((r.countdown-this.now())/1000)),remaining:Math.max(0,Math.ceil((r.expires-this.now())/1000)),players:r.players.map(p=>p?{connected:!!p.ws,ready:p.ready,away:p.away,reconnect:p.ws?0:Math.max(0,Math.ceil((this.reconnectMs-this.now()+p.disconnectedAt)/1000)),name:p.name,vote:p.vote}:null),game,events:r.events.slice(-16)};}
   broadcast(r){const s=this.snapshot(r);for(const p of r.players)if(p?.ws)this.send(p.ws,s);}
   newPlayer(ws,slot=0,game='rally'){return {ws,token:token(),name:`Spieler ${slot+1}`,vote:game,ready:false,away:false,disconnectedAt:0,input:{axis:0,target:null,dx:0,dy:0,dir:null,fire:false},seq:-1,inputAt:0};}
   joined(ws,r,slot){const p=r.players[slot];this.members.set(ws,{room:r,slot});const invite=new URL(this.siteUrl);invite.pathname='/room/'+encodeURIComponent(r.code);invite.search='';invite.hash='';this.send(ws,{type:'joined',v:1,code:r.code,game:r.gameType,slot,token:p.token,invite:invite.href,name:p.name});this.broadcast(r);}
-  create(ws,game='rally'){if(this.player(ws))return this.error(ws,'already_joined');if(this.rooms.size>=this.maxRooms)return this.error(ws,'busy');if(!GAME_TYPES.has(game))return this.error(ws,'invalid_game');let code;do{code=randomCode();}while(this.rooms.has(code));
-    const r={code,gameType:game,players:[this.newPlayer(ws,0,game),...Array(game==='minigolf'?3:1).fill(null)],round:0,phase:'lobby',expires:this.now()+this.roomMs,countdown:0,events:[],eventSeq:0};
+  validCapacity(game,capacity){return Number.isInteger(capacity)&&capacity>=2&&capacity<=(game==='minigolf'?4:2);}
+  create(ws,game='rally',options={}){if(this.player(ws))return this.error(ws,'already_joined');if(this.rooms.size>=this.maxRooms)return this.error(ws,'busy');if(!GAME_TYPES.has(game))return this.error(ws,'invalid_game');const capacity=options.capacity??(game==='minigolf'?4:2);if(!this.validCapacity(game,capacity)||options.visibility!==undefined&&!['private','public'].includes(options.visibility))return this.error(ws,'invalid_game');let code;do{code=randomCode();}while(this.rooms.has(code));
+    const r={code,gameType:game,capacity,visibility:options.visibility||'private',allowFriendJoin:options.allowFriendJoin===true,requiredPlayers:options.capacity!==undefined||options.visibility==='public'?capacity:null,players:[this.newPlayer(ws,0,game),...Array(game==='minigolf'?3:1).fill(null)],round:0,phase:'lobby',expires:this.now()+this.roomMs,countdown:0,events:[],eventSeq:0};
     r.game=createGame(game,{onSound:(name,player)=>{r.events.push({id:++r.eventSeq,name,player});r.events=r.events.slice(-16);},onRoundEnd:()=>{r.phase='over';r.players.forEach(p=>{if(p)p.ready=false;});}});
     this.rooms.set(code,r);this.joined(ws,r,0);
   }
-  join(ws,code){if(this.player(ws))return this.error(ws,'already_joined');if(!CODE.test(code||''))return this.error(ws,'invalid_code');const r=this.rooms.get(code);if(!r||r.expires<=this.now())return this.error(ws,'not_found');const slot=r.players.findIndex(p=>!p);if(slot<0)return this.error(ws,'full');if(r.gameType==='minigolf'&&!['lobby','over'].includes(r.phase))return this.error(ws,'already_started');r.players[slot]=this.newPlayer(ws,slot,r.gameType);if(r.gameType==='minigolf')r.players.forEach(p=>{if(p)p.ready=false;});this.joined(ws,r,slot);}
+  join(ws,code){if(this.player(ws))return this.error(ws,'already_joined');if(!CODE.test(code||''))return this.error(ws,'invalid_code');const r=this.rooms.get(code);if(!r||r.expires<=this.now())return this.error(ws,'not_found');const slot=r.players.findIndex((p,i)=>!p&&i<(r.capacity||r.players.length));if(slot<0)return this.error(ws,'full');if(r.gameType==='minigolf'&&!['lobby','over'].includes(r.phase))return this.error(ws,'already_started');r.players[slot]=this.newPlayer(ws,slot,r.gameType);if(r.gameType==='minigolf')r.players.forEach(p=>{if(p)p.ready=false;});this.joined(ws,r,slot);}
+  publicRooms(game,capacity){return [...this.rooms.values()].filter(r=>r.visibility==='public'&&['lobby','over'].includes(r.phase)&&r.expires>this.now()&&(!game||r.gameType===game)&&(!capacity||r.capacity===capacity)&&r.players.filter(Boolean).length<r.capacity).slice(0,30).map(r=>({code:r.code,game:r.gameType,capacity:r.capacity,count:r.players.filter(Boolean).length,names:r.players.filter(Boolean).map(p=>p.name),remaining:Math.max(0,Math.ceil((r.expires-this.now())/1000))}));}
+  matchmake(ws,game,capacity){if(this.player(ws))return this.error(ws,'already_joined');if(!GAME_TYPES.has(game)||!this.validCapacity(game,capacity))return this.error(ws,'invalid_game');const available=this.publicRooms(game,capacity)[0];if(available)this.join(ws,available.code);else this.create(ws,game,{capacity,visibility:'public'});}
   resume(ws,code,key){if(this.player(ws))return this.error(ws,'already_joined');const r=this.rooms.get(code);if(!r||!TOKEN.test(key||''))return this.error(ws,'expired');
     const slot=r.players.findIndex(p=>p&&p.token===key);if(slot<0)return this.error(ws,'expired');const p=r.players[slot];if(!p.ws&&this.now()-p.disconnectedAt>this.reconnectMs)return this.error(ws,'expired');
     if(p.ws){const old=p.ws;this.members.delete(old);this.send(old,{type:'closed',reason:'replaced'});old.close?.(1000,'Session reconnected');if(['playing','countdown'].includes(r.phase)){r.phase='paused';r.game.pause();r.players.forEach(p=>{if(p)p.ready=false;});}}
     p.ws=ws;p.ready=false;p.away=false;p.input={axis:0,target:null,dx:0,dy:0,dir:null,fire:false};p.seq=-1;this.joined(ws,r,slot);
   }
   ready(ws){const a=this.player(ws);if(!a)return this.error(ws,'not_joined');const {room:r,p}=a;if(!['lobby','paused','over'].includes(r.phase))return;p.ready=true;p.away=false;
-    const occupied=r.players.filter(Boolean),required=r.gameType==='minigolf'?occupied.length:r.players.length;
+    const occupied=r.players.filter(Boolean),required=r.requiredPlayers||(r.gameType==='minigolf'?occupied.length:r.players.length);
     if(required>=2&&occupied.length===required&&occupied.every(p=>p.ws&&p.ready&&!p.away&&p.vote===r.gameType)){
       if(r.phase!=='paused'||!r.round){r.game.configurePlayers?.(occupied.length);r.round++;r.game.start(false);r.events=[];}else r.game.resume();
       r.phase='countdown';r.countdown=this.now()+3000;occupied.forEach(p=>{p.input={axis:0,target:null};p.inputAt=0;});
@@ -109,7 +120,7 @@ class Rooms {
   }
   profile(ws,name){const a=this.player(ws);if(!a)return this.error(ws,'not_joined');const clean=String(name??'').replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,18);if(!clean)return this.error(ws,'invalid_name');a.p.name=clean;a.p.ready=false;a.p.away=false;this.broadcast(a.room);}
   vote(ws,game){const a=this.player(ws);if(!a)return this.error(ws,'not_joined');const r=a.room;if(!['lobby','paused','over'].includes(r.phase)||!GAME_TYPES.has(game))return this.error(ws,'invalid_game');const occupied=r.players.filter(Boolean);if(game!=='minigolf'&&occupied.length>2)return this.error(ws,'too_many_players');a.p.vote=game;a.p.ready=false;a.p.away=false;
-    const votes=occupied.filter(p=>p.ws).map(p=>p.vote||r.gameType);if(votes.length===occupied.length&&votes.length>=2&&votes.every(v=>v===votes[0])&&votes[0]!==r.gameType){r.gameType=votes[0];r.players=r.gameType==='minigolf'?[...occupied,...Array(4-occupied.length).fill(null)]:[...occupied,...Array(2-occupied.length).fill(null)];r.game=createGame(r.gameType,{onSound:(name,player)=>{r.events.push({id:++r.eventSeq,name,player});r.events=r.events.slice(-16);},onRoundEnd:()=>{r.phase='over';r.players.forEach(p=>{if(p)p.ready=false;});}});r.round=0;r.phase='lobby';r.countdown=0;r.events=[];r.players.forEach(p=>{if(p){p.vote=r.gameType;p.ready=false;}});}this.broadcast(r);}
+    const votes=occupied.filter(p=>p.ws).map(p=>p.vote||r.gameType);if(votes.length===occupied.length&&votes.length>=2&&votes.every(v=>v===votes[0])&&votes[0]!==r.gameType){r.gameType=votes[0];r.capacity=r.gameType==='minigolf'?(r.requiredPlayers?Math.max(2,occupied.length):4):2;if(r.requiredPlayers)r.requiredPlayers=r.capacity;r.players=r.gameType==='minigolf'?[...occupied,...Array(4-occupied.length).fill(null)]:[...occupied,...Array(2-occupied.length).fill(null)];r.game=createGame(r.gameType,{onSound:(name,player)=>{r.events.push({id:++r.eventSeq,name,player});r.events=r.events.slice(-16);},onRoundEnd:()=>{r.phase='over';r.players.forEach(p=>{if(p)p.ready=false;});}});r.round=0;r.phase='lobby';r.countdown=0;r.events=[];r.players.forEach(p=>{if(p){p.vote=r.gameType;p.ready=false;}});}this.broadcast(r);}
   pause(ws){const a=this.player(ws);if(!a)return;const r=a.room;
     // Losing focus while the lobby is open must not cancel a player's ready state.
     // Only an active countdown or match can be paused.
@@ -152,8 +163,19 @@ function createServer(options={}){
   const wsUrl=()=>{const u=new URL('/play',base());u.protocol=u.protocol==='https:'?'wss:':'ws:';return u.href;};
   const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));};
   const server=http.createServer((req,res)=>{
-    if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405);res.end();return;}
     let url;try{url=new URL(req.url,'http://internal');}catch{json(res,400,{error:'Invalid URL'});return;}
+    if(url.pathname.startsWith('/social/')){social.handle(req,res,url).catch(()=>{if(!res.headersSent)json(res,503,{error:'unavailable'});else res.end();});return;}
+    if(url.pathname==='/rooms/public'){
+      const origin=req.headers.origin;if(origin&&!originAllowed(origin)){json(res,403,{error:'forbidden'});return;}
+      if(origin){res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin');}
+      if(req.method==='OPTIONS'){res.writeHead(204,{'Access-Control-Allow-Methods':'GET, OPTIONS'});res.end();return;}
+      if(req.method!=='GET'){json(res,405,{error:'invalid_input'});return;}
+      if(!rate(roomAttempts,'http:'+clientAddress(req),60,60000)){json(res,429,{error:'rate'});return;}
+      const game=url.searchParams.get('game'),capacity=Number(url.searchParams.get('capacity'));
+      if(!GAME_TYPES.has(game)||!rooms.validCapacity(game,capacity)){json(res,400,{error:'invalid_input'});return;}
+      json(res,200,{rooms:rooms.publicRooms(game,capacity)});return;
+    }
+    if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405);res.end();return;}
     if(url.pathname==='/health'){json(res,200,{ok:true,protocol:1});return;}
     if(url.pathname==='/online-config.json'){json(res,200,{serverUrl:wsUrl(),siteUrl:site.href});return;}
     if(url.pathname==='/'||url.pathname==='/index.html'||/^\/room\/[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}\/?$/i.test(url.pathname)){
@@ -163,6 +185,7 @@ function createServer(options={}){
     }json(res,404,{error:'Not found'});
   });
   function originAllowed(origin){if(allowed.has(origin))return true;if(local){try{const u=new URL(origin);return u.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(u.hostname)&&u.port===String(server.address().port);}catch{}}return false;}
+  const social=createSocial({connectionString:options.databaseUrl??process.env.DATABASE_URL,db:options.socialDb,rooms,originAllowed,clientAddress,now:options.socialNow||Date.now});
   function rate(map,key,max,windowMs){const now=Date.now(),old=map.get(key);if(!old||now>=old.end){if(map.size>10000){for(const [k,v]of map)if(now>=v.end)map.delete(k);if(map.size>10000)return false;}map.set(key,{count:1,end:now+windowMs});return true;}return ++old.count<=max;}
   // Expired connection-address counters must not wait for another request or
   // for a large map. A 60-second window is retained for at most one more heartbeat.
@@ -170,8 +193,7 @@ function createServer(options={}){
   server.on('upgrade',(req,socket,head)=>{
     let url;try{url=new URL(req.url,'http://internal');}catch{socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');return;}
     if(url.pathname!=='/play'||!originAllowed(req.headers.origin)){socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');return;}
-    const ip=req.socket.remoteAddress||'unknown';
-    // Behind a proxy this intentionally shares limits; do not trust arbitrary forwarded headers.
+    const ip=clientAddress(req);
     if(connections.size>=maxClients||!rate(addresses,ip,120,60000)){socket.end('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n');return;}
     wss.handleUpgrade(req,socket,head,ws=>{ws.clientAddress=ip;wss.emit('connection',ws,req);});
   });
@@ -181,8 +203,16 @@ function createServer(options={}){
       const now=Date.now();if(now-ws.messages.start>1000)ws.messages={count:0,start:now};if(++ws.messages.count>80||binary){ws.close(1008,'Invalid message rate or format');return;}
       let m;try{m=JSON.parse(raw.toString());}catch{ws.close(1008,'Invalid JSON');return;}
       if(!m||typeof m!=='object'||Array.isArray(m)||m.v!==1||typeof m.type!=='string'){ws.close(1008,'Unsupported protocol');return;}
-      if(['create','join','resume'].includes(m.type)&&!rate(roomAttempts,ws.clientAddress,40,60000)){rooms.error(ws,'rate');return;}
-       if(m.type==='create')rooms.create(ws,m.game);else if(m.type==='join')rooms.join(ws,m.code);else if(m.type==='resume')rooms.resume(ws,m.code,m.token);else if(m.type==='profile')rooms.profile(ws,m.name);else if(m.type==='vote')rooms.vote(ws,m.game);else if(m.type==='ready')rooms.ready(ws);else if(m.type==='input')rooms.input(ws,m);else if(m.type==='action')rooms.gameAction(ws,m);else if(m.type==='snapshot')rooms.setSnapshot(ws,m.snapshot);else if(m.type==='pause')rooms.pause(ws);else if(m.type==='leave')rooms.leave(ws);else if(m.type==='ping')safeSend(ws,{type:'pong',at:Number.isFinite(m.at)?m.at:0});else if(m.type==='qr'){
+      if(['create','join','resume','matchmake'].includes(m.type)&&!rate(roomAttempts,ws.clientAddress,40,60000)){rooms.error(ws,'rate');return;}
+      if(m.type==='account'){
+        if(m.token===null){ws.socialCode=null;ws.socialTokenHash=null;ws.socialExpiresAt=0;ws.socialAuthGeneration=(ws.socialAuthGeneration||0)+1;safeSend(ws,{type:'account',ok:false});return;}
+        if(!rooms.player(ws)||typeof m.token!=='string'||!/^[a-f0-9]{64}$/.test(m.token)||ws.socialAuthPending){safeSend(ws,{type:'account',ok:false});return;}
+        if(!ws.socialAuthWindow||now>=ws.socialAuthWindow.end)ws.socialAuthWindow={count:0,end:now+10000};
+        if(++ws.socialAuthWindow.count>2){safeSend(ws,{type:'account',ok:false});return;}
+        ws.socialCode=null;ws.socialTokenHash=null;ws.socialExpiresAt=0;ws.socialAuthPending=true;ws.socialPendingTokenHash=crypto.createHash('sha256').update(m.token).digest('hex');const generation=ws.socialAuthGeneration=(ws.socialAuthGeneration||0)+1;
+        social.authenticate(m.token).then(account=>{if(ws.socialAuthGeneration!==generation||ws.readyState!==1)return;if(account&&rooms.player(ws)){ws.socialCode=account.code;ws.socialTokenHash=ws.socialPendingTokenHash;ws.socialExpiresAt=account.expiresAt;}safeSend(ws,{type:'account',ok:!!ws.socialCode});}).catch(()=>safeSend(ws,{type:'account',ok:false})).finally(()=>{ws.socialAuthPending=false;ws.socialPendingTokenHash=null;});return;
+      }
+       if(m.type==='create')rooms.create(ws,m.game,m);else if(m.type==='matchmake')rooms.matchmake(ws,m.game,m.capacity);else if(m.type==='join')rooms.join(ws,m.code);else if(m.type==='resume')rooms.resume(ws,m.code,m.token);else if(m.type==='profile')rooms.profile(ws,m.name);else if(m.type==='vote')rooms.vote(ws,m.game);else if(m.type==='ready')rooms.ready(ws);else if(m.type==='input')rooms.input(ws,m);else if(m.type==='action')rooms.gameAction(ws,m);else if(m.type==='snapshot')rooms.setSnapshot(ws,m.snapshot);else if(m.type==='pause')rooms.pause(ws);else if(m.type==='leave')rooms.leave(ws);else if(m.type==='ping')safeSend(ws,{type:'pong',at:Number.isFinite(m.at)?m.at:0});else if(m.type==='qr'){
         const a=rooms.player(ws);if(!a||ws.qrPending||ws.qrRoom===a.room.code)return;ws.qrPending=true;const code=a.room.code;
         const invite=new URL(site.href);invite.pathname='/room/'+encodeURIComponent(code);invite.search='';invite.hash='';
         QRCode.toDataURL(invite.href,{errorCorrectionLevel:'M',margin:4,width:296}).then(image=>{if(rooms.player(ws)?.room.code===code){safeSend(ws,{type:'qr',code,image,invite:invite.href});ws.qrRoom=code;}}).catch(()=>rooms.error(ws,'qr')).finally(()=>ws.qrPending=false);
@@ -196,8 +226,8 @@ function createServer(options={}){
   // Render routes traffic to the container network interface. Keep local tests
   // on loopback, but never let a production process bind only to localhost.
   const defaultHost=process.env.HOST||(process.env.NODE_ENV==='production'?'0.0.0.0':'127.0.0.1');
-  return {server,rooms,wss,listen:(port=Number(process.env.PORT)||8080,host=defaultHost)=>new Promise(resolve=>server.listen(port,host,()=>resolve(server.address()))),close:()=>new Promise(resolve=>{clearInterval(loop);clearInterval(heartbeat);addresses.clear();roomAttempts.clear();for(const ws of connections)ws.terminate();wss.close();server.close(resolve);})};
+  return {server,rooms,wss,social,listen:(port=Number(process.env.PORT)||8080,host=defaultHost)=>new Promise(resolve=>server.listen(port,host,()=>resolve(server.address()))),close:async()=>{clearInterval(loop);clearInterval(heartbeat);addresses.clear();roomAttempts.clear();for(const ws of connections)ws.terminate();wss.close();await new Promise(resolve=>server.close(resolve));await social.close();}};
 }
 if(require.main===module){const app=createServer();app.listen().then(a=>console.log(`Arcade room server listening on port ${a.port}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>app.close().then(()=>process.exit(0)));}
-module.exports={Rooms,createServer,SnakeDuel,TowerCoop,MinigolfDuel,OriginalArenaRelay};
+module.exports={Rooms,createServer,SnakeDuel,TowerCoop,MinigolfDuel,OriginalArenaRelay,clientAddress};
 

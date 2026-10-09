@@ -8,3 +8,5 @@
 !minigolf.js
 !index.html
 !Dockerfile
+!social-server.cjs
+!social-store.cjs
