@@ -19,6 +19,60 @@
   function inRect(x,y,r){return x>r[0]&&x<r[0]+r[2]&&y>r[1]&&y<r[1]+r[3];}
   const asRect=r=>[r.x,r.y,r.w,r.h];
   function gateRect(g,time=0){const shift=Math.sin(time*Math.PI*2/g.period+(g.phase||0))*g.travel;return [g.x+(g.axis==='x'?shift:0),g.y+(g.axis==='y'?shift:0),g.w,g.h];}
+  const CONTACT_EPS=1e-4;
+  function rebound(b,nx,ny,restitution){const into=b.vx*nx+b.vy*ny;if(into<0){b.vx-=(1+restitution)*into*nx;b.vy-=(1+restitution)*into*ny;}}
+  function rectContact(b,[x,y,w,h]){
+    const dx=b.x-clamp(b.x,x,x+w),dy=b.y-clamp(b.y,y,y+h),d=Math.hypot(dx,dy);
+    if(d>=RADIUS)return null;
+    if(d>1e-8)return {nx:dx/d,ny:dy/d,depth:RADIUS-d};
+    // A gate or a recovered snapshot may already overlap the ball. Move to
+    // the closest real face, instead of repeatedly restoring an inside point.
+    const faces=[{nx:-1,ny:0,depth:b.x-x},{nx:1,ny:0,depth:x+w-b.x},{nx:0,ny:-1,depth:b.y-y},{nx:0,ny:1,depth:y+h-b.y}];
+    faces.sort((a,c)=>a.depth-c.depth||(b.vx*a.nx+b.vy*a.ny)-(b.vx*c.nx+b.vy*c.ny));
+    return {...faces[0],depth:faces[0].depth+RADIUS};
+  }
+  function separateContacts(b,solids,bumpers){
+    for(let pass=0;pass<8;pass++){
+      let corrected=false;
+      for(const [axis,low,high]of [['x',45,855],['y',45,555]]){const v=axis==='x'?'vx':'vy';if(b[axis]<low){b[axis]=low;if(b[v]<0)b[v]*=-.72;corrected=true;}else if(b[axis]>high){b[axis]=high;if(b[v]>0)b[v]*=-.72;corrected=true;}}
+      for(const rect of solids){const c=rectContact(b,rect);if(!c)continue;b.x+=c.nx*(c.depth+CONTACT_EPS);b.y+=c.ny*(c.depth+CONTACT_EPS);rebound(b,c.nx,c.ny,.76);corrected=true;}
+      for(const p of bumpers){const dx=b.x-p.x,dy=b.y-p.y,d=Math.hypot(dx,dy),r=p.r+RADIUS;if(d>=r)continue;const speed=Math.hypot(b.vx,b.vy),nx=d>1e-8?dx/d:speed?-b.vx/speed:1,ny=d>1e-8?dy/d:speed?-b.vy/speed:0;b.x=p.x+nx*(r+CONTACT_EPS);b.y=p.y+ny*(r+CONTACT_EPS);rebound(b,nx,ny,.8);corrected=true;}
+      if(!corrected)break;
+    }
+  }
+  function circleHit(px,py,dx,dy,x,y,r){
+    const ox=px-x,oy=py-y,a=dx*dx+dy*dy;if(a<1e-16)return null;
+    const dot=ox*dx+oy*dy,disc=dot*dot-a*(ox*ox+oy*oy-r*r);if(disc<0)return null;
+    const t=(-dot-Math.sqrt(disc))/a;if(t< -1e-9||t>1+1e-9)return null;
+    const nx=(ox+dx*t)/r,ny=(oy+dy*t)/r;if(dx*nx+dy*ny>=-1e-10)return null;
+    return {t:clamp(t,0,1),nx,ny};
+  }
+  function firstHit(b,seconds,solids,bumpers){
+    const dx=b.vx*seconds,dy=b.vy*seconds;let first=null;
+    const offer=(hit,restitution)=>{if(hit&&hit.t>=0&&hit.t<=1&&(!first||hit.t<first.t))first={...hit,restitution};};
+    if(dx<0)offer({t:(45-b.x)/dx,nx:1,ny:0},.72);else if(dx>0)offer({t:(855-b.x)/dx,nx:-1,ny:0},.72);
+    if(dy<0)offer({t:(45-b.y)/dy,nx:0,ny:1},.72);else if(dy>0)offer({t:(555-b.y)/dy,nx:0,ny:-1},.72);
+    for(const [x,y,w,h]of solids){
+      const face=(t,nx,ny,horizontal)=>{const p=horizontal?b.x+dx*t:b.y+dy*t,low=horizontal?x:y,high=horizontal?x+w:y+h;if(p>=low-1e-9&&p<=high+1e-9)offer({t,nx,ny},.76);};
+      if(dx>0)face((x-RADIUS-b.x)/dx,-1,0,false);else if(dx<0)face((x+w+RADIUS-b.x)/dx,1,0,false);
+      if(dy>0)face((y-RADIUS-b.y)/dy,0,-1,true);else if(dy<0)face((y+h+RADIUS-b.y)/dy,0,1,true);
+      // Only the outside quarter of each corner circle belongs to this wall.
+      // Sweeping that arc also catches fast shallow hits between substeps.
+      for(const [cx,cy,sx,sy]of [[x,y,-1,-1],[x+w,y,1,-1],[x,y+h,-1,1],[x+w,y+h,1,1]]){const hit=circleHit(b.x,b.y,dx,dy,cx,cy,RADIUS);if(hit&&(b.x+dx*hit.t-cx)*sx>=-1e-9&&(b.y+dy*hit.t-cy)*sy>=-1e-9)offer(hit,.76);}
+    }
+    for(const p of bumpers)offer(circleHit(b.x,b.y,dx,dy,p.x,p.y,p.r+RADIUS),.8);
+    return first;
+  }
+  function moveBall(b,seconds,solids,bumpers){
+    separateContacts(b,solids,bumpers);let remaining=seconds;
+    for(let hitCount=0;hitCount<8&&remaining>1e-9;hitCount++){
+      const hit=firstHit(b,remaining,solids,bumpers);
+      if(!hit){b.x+=b.vx*remaining;b.y+=b.vy*remaining;break;}
+      b.x+=b.vx*remaining*hit.t+hit.nx*CONTACT_EPS;b.y+=b.vy*remaining*hit.t+hit.ny*CONTACT_EPS;
+      rebound(b,hit.nx,hit.ny,hit.restitution);remaining*=1-hit.t;
+    }
+    separateContacts(b,solids,bumpers);
+  }
   class Model {
     constructor({players=1,courseCount=9,onEnd=()=>{},onSound=()=>{}}={}){
       this.players=clamp(Math.round(Number(players)||1),1,4);this.courseCount=[3,6,9].includes(courseCount)?courseCount:9;this.onEnd=onEnd;this.onSound=onSound;this.phase='menu';this.player=0;this.hole=0;this.turnId=0;this.shotId=0;this.time=0;this.moving=false;this.shotAge=0;this.lastShot=null;this.result=null;this.turns=Array.from({length:this.players},()=>[]);this.balls=[];this.aim=[1,0];this.power=0;this.dragging=false;this.resetHole();
@@ -43,14 +97,9 @@
       const wasMoving=this.moving;if(wasMoving)this.shotAge+=dt;
       const steps=Math.max(1,Math.ceil(dt*120));let ended=false;
       for(let i=0;i<steps;i++){
-        const s=dt/steps,ox=b.x,oy=b.y;b.x+=b.vx*s;b.y+=b.vy*s;
+        const s=dt/steps,solid=[...(c.walls||[]),...(c.gates||[]).map(g=>gateRect(g,this.time-dt+(i+1)*s))];
+        moveBall(b,s,solid,c.bumpers||[]);
         const sand=(c.sand||[]).some(r=>inRect(b.x,b.y,r));b.vx*=Math.pow(sand ? .018 : .28,s);b.vy*=Math.pow(sand ? .018 : .28,s);
-        if(b.x<45||b.x>855){b.x=clamp(b.x,45,855);b.vx*=-.72;}if(b.y<45||b.y>555){b.y=clamp(b.y,45,555);b.vy*=-.72;}
-        const solid=[...(c.walls||[]),...(c.gates||[]).map(g=>gateRect(g,this.time-dt+(i+1)*s))];
-        for(const [x,y,w,h] of solid)if(b.x>x-RADIUS&&b.x<x+w+RADIUS&&b.y>y-RADIUS&&b.y<y+h+RADIUS){
-          const dx=Math.min(Math.abs(b.x-x),Math.abs(b.x-(x+w))),dy=Math.min(Math.abs(b.y-y),Math.abs(b.y-(y+h)));if(dx<dy)b.vx*=-.76;else b.vy*=-.76;b.x=ox;b.y=oy;
-        }
-        for(const p of c.bumpers||[]){const dx=b.x-p.x,dy=b.y-p.y,d=Math.hypot(dx,dy),r=p.r+RADIUS;if(d<r){const nx=d>1e-8?dx/d:1,ny=d>1e-8?dy/d:0,dot=b.vx*nx+b.vy*ny;b.x=p.x+nx*(r+.05);b.y=p.y+ny*(r+.05);if(dot<0){b.vx-=1.8*dot*nx;b.vy-=1.8*dot*ny;}}}
         // A ramp pushes a rolling ball, never somebody waiting for their turn.
         if(wasMoving)for(const p of c.boosts||[])if(inRect(b.x,b.y,asRect(p))){const d=Math.hypot(p.dx,p.dy)||1;b.vx+=p.dx/d*p.strength*s;b.vy+=p.dy/d*p.strength*s;}
         const speed=Math.hypot(b.vx,b.vy);if(speed>640){b.vx*=640/speed;b.vy*=640/speed;}
