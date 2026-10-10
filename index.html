@@ -7277,6 +7277,16 @@ window.HubOnlineConfig = {
       if(axis==='x')face(mesh,edge,y,c,w,h,color,facing);
       else mesh.quad([c-w/2,y,edge],[c+w/2,y,edge],[c+w/2,y+h,edge],[c-w/2,y+h,edge],color,[0,0,facing]);
     };
+    if(shape.shopfront){
+      const facing=-side,edge=x+facing*(width/2-.004),choices=area==='chelsea'?['GALLERY','COFFEE','BOOKS']:area==='soho'?['BOUTIQUE','GALLERY','COFFEE']:['PIZZA','DELI','NEWS'];
+      const shop=choices[Math.floor(hash(seed+73)*choices.length)],signColor=shop==='PIZZA'?C.red:shop==='BOUTIQUE'?C.iron:C.green;
+      material(mesh,'metal');pane('x',facing,edge,.27,0,depth-.30,2.12,C.iron);
+      material(mesh,'glass');const bays=Math.max(2,Math.min(4,Math.floor(depth/2.7))),span=(depth-.66)/bays;
+      for(let j=0;j<bays;j++)pane('x',facing,edge+facing*.003,.47,-(depth-.66)/2+span*(j+.5),span-.15,1.64,[.24,.43,.44]);
+      material(mesh,'metal');pane('x',facing,edge+facing*.004,2.43,0,depth-.25,.66,signColor);
+      sign(mesh,shop,edge+facing*.005,2.54,0,depth-.65,.42,facing);
+      pane('x',facing,edge+facing*.006,1.26,0,depth-.48,.035,C.stone);
+    }
     for(let y=3.3;y<top-2.15;y+=3.3){
       for(const facing of [-1,1]){
         const sideEdge=x+facing*(width/2-.007),endEdge=facing*(depth/2-.007);
@@ -7318,10 +7328,240 @@ window.HubOnlineConfig = {
 
 </script>
 <script>
+/* Manhattan landmarks: static, hand-built architecture for the offline city. */
+(function (root) {
+  'use strict';
+
+  const STONE = [0.80, 0.76, 0.63], PALE = [0.88, 0.85, 0.72];
+  const GLASS = [0.18, 0.31, 0.36], STEEL = [0.77, 0.82, 0.82];
+  const DARK = [0.15, 0.23, 0.27], BRONZE = [0.44, 0.37, 0.22];
+  const shade = (c, f) => c.map((v, i) => i < 3 ? v * f : v);
+  const footprint = (left, right, front, back, top) => Object.freeze({left, right, front, back, bottom: -.20, top});
+  // Bounds contain cornices, window relief and the complete spire. Runtime
+  // clearance and streaming use the same local coordinates as the geometry.
+  const SHAPES = Object.freeze({
+    empire: Object.freeze({label: 'Empire State Building', width: 15.6, depth: 18.6, height: 100, footprint: footprint(-7.8, 7.8, -9.3, 9.3, 100)}),
+    chrysler: Object.freeze({label: 'Chrysler Building', width: 13.5, depth: 15.5, height: 88, footprint: footprint(-6.75, 6.75, -7.75, 7.75, 88)}),
+    flatiron: Object.freeze({label: 'Flatiron Building', width: 13.3, depth: 20.8, height: 42.4, footprint: footprint(-6.65, 6.65, -10.8, 10.0, 42.4)})
+  });
+
+  function rectangle(mesh, side, extent, u, y, w, h, col, offset = .012) {
+    const e = extent + offset;
+    if (side === 0) mesh.quad([u-w/2,y,-e],[u-w/2,y+h,-e],[u+w/2,y+h,-e],[u+w/2,y,-e],col,[0,0,-1]);
+    if (side === 1) mesh.quad([e,y,u-w/2],[e,y+h,u-w/2],[e,y+h,u+w/2],[e,y,u+w/2],col,[1,0,0]);
+    if (side === 2) mesh.quad([u+w/2,y,e],[u+w/2,y+h,e],[u-w/2,y+h,e],[u-w/2,y,e],col,[0,0,1]);
+    if (side === 3) mesh.quad([-e,y,u+w/2],[-e,y+h,u+w/2],[-e,y+h,u-w/2],[-e,y,u-w/2],col,[-1,0,0]);
+  }
+
+  function windowedTier(mesh, y, height, width, depth, col, options = {}) {
+    mesh.material('stone'); mesh.box(0, y, 0, width, height, depth, col);
+    const pitch = options.pitch || 2.7, first = options.first || .65;
+    for (let side = 0; side < 4; side++) {
+      const span = side % 2 ? depth : width, extent = (side % 2 ? width : depth) / 2;
+      const count = Math.max(2, Math.floor((span-1.15) / 1.5)), gap = (span-1.35) / count;
+      // Continuous stone piers give the Empire State its strong vertical lines.
+      mesh.material('stone');
+      for (let j = 0; j <= count; j++) rectangle(mesh, side, extent, -span/2+.68+j*gap, y+.20, .12, height-.35, shade(col, 1.11), .027);
+      for (let yy = y+first; yy+1.4 < y+height-.16; yy += pitch) {
+        for (let j = 0; j < count; j++) {
+          const u = -span/2+.68+(j+.5)*gap;
+          mesh.material('glass'); rectangle(mesh, side, extent, u, yy, gap-.32, 1.62, options.glass || GLASS, .032);
+          mesh.material('metal'); rectangle(mesh, side, extent, u, yy+.78, gap-.32, .042, shade(col,.59), .037);
+        }
+      }
+    }
+    mesh.material('stone');
+    mesh.box(0, y+height-.17, 0, width+.13, .17, depth+.13, shade(col,.91));
+  }
+
+  function empire(mesh) {
+    mesh.material('stone'); mesh.box(0, -.20, 0, 15.6, .43, 18.6, shade(STONE,.76));
+    // The broad base narrows in repeated Manhattan zoning setbacks, then rises
+    // as a slender shaft into the observation shoulders and broadcast mast.
+    windowedTier(mesh,.16,11.84,15,18,STONE,{first:3.0});
+    windowedTier(mesh,12,12,13.4,16.2,STONE);
+    windowedTier(mesh,24,25,10.7,12.7,STONE);
+    windowedTier(mesh,49,24,8.35,10.25,PALE);
+    windowedTier(mesh,73,8.8,6.25,7.75,PALE,{pitch:2.4});
+    mesh.material('stone'); mesh.box(0,81.8,0,7.0,.65,8.5,shade(PALE,.79));
+    windowedTier(mesh,82.45,3.2,5.9,7.35,PALE,{pitch:2.4,first:.45});
+    mesh.material('stone'); mesh.box(0,85.65,0,6.6,.50,8.0,shade(PALE,1.05));
+    // Observation railings sit on all four shoulders, rather than a blank cap.
+    mesh.material('metal');
+    for (let side=0;side<4;side++) {
+      const span=side%2?7.65:6.25, extent=(side%2?6.25:7.65)/2;
+      rectangle(mesh,side,extent,0,86.16,span,.075,DARK,.02);
+      for(let u=-span/2+.15;u<span/2;u+=.52) rectangle(mesh,side,extent,u,86.10,.035,.52,DARK,.024);
+      rectangle(mesh,side,extent,0,86.60,span,.07,DARK,.02);
+    }
+    mesh.material('stone'); mesh.box(0,86.16,0,3.7,2.1,4.1,shade(PALE,.96));
+    mesh.box(0,88.26,0,2.65,1.05,3.0,shade(PALE,.86));
+    mesh.material('metal'); mesh.cylinder([0,89.31,0],[0,93.7,0],1.08,STEEL,12,.57);
+    mesh.cylinder([0,93.7,0],[0,97.2,0],.56,shade(STEEL,1.07),10,.27);
+    mesh.cylinder([0,97.2,0],[0,100,0],.23,shade(STEEL,1.12),8,.035);
+    for (const yy of [90.1,91.1,92.1,93.3]) mesh.cylinder([0,yy,0],[0,yy+.075,0],1.12-(yy-90.1)*.11,DARK,12);
+    // Bronze Art Deco entrances and tall display windows occupy every face.
+    for(let side=0;side<4;side++) {
+      const extent=(side%2?15:18)/2,span=side%2?18:15;
+      mesh.material('metal'); rectangle(mesh,side,extent,0,.24,2.0,2.8,BRONZE,.05);
+      mesh.material('glass'); rectangle(mesh,side,extent,0,.44,1.60,2.34,GLASS,.06);
+      for(const u of [-span*.31,span*.31]) rectangle(mesh,side,extent,u,.47,2.2,2.16,GLASS,.035);
+      mesh.material('stone'); rectangle(mesh,side,extent,0,3.08,3.35,.36,PALE,.07);
+      mesh.material('metal'); rectangle(mesh,side,extent,0,.46,.06,2.3,BRONZE,.065);
+    }
+  }
+
+  function facePoint(a, b, u, y, offset = 0) {
+    const dx=b[0]-a[0],dz=b[1]-a[1],length=Math.hypot(dx,dz);
+    return [a[0]+dx*u+dz/length*offset, y, a[1]+dz*u-dx/length*offset];
+  }
+  function faceNormal(a,b){const dx=b[0]-a[0],dz=b[1]-a[1],length=Math.hypot(dx,dz);return [dz/length,0,-dx/length];}
+  function polygonPrism(mesh, ring, y, height, col) {
+    for(let i=0;i<ring.length;i++){
+      const a=ring[i],b=ring[(i+1)%ring.length];
+      mesh.quad([b[0],y,b[1]],[a[0],y,a[1]],[a[0],y+height,a[1]],[b[0],y+height,b[1]],col,faceNormal(a,b));
+      mesh.tri([0,y+height,0],[b[0],y+height,b[1]],[a[0],y+height,a[1]],col,[0,1,0]);
+      mesh.tri([0,y,0],[a[0],y,a[1]],[b[0],y,b[1]],col,[0,-1,0]);
+    }
+  }
+
+  function steelCrown(mesh, y, radius, depth, rise, index) {
+    const q=.64,r=radius,d=depth/2;
+    const ring=[[-r*q,-d],[r*q,-d],[r,-d*q],[r,d*q],[r*q,d],[-r*q,d],[-r,d*q],[-r,-d*q]];
+    const col=shade(STEEL,1.04-index*.014),line=[.92,.95,.94];
+    // Each octagonal layer has four rounded steel arches, diagonal shoulders
+    // and the characteristic radiating triangular windows under its rim.
+    mesh.material('metal');
+    for(let face=0;face<ring.length;face++){
+      const a=ring[face],b=ring[(face+1)%ring.length],n=faceNormal(a,b),main=face%2===0,peak=rise*(main?1:.55);
+      const upper=u=>y+peak*Math.sin(Math.PI*u);
+      for(let j=0;j<8;j++){
+        const u=j/8,v=(j+1)/8,ta=facePoint(a,b,u,upper(u)),tb=facePoint(a,b,v,upper(v));
+        mesh.quad(facePoint(a,b,v,y),facePoint(a,b,u,y),ta,tb,col,n);
+        mesh.tri([0,y+rise,0],tb,ta,shade(col,.95));
+        mesh.quad(facePoint(a,b,v,upper(v)-.11,.016),facePoint(a,b,u,upper(u)-.11,.016),facePoint(a,b,u,upper(u),.017),facePoint(a,b,v,upper(v),.017),line,n);
+      }
+      if(main){
+        mesh.material('glass');
+        for(const u of [.17,.33,.5,.67,.83]){
+          const spread=.038,yy=y+peak*(.25+.13*Math.sin(Math.PI*u));
+          // Narrow triangles radiate toward the top of the rounded arch.
+          mesh.tri(facePoint(a,b,u-spread,yy,.027),facePoint(a,b,u+spread,yy,.027),facePoint(a,b,u+(u-.5)*.08,upper(u)-.30,.027),DARK,n);
+        }
+        mesh.material('metal');
+      }
+    }
+  }
+
+  function chrysler(mesh) {
+    const brick=[.77,.76,.65],ledge=[.87,.84,.70];
+    mesh.material('stone'); mesh.box(0,-.20,0,13.5,.43,15.5,shade(brick,.8));
+    windowedTier(mesh,.16,13.84,13.0,15.0,brick,{first:3.0});
+    windowedTier(mesh,14,10,11.6,13.2,brick);
+    windowedTier(mesh,24,23,9.5,11.6,brick);
+    windowedTier(mesh,47,11,8.5,10.5,ledge,{pitch:2.5});
+    mesh.material('stone'); mesh.box(0,58,0,9.1,.55,11.1,shade(ledge,.8));
+    windowedTier(mesh,58.55,3.45,7.6,9.5,ledge,{pitch:2.4,first:.55});
+    // Stylized stainless-steel eagle gargoyles mark the shaft's shoulders.
+    mesh.material('metal');
+    for(const sx of [-1,1])for(const sz of [-1,1]){
+      const x=sx*4.02,z=sz*4.90;
+      mesh.box(x,58.75,z,.36,.48,.42,STEEL);
+      mesh.tri([x-sx*.18,59.15,z-sz*.2],[x+sx*.49,59.05,z+sz*.52],[x+sx*.16,59.47,z+sz*.05],shade(STEEL,1.13));
+      mesh.tri([x+sx*.18,59.15,z-sz*.2],[x+sx*.16,59.47,z+sz*.05],[x+sx*.49,59.05,z+sz*.52],STEEL);
+    }
+    steelCrown(mesh,62,4.25,10.45,4.25,0);
+    steelCrown(mesh,65.45,3.7,8.8,3.75,1);
+    steelCrown(mesh,68.45,3.10,7.25,3.35,2);
+    steelCrown(mesh,71.10,2.47,5.8,2.80,3);
+    steelCrown(mesh,73.35,1.85,4.25,2.25,4);
+    steelCrown(mesh,75.10,1.25,2.75,1.80,5);
+    steelCrown(mesh,76.45,.72,1.60,1.30,6);
+    mesh.material('metal'); mesh.cylinder([0,77.7,0],[0,81.0,0],.47,shade(STEEL,1.08),10,.22);
+    mesh.cylinder([0,81.0,0],[0,88,0],.21,shade(STEEL,1.12),8,.018);
+    for(let side=0;side<4;side++){
+      const extent=(side%2?13:15)/2;
+      mesh.material('metal'); rectangle(mesh,side,extent,0,.23,2.1,2.68,DARK,.06);
+      mesh.material('glass'); rectangle(mesh,side,extent,0,.37,1.68,2.3,GLASS,.075);
+      mesh.material('metal'); rectangle(mesh,side,extent,0,.38,.08,2.32,BRONZE,.08);
+      mesh.material('stone'); rectangle(mesh,side,extent,0,2.96,3.15,.28,ledge,.055);
+    }
+  }
+
+  const FLAT_RING = [[-.42,-10.40],[.42,-10.40],[6.4,9.6],[-6.4,9.6]];
+  const scaledRing = f => FLAT_RING.map(p=>[p[0]*f,p[1]*f]);
+  function edgeRectangle(mesh,a,b,u,y,w,h,col,offset=.014){
+    const length=Math.hypot(b[0]-a[0],b[1]-a[1]),half=w/length/2;
+    mesh.quad(facePoint(a,b,u+half,y,offset),facePoint(a,b,u-half,y,offset),facePoint(a,b,u-half,y+h,offset),facePoint(a,b,u+half,y+h,offset),col,faceNormal(a,b));
+  }
+  function flatiron(mesh) {
+    const body=[.84,.80,.66],trim=[.91,.87,.73];
+    mesh.material('stone');polygonPrism(mesh,scaledRing(1.02),-.20,.46,shade(body,.76));
+    polygonPrism(mesh,FLAT_RING,.16,40.8,body);
+    // The actual wedge footprint creates two long angled window walls, a wide
+    // rear elevation and a narrow windowed nose facing the avenue junction.
+    for(let edge=0;edge<FLAT_RING.length;edge++){
+      const a=FLAT_RING[edge],b=FLAT_RING[(edge+1)%FLAT_RING.length],length=Math.hypot(b[0]-a[0],b[1]-a[1]);
+      const cols=Math.max(1,Math.floor((length-.30)/1.65)),pitch=length/cols;
+      mesh.material('stone');
+      for(let j=1;j<cols;j++)edgeRectangle(mesh,a,b,j/cols,3.20,.13,36.5,trim,.025);
+      for(let floor=0;floor<16;floor++){
+        const y=3.38+floor*2.27,top=floor>=14;
+        for(let j=0;j<cols;j++){
+          const u=(j+.5)/cols,ww=Math.min(1.12,pitch-.25);
+          mesh.material('stone');edgeRectangle(mesh,a,b,u,y,ww+.13,1.62,trim,.031);
+          mesh.material('glass');edgeRectangle(mesh,a,b,u,y+.09,ww-.14,1.40,GLASS,.043);
+          mesh.material('stone');edgeRectangle(mesh,a,b,u,y+.77,ww-.12,.045,body,.047);
+          if(top)edgeRectangle(mesh,a,b,u,y+1.49,ww+.22,.095,shade(trim,.89),.051);
+        }
+      }
+      // Broad glazing and recessed doors also wrap around the rear frontage.
+      for(let j=0;j<cols;j++){
+        const u=(j+.5)/cols,ww=Math.min(1.35,pitch-.18);
+        mesh.material('glass');edgeRectangle(mesh,a,b,u,.38,ww,2.25,shade(GLASS,1.06),.036);
+        mesh.material('metal');edgeRectangle(mesh,a,b,u,.40,.055,2.25,BRONZE,.041);
+      }
+      mesh.material('stone');edgeRectangle(mesh,a,b,.5,2.75,length,.18,trim,.045);
+    }
+    mesh.material('stone');
+    for(const y of [3.0,9.95,19.02,28.10,35.12])polygonPrism(mesh,scaledRing(1.01),y,.19,shade(trim,.94));
+    polygonPrism(mesh,scaledRing(1.015),39.95,.20,shade(body,.75));
+    polygonPrism(mesh,scaledRing(1.028),40.15,.30,trim);
+    polygonPrism(mesh,scaledRing(1.035),40.45,.24,shade(trim,.84));
+    polygonPrism(mesh,scaledRing(1.035),40.93,.28,trim);
+    polygonPrism(mesh,scaledRing(1.01),41.21,.99,shade(body,.95));
+    polygonPrism(mesh,scaledRing(1.03),42.2,.20,trim);
+    // Small projecting cornice brackets repeat around the triangular perimeter.
+    for(let edge=0;edge<FLAT_RING.length;edge++){
+      const a=FLAT_RING[edge],b=FLAT_RING[(edge+1)%FLAT_RING.length],count=Math.max(1,Math.floor(Math.hypot(b[0]-a[0],b[1]-a[1])/1.05));
+      for(let j=0;j<count;j++)edgeRectangle(mesh,a,b,(j+.5)/count,40.70,.18,.23,trim,.09);
+    }
+  }
+
+  const MODELS = {empire, chrysler, flatiron};
+  function draw(mesh, id, p) {
+    const model=MODELS[id]; if(!model)return false;
+    mesh.frame(p || {x:0,y:0,z:0,heading:0}); model(mesh); mesh.material(null); return true;
+  }
+  const api=Object.freeze({draw, SHAPES});
+  if(typeof module==='object'&&module.exports)module.exports=api;
+  if(root)root.NYLandmarks=api;
+})(typeof globalThis!=='undefined'?globalThis:this);
+
+</script>
+<script>
 /* New York Rush: hand-built, offline WebGL scenery and articulated characters. */
 (function (root) {
   'use strict';
   const TAU = Math.PI * 2, clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const Landmarks=root.NYLandmarks||(typeof require==='function'?require('./ny-landmarks.js'):null);
+  // One stable city location per landmark. Their distant crowns use a longer
+  // haze range, while all three static buffers still have a fixed upper bound.
+  const LANDMARK_SITES=Object.freeze([
+    Object.freeze({id:'empire',x:-20,y:0,z:-300,heading:0}),
+    Object.freeze({id:'chrysler',x:20,y:0,z:-360,heading:0}),
+    Object.freeze({id:'flatiron',x:-37,y:0,z:-450,heading:.20})
+  ]);
   const C = {
     road: [0.235, 0.27, 0.30], curb: [0.67, 0.66, 0.59], walk: [0.72, 0.70, 0.64],
     white: [0.94, 0.91, 0.79], iron: [0.12, 0.19, 0.20], glass: [0.18, 0.35, 0.43],
@@ -7403,7 +7643,8 @@ window.HubOnlineConfig = {
     ['BOOKS','BOOKS & PAPER','#244b40','#fff3cf'],
     ['FDNY','FDNY • ENGINE 7','#922b25','#fff0d1'],['MARKET','NEIGHBORHOOD MARKET','#245941','#fff2c8'],
     ['MAIL','US POST OFFICE','#254661','#f4f0df'],['PARK','PUBLIC COURTYARD','#27533a','#e5f0ce'],
-    ['BIKE','CITI BIKE','#246c8f','#e9f5f4'],['HOTDOG','HOT DOGS • PRETZELS','#f2bf52','#47332b']
+    ['BIKE','CITI BIKE','#246c8f','#e9f5f4'],['HOTDOG','HOT DOGS • PRETZELS','#f2bf52','#47332b'],
+    ['TIMES','TIMES SQUARE','#182f45','#f4e4bf']
   ];
   // Tileable surface paintings share the existing sign atlas: no image downloads,
   // extra textures or per-frame painting. Mipmaps keep distant masonry stable.
@@ -7541,8 +7782,14 @@ window.HubOnlineConfig = {
     // rotating with the camera as the former background skyline did.
     mesh.frame(p);const x=side*setback,w=8+hash(seed)*6,d=10+hash(seed+4)*7,h=24+hash(seed+8)*36,col=p.district==='chelsea'?[.54,.42,.33]:p.district==='soho'?[.64,.64,.56]:[.52,.58,.56];
     if(model?.sceneryFootprintClear&&!model.sceneryFootprintClear(p,{left:x-w/2-.3,right:x+w/2+.3,front:-d/2-.3,back:d/2+.3,bottom:.16,top:h+12},ownerId))return;
-    mesh.material(p.district==='midtown'?'stone':'brick');mesh.box(x,-.2,0,w,h,d,col);mesh.material(null);mesh.box(x,h-.2,0,w+.38,.28,d+.38,scale(col,.85));
-    for(let floor=3;floor<h-2;floor+=4.2)for(let z=-d/2+1.2;z<d/2-1;z+=2.7){mesh.material('glass');mesh.facade(x-side*(w/2+.035),floor,z,1.05,1.25,[.34,.46,.46],-side);}mesh.material(null);
+    mesh.material(p.district==='midtown'?'stone':'brick');mesh.box(x,-.2,0,w,h,d,col);mesh.material('stone');mesh.box(x,h-.2,0,w+.38,.28,d+.38,scale(col,.85));
+    for(let floor=3;floor<h-2;floor+=3.3){
+      mesh.material('glass');
+      for(const facing of [-1,1]){
+        for(let z=-d/2+1.15;z<d/2-.8;z+=2.5)mesh.facade(x+facing*(w/2+.025),floor,z,1.22,1.76,[.25,.40,.43],facing);
+        for(let xx=-w/2+1.1;xx<w/2-.8;xx+=2.5){const edge=facing*(d/2+.025);mesh.quad([x+xx-.61,floor,edge],[x+xx+.61,floor,edge],[x+xx+.61,floor+1.76,edge],[x+xx-.61,floor+1.76,edge],[.25,.40,.43],[0,0,facing]);}
+      }
+    }mesh.material(null);
     if(hash(seed+5)>.5){mesh.box(x,h+.1,0,w*.68,3.4,d*.7,scale(col,.94));mesh.box(x,h+3.5,0,w*.35,3.3,d*.4,scale(col,.88));mesh.cylinder([x,h+6.8,0],[x,h+11.6,0],.08,C.iron,5);}
   }
 
@@ -7615,9 +7862,17 @@ window.HubOnlineConfig = {
 
   function crosswalk(mesh){for(let x=-4.12;x<4.3;x+=.82)mesh.box(x,.014,0,.42,.012,3.25,C.white);}
   function streetPost(mesh,area,x=-5.55,z=2.8){const d=district(area);mesh.cylinder([x,.17,z],[x,4.94,z],.064,C.iron,7);mesh.box(x,.17,z,.22,.17,.22,C.iron);mesh.box(x,4.39,z,2.36,.50,.095,C.green);mesh.sign(d.street,x,4.43,z+.053,2.24,.42);mesh.box(x,3.85,z,2.1,.47,.095,C.green);mesh.sign(d.cross,x,3.89,z+.053,2.00,.39);}
-  function pocketPlaza(mesh,p,side){
-    mesh.frame(p);const x=side*12;mesh.material('concrete');mesh.box(x,.17,0,7.8,.035,6.6,C.walk);mesh.material('stone');mesh.box(side*15.65,.20,0,.25,.45,6.6,[.63,.60,.49]);mesh.material(null);
-    for(const z of [-2.1,2.1]){mesh.box(side*13.5,.21,z,2.1,.25,1.7,[.43,.45,.34]);tree(mesh,side*13.5,z);}
+  function pocketPlaza(mesh,p,side,initial=false){
+    // Fill the whole reserved courtyard, up to the cross-street pavement and
+    // rear buildings. The opening before the first full lot is a real garden.
+    const front=-6.05,back=initial?18:6,depth=back-front,centre=(front+back)/2;
+    mesh.frame(p);mesh.material('concrete');mesh.box(side*12.6,.16,centre,9.8,.035,depth,C.walk);
+    mesh.material('leaf');mesh.box(side*14.78,.198,centre,4.95,.024,depth-.38,[.34,.47,.25]);
+    mesh.material('stone');mesh.box(side*17.35,.198,centre,.24,.22,depth,[.64,.62,.52]);
+    for(const z of [front+.12,back-.12])mesh.box(side*14.78,.198,z,4.95,.20,.22,[.64,.62,.52]);
+    mesh.material('concrete');mesh.box(side*14.78,.232,0,4.71,.016,1.22,[.75,.73,.65]);mesh.material(null);
+    for(const z of [-3.85,3.45,...(initial?[10.3,15.5]:[])]){mesh.material('stone');mesh.box(side*14.4,.225,z,1.72,.17,1.46,[.48,.51,.37]);mesh.material('leaf');mesh.box(side*14.4,.396,z,1.51,.026,1.28,[.34,.43,.23]);mesh.material(null);tree(mesh,side*14.4,z);}
+    for(const z of [front+.8,back-.8])for(const offset of [12.9,15.9]){mesh.material('leaf');mesh.sphere(side*offset,.55,z,.39,[.29,.43,.23],7,3,[1.2,.75,1]);mesh.material(null);for(let i=0;i<3;i++)mesh.sphere(side*(offset-.2+i*.2),.86,z,.06,i%2?[.93,.66,.31]:[.79,.37,.41],5,3);}
     for(const z of [-1.9,1.9]){mesh.material('wood');mesh.box(side*9.4,.63,z,.65,.10,1.7,[.48,.32,.21]);mesh.box(side*9.75,.69,z,.095,.48,1.7,[.48,.32,.21]);mesh.material('metal');for(const zz of [z-.65,z+.65])mesh.box(side*9.4,.21,zz,.59,.42,.065,C.iron);mesh.material(null);}
     mesh.box(side*8.3,.21,0,.11,1.40,.12,C.iron);mesh.box(side*8.3,1.16,0,.12,.43,2.1,C.green);mesh.sign('PARK',side*8.22,1.19,0,1.96,.36,-side);mesh.material(null);
   }
@@ -7648,7 +7903,7 @@ window.HubOnlineConfig = {
       // Begin the perpendicular lots beyond it, avoiding overlapping buildings.
       for(const [from,to]of [[27.5,39.5],[39.5,51.5],[51.5,59.8]]){
         const distance=(from+to)/2,q={...p,x:p.x+Math.cos(p.heading)*side*distance,z:p.z+Math.sin(p.heading)*side*distance,heading:p.heading+side*Math.PI/2};
-        for(const edge of [-1,1])details?.rearBuilding(mesh,q,edge,seed+side*137+from+edge*11,{setback:5.05,width:8.5,depth:to-from,height:(p.district==='midtown'?26:21)+Math.floor(hash(seed+from+edge)*4)*2.7},model,ownerId);
+        for(const edge of [-1,1])details?.rearBuilding(mesh,q,edge,seed+side*137+from+edge*11,{setback:5.05,width:8.5,depth:to-from,height:(p.district==='midtown'?29:21)+Math.floor(hash(seed+from+edge)*4)*3.1,shopfront:true},model,ownerId);
       }
       mesh.frame(p);
       const left=Math.min(side*(crossCentre-3.25),side*(crossCentre+3.25)),right=Math.max(side*(crossCentre-3.25),side*(crossCentre+3.25));
@@ -7672,12 +7927,27 @@ window.HubOnlineConfig = {
       }
     }
     mesh.frame(p);mesh.material(null);crosswalk(mesh);streetPost(mesh,p.district,-5.55,5.25);
+    for(const side of [-1,1])if(clear({left:side*6.8-.45,right:side*6.8+.45,front:5.05,back:6.2,bottom:.16,top:5.5})){
+      mesh.material('metal');mesh.cylinder([side*6.8,.16,5.6],[side*6.8,5.35,5.6],.073,C.iron,6);
+      mesh.box(side*6.8,4.30,5.58,.42,1.12,.32,[.93,.66,.12]);
+      for(let i=0;i<3;i++)mesh.box(side*6.8,4.43+i*.31,5.77,.26,.22,.038,C.iron);
+      // Front-facing, legible discs on the three vertically stacked lenses.
+      for(let i=0;i<3;i++)mesh.sphere(side*6.8,4.47+i*.31,5.806,.076,i===0?[.26,.67,.32,.35]:i===1?[.52,.39,.12]:[.56,.21,.15],7,3,[1,1,.12]);
+      if(p.district==='midtown'&&side===-1){mesh.box(side*6.8,3.52,5.58,2.5,.45,.12,C.iron);mesh.sign('TIMES',side*6.8,3.55,5.65,2.38,.36);}
+    }mesh.material(null);
   }
   function street(mesh,model,seg){
     const corner=seg.kind==='corner',step=corner?1.0:2.0,area=seg.district||'midtown',style=district(area),original=seg.original||seg,details=root.NYCityDetails,stairOpening=['descent','ascent'].includes(seg.overheadKind);
     const each=(offset,stride,endOffset,fn)=>{const first=original.startS+offset,last=Math.min(seg.endS,original.endS-endOffset);for(let s=first+Math.max(0,Math.ceil((seg.startS-first)/stride))*stride;s<last-.00001;s+=stride)fn(s);};
     const subwayAhead=!seg.surfaceAbove&&!corner&&model.poseAt(original.endS+.01).kind==='descent';
     const branchS=original.startS+17,branches=corner||stairOpening?[]:[branchS,...(subwayAhead?[original.endS-12]:[])],branchCuts=branches.flatMap(s=>[s-3.25,s+3.25]).sort((a,b)=>a-b);
+    if(original.startS===0&&seg.startS===0){
+      // The follow camera begins behind the runner, so the starting avenue
+      // must already continue there instead of exposing the terrain plane.
+      mesh.frame(model.poseAt(0));mesh.material('asphalt');mesh.box(0,-.06,12,9.1,.03,24,C.road);
+      for(const side of [-1,1]){mesh.material('concrete');mesh.box(side*6.1,.04,12,3.2,.12,24,C.walk);mesh.material('stone');mesh.box(side*4.5,-.06,12,.08,.22,24,C.curb);}
+      mesh.material(null);for(const z of [3,8.6,14.2,19.8])for(const x of [-1.2,1.2])mesh.box(x,.005,z,.075,.008,1.9,C.white);
+    }
     for(let s=seg.startS;s<seg.endS;){const nextCut=branchCuts.find(c=>c>s+.00001)||Infinity,end=Math.min(seg.endS,s+step,nextCut),a=model.poseAt(s),b=model.poseAt(end),ar=[Math.cos(a.heading),0,Math.sin(a.heading)],br=[Math.cos(b.heading),0,Math.sin(b.heading)];mesh.frame({});
       const point=(p,r,x,y)=>[p.x+r[0]*x,p.y+y,p.z+r[2]*x];
       const groundWidth=corner?8:45;
@@ -7702,7 +7972,7 @@ window.HubOnlineConfig = {
       details?.cornerDetails(mesh,model,seg);
       return;
     }
-    const plazaS=original.startS+6;if(!stairOpening&&plazaS>=seg.startS&&plazaS<seg.endS){const p=model.poseAt(plazaS);for(const side of [-1,1])if(!model.sceneryFootprintClear||model.sceneryFootprintClear(p,{left:Math.min(side*8.1,side*16),right:Math.max(side*8.1,side*16),front:-3.3,back:3.3,bottom:.16,top:8},original.id))pocketPlaza(mesh,p,side);}
+    const plazaS=original.startS+6;if(!stairOpening&&plazaS>=seg.startS&&plazaS<seg.endS){const p=model.poseAt(plazaS),initial=original.startS===0;for(const side of [-1,1])if(!model.sceneryFootprintClear||model.sceneryFootprintClear(p,{left:Math.min(side*7.7,side*17.5),right:Math.max(side*7.7,side*17.5),front:-6.05,back:initial?18:6,bottom:.16,top:8},original.id))pocketPlaza(mesh,p,side,initial);}
     each(9,11.8,8,s=>{if(!stairOpening&&branches.some(branch=>Math.abs(s-branch)<9.2))return;const p=model.poseAt(s),seed=s+Number(seg.id||0)*97;for(const side of [-1,1]){const lotSeed=seed+side*13,shape={width:6.2+hash(lotSeed)*2.2,depth:11.86,setback:8};if(lotClear(model,p,side,shape,original.id)&&!details?.lot(mesh,p,side,lotSeed,shape))building(mesh,p,side,lotSeed,false,shape);}});
     // The small lot beyond a side street joins its corner to the first full lot.
     const joinS=original.startS+24.25;if(!stairOpening&&joinS>=seg.startS&&joinS<seg.endS){const p=model.poseAt(joinS);for(const side of [-1,1]){const shape={width:6.7,depth:4.6,setback:8,floors:area==='midtown'?6:4};if(lotClear(model,p,side,shape,original.id))building(mesh,p,side,joinS+side*31,false,shape);}}
@@ -7841,7 +8111,7 @@ window.HubOnlineConfig = {
     constructor(canvas) {
       if(!canvas||typeof canvas.getContext!=='function')throw new Error('New York Rush requires a canvas.');
       const gl=canvas.getContext('webgl',{antialias:true,alpha:false,powerPreference:'high-performance'})||canvas.getContext('experimental-webgl',{antialias:true,alpha:false});
-      if(!gl)throw new Error('WebGL is not available.');this.canvas=canvas;this.gl=gl;this.cache=new Map();this.hazardCache=new Map();this.segmentMeta=new WeakMap();this.itemMeta=new WeakMap();this.pendingChunks=0;this.pendingHazards=0;this.disposed=false;this.eye=null;this.target=null;this.lastTime=null;this.width=1;this.height=1;
+      if(!gl)throw new Error('WebGL is not available.');this.canvas=canvas;this.gl=gl;this.cache=new Map();this.hazardCache=new Map();this.landmarkCache=new Map();this.landmarkClearance=new Map();this.segmentMeta=new WeakMap();this.itemMeta=new WeakMap();this.pendingChunks=0;this.pendingHazards=0;this.disposed=false;this.eye=null;this.target=null;this.lastTime=null;this.width=1;this.height=1;
       this.materialGradients=!!(gl.getExtension('OES_standard_derivatives')&&gl.getExtension('EXT_shader_texture_lod'));
       // Derivatives from the unwrapped world coordinates keep tile seams from
       // selecting an atlas-wide mip level and creating dotted dark lines.
@@ -7872,11 +8142,11 @@ window.HubOnlineConfig = {
     bind(buffer){const gl=this.gl,a=this.attributes;gl.bindBuffer(gl.ARRAY_BUFFER,buffer);for(const [name,size,offset] of [['aPosition',3,0],['aNormal',3,12],['aColor',4,24],['aUv',2,40]]){gl.enableVertexAttribArray(a[name]);gl.vertexAttribPointer(a[name],size,gl.FLOAT,false,48,offset);}}
     render(model,options={}){
       if(this.disposed||!model||typeof model.poseAt!=='function')return;const gl=this.gl,distance=Number(model.distance)||0,time=options.time===undefined?(Number(model.time)||0):options.time,preview=!!options.preview,p=model.pose||model.poseAt(distance,Number(model.lateral)||0),base=model.poseAt(distance),h=p.heading||0,forward=[Math.sin(h),0,-Math.cos(h)],right=[Math.cos(h),0,Math.sin(h)],aspect=this.width/this.height;
-      this.stats={builtChunks:0,builtHazards:0,staticBytes:0,dynamicBytes:0,drawnChunks:0,drawnHazards:0};
+      this.stats={builtChunks:0,builtHazards:0,builtLandmarks:0,staticBytes:0,dynamicBytes:0,drawnChunks:0,drawnHazards:0,drawnLandmarks:0};
       const onStairs=base.kind==='descent'||base.kind==='ascent',look=model.poseAt(distance+(onStairs?8:aspect<.75?11:13)),indoor=['station','tunnel','descent','ascent'].includes(base.kind),jump=Number(model.jumpHeight)||0,back=onStairs?6.2:aspect<.8?clamp(6/aspect,8.6,13.5):7.4,cameraGround=model.poseAt(Math.max(0,distance-back)),eyeHeight=onStairs||cameraGround.kind==='descent'||cameraGround.kind==='ascent'?2.2:(aspect<.75?3.4:3.6),extension=Math.max(0,back-distance),lateral=(Number(model.lateral)||0)*.12,desiredEye=[cameraGround.x-Math.sin(cameraGround.heading)*extension+Math.cos(cameraGround.heading)*lateral,cameraGround.y+eyeHeight+Math.min(jump*.17,.30),cameraGround.z+Math.cos(cameraGround.heading)*extension+Math.sin(cameraGround.heading)*lateral],desiredTarget=[look.x+(p.x-base.x)*.05,look.y+1.16,look.z+(p.z-base.z)*.05];
       if(!this.eye||!Number.isFinite(time)||this.lastDistance===undefined||Math.abs(distance-this.lastDistance)>30){this.eye=desiredEye;this.target=desiredTarget;}else{const dt=clamp(time-(this.lastTime||0),.001,.08),ease=1-Math.exp(-dt*12);for(let i=0;i<3;i++){this.eye[i]+=(desiredEye[i]-this.eye[i])*ease;this.target[i]+=(desiredTarget[i]-this.target[i])*ease;}}
       const indoorWeight=onStairs?clamp((.5-this.eye[1])/4,0,1):indoor?1:0;
-      this.lastTime=time;this.lastDistance=distance;const fog=[.67,.81,.91].map((v,i)=>v*(1-indoorWeight)+[.29,.37,.35][i]*indoorWeight),fogEnd=STREAMING.fogOutside*(1-indoorWeight)+STREAMING.fogInside*indoorWeight,matrix=multiply(perspective((aspect<.8?68:64)*Math.PI/180,aspect,.25,320),lookAt(this.eye,this.target));gl.clearColor(fog[0],fog[1],fog[2],1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(this.program);gl.uniformMatrix4fv(this.uniforms.uMatrix,false,matrix);gl.uniform3fv(this.uniforms.uEye,this.eye);gl.uniform3fv(this.uniforms.uFog,fog);gl.uniform3f(this.uniforms.uLight,-.45,.82,.38);gl.uniform1f(this.uniforms.uIndoor,indoorWeight);gl.uniform1f(this.uniforms.uFogEnd,fogEnd);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.uniform1i(this.uniforms.uAtlas,0);
+      this.lastTime=time;this.lastDistance=distance;const fog=[.67,.81,.91].map((v,i)=>v*(1-indoorWeight)+[.29,.37,.35][i]*indoorWeight),fogEnd=STREAMING.fogOutside*(1-indoorWeight)+STREAMING.fogInside*indoorWeight,matrix=multiply(perspective((aspect<.8?68:64)*Math.PI/180,aspect,.25,650),lookAt(this.eye,this.target));gl.clearColor(fog[0],fog[1],fog[2],1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(this.program);gl.uniformMatrix4fv(this.uniforms.uMatrix,false,matrix);gl.uniform3fv(this.uniforms.uEye,this.eye);gl.uniform3fv(this.uniforms.uFog,fog);gl.uniform3f(this.uniforms.uLight,-.45,.82,.38);gl.uniform1f(this.uniforms.uIndoor,indoorWeight);gl.uniform1f(this.uniforms.uFogEnd,fogEnd);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.uniform1i(this.uniforms.uAtlas,0);
       {const key=Math.round(base.x/75)+':'+Math.round(base.z/75)+':'+(model.segments||[]).filter(s=>s.kind==='descent'||s.kind==='ascent').map(s=>s.id+','+s.x+','+s.z).join(';');if(key!==this.terrainKey){if(this.terrain)gl.deleteBuffer(this.terrain.buffer);const ground=new Mesh(this.atlas);terrain(ground,model,base);this.terrain=this.upload(ground);this.terrainKey=key;}this.bind(this.terrain.buffer);gl.drawArrays(gl.TRIANGLES,0,this.terrain.count);}
       // Route distance alone cannot tell whether an old street is still in the
       // camera image after a turn. Keep and draw blocks by their world bounds.
@@ -7902,6 +8172,27 @@ window.HubOnlineConfig = {
       this.pendingChunks=Math.max(0,candidates.length-this.stats.builtChunks);
       for(const [key,block]of this.cache){if(!active.has(key))continue;if(boundsDistance(block.bounds,this.eye)>fogEnd+STREAMING.drawPadding||!inFrustum(block.bounds,matrix))continue;this.bind(block.buffer);gl.drawArrays(gl.TRIANGLES,0,block.count);this.stats.drawnChunks++;}
       for(const [key,block]of this.cache)if(!active.has(key)){gl.deleteBuffer(block.buffer);this.cache.delete(key);}
+      if(Landmarks){
+        let landmarkPending=0;const landmarkFog=500*(1-indoorWeight)+fogEnd*indoorWeight;
+        gl.uniform1f(this.uniforms.uFogEnd,landmarkFog);
+        for(const site of LANDMARK_SITES){
+          const shape=Landmarks.SHAPES[site.id];if(!shape)continue;
+          const box=shape.footprint,radius=Math.hypot(shape.width,shape.depth)/2+.5;
+          const estimate={min:[site.x-radius,site.y+box.bottom,site.z-radius],max:[site.x+radius,site.y+box.top,site.z+radius]};
+          const old=this.landmarkCache.get(site.id),range=boundsDistance(old?.bounds||estimate,this.eye);
+          if(range>480){if(old){gl.deleteBuffer(old.buffer);this.landmarkCache.delete(site.id);}continue;}
+          let clear=this.landmarkClearance.get(site.id);if(!clear||clear.revision!==(model.routeRevision||0)||clear.model!==model){clear={model,revision:model.routeRevision||0,allowed:!model.sceneryFootprintClear||model.sceneryFootprintClear(site,box,null)};this.landmarkClearance.set(site.id,clear);}
+          if(!clear.allowed){if(old){gl.deleteBuffer(old.buffer);this.landmarkCache.delete(site.id);}continue;}
+          let block=old;
+          if(!block&&range<=480){
+            if(this.stats.builtLandmarks>=1){landmarkPending++;continue;}
+            const landmark=new Mesh(this.atlas);Landmarks.draw(landmark,site.id,site);block={...this.upload(landmark),id:site.id};this.landmarkCache.set(site.id,block);this.stats.builtLandmarks++;this.stats.staticBytes+=block.bytes;
+          }
+          if(block&&range<=landmarkFog+STREAMING.drawPadding&&inFrustum(block.bounds,matrix)){this.bind(block.buffer);gl.drawArrays(gl.TRIANGLES,0,block.count);this.stats.drawnLandmarks++;}
+        }
+        this.pendingChunks+=landmarkPending;
+        gl.uniform1f(this.uniforms.uFogEnd,fogEnd);
+      }
       const mesh=new Mesh(this.atlas),hazardActive=new Set(),hazardCandidates=[];
       for(const item of model.items||[]){
         if(item.hit||model.sceneryItemVisible&&!model.sceneryItemVisible(item))continue;let meta=this.itemMeta.get(item);
@@ -7923,9 +8214,9 @@ window.HubOnlineConfig = {
       if(preview||model.phase!=='playing'||!Number(model.invulnerable)||Math.floor(time*13)%2===0)runner(mesh,p,model,time,preview);
       const dynamicData=new Float32Array(mesh.data);this.stats.dynamicBytes=dynamicData.byteLength;gl.bindBuffer(gl.ARRAY_BUFFER,this.dynamic);gl.bufferData(gl.ARRAY_BUFFER,dynamicData,gl.DYNAMIC_DRAW);this.bind(this.dynamic);gl.drawArrays(gl.TRIANGLES,0,mesh.data.length/12);
     }
-    dispose(){if(this.disposed)return;const gl=this.gl;for(const b of this.cache.values())gl.deleteBuffer(b.buffer);this.cache.clear();for(const b of this.hazardCache.values())gl.deleteBuffer(b.buffer);this.hazardCache.clear();this.segmentMeta=new WeakMap();this.itemMeta=new WeakMap();if(this.terrain)gl.deleteBuffer(this.terrain.buffer);gl.deleteBuffer(this.dynamic);gl.deleteTexture(this.texture);gl.deleteProgram(this.program);this.disposed=true;const lose=typeof gl.getExtension==='function'&&gl.getExtension('WEBGL_lose_context');if(lose&&typeof lose.loseContext==='function')lose.loseContext();}
+    dispose(){if(this.disposed)return;const gl=this.gl;for(const b of this.cache.values())gl.deleteBuffer(b.buffer);this.cache.clear();for(const b of this.hazardCache.values())gl.deleteBuffer(b.buffer);this.hazardCache.clear();for(const b of this.landmarkCache.values())gl.deleteBuffer(b.buffer);this.landmarkCache.clear();this.landmarkClearance.clear();this.segmentMeta=new WeakMap();this.itemMeta=new WeakMap();if(this.terrain)gl.deleteBuffer(this.terrain.buffer);gl.deleteBuffer(this.dynamic);gl.deleteTexture(this.texture);gl.deleteProgram(this.program);this.disposed=true;const lose=typeof gl.getExtension==='function'&&gl.getExtension('WEBGL_lose_context');if(lose&&typeof lose.loseContext==='function')lose.loseContext();}
   }
-  const api={Renderer,STREAMING,MATERIALS,runnerPose,RUNNER_GAIT};if(typeof module==='object'&&module.exports)module.exports=api;if(root)root.NYRush3D=api;
+  const api={Renderer,STREAMING,MATERIALS,runnerPose,RUNNER_GAIT,LANDMARK_SITES};if(typeof module==='object'&&module.exports)module.exports=api;if(root)root.NYRush3D=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
 
 </script>
