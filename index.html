@@ -6855,18 +6855,20 @@ window.HubOnlineConfig = {
   // when repeated turns bring their world positions close to the runner again.
   const PATH_RETAIN_DISTANCE = 1200;
   const HISTORY_PRUNE_INTERVAL = 64;
-  // Neighborhoods belong to whole surface blocks. A subway detour retains its
-  // entrance neighborhood and does not advance the surface itinerary.
+  // SoHo is the starting neighborhood. Moving north leads through Chelsea to
+  // Midtown; the familiar lights of Times Square are a later city destination.
+  // These are world coordinates, never a lap counter. Returning to a street or
+  // taking the subway cannot replace its neighborhood with another one.
   const DISTRICTS = Object.freeze([
-    Object.freeze({ id: 'midtown', name: 'Midtown', station: '42 St – Times Sq', surfaceStart: 0 }),
-    Object.freeze({ id: 'chelsea', name: 'Chelsea', station: '23 St', surfaceStart: 280 }),
-    Object.freeze({ id: 'soho', name: 'SoHo', station: 'Canal St', surfaceStart: 680 })
+    Object.freeze({ id: 'soho', name: 'SoHo', station: 'Canal St', surfaceStart: 0 }),
+    Object.freeze({ id: 'chelsea', name: 'Chelsea', station: '23 St', surfaceStart: 400 }),
+    Object.freeze({ id: 'midtown', name: 'Midtown', station: '42 St – Times Sq', surfaceStart: 840 })
   ]);
   function districtAtSurfaceDistance(distance) {
     for (let i = DISTRICTS.length - 1; i >= 0; i--) {
       if (distance >= DISTRICTS[i].surfaceStart) return DISTRICTS[i].id;
     }
-    return 'midtown';
+    return 'soho';
   }
   function districtAtPosition(position, z) {
     const worldZ = typeof position === 'object' ? position.z : z;
@@ -7162,7 +7164,7 @@ window.HubOnlineConfig = {
     poseAt(s, lateral = 0) {
       s = Math.max(0, Number(s) || 0);
       const segment = this._segmentAt(s) || (s < this.segments[0]?.startS ? this.segments[0] : this.segments[this.segments.length - 1]);
-      if (!segment) return { x: lateral, y: 0, z: -s, heading: 0, kind: 'street', district: 'midtown' };
+      if (!segment) return { x: lateral, y: 0, z: -s, heading: 0, kind: 'street', district: districtAtPosition({ z: -s }) };
       return segmentPose(segment, s, lateral);
     }
 
@@ -7710,6 +7712,7 @@ window.HubOnlineConfig = {
 (function (root) {
   'use strict';
   const hash=n=>{let a=(Math.floor(n*1009)^0x59371)>>>0;a^=a<<13;a^=a>>>17;a^=a<<5;return(a>>>0)/4294967296;};
+  const identityHash=n=>{let a=(Math.floor(n*1009)^0x75e14789)>>>0;a=Math.imul(a^(a>>>16),0x7feb352d);a=Math.imul(a^(a>>>15),0x846ca68b);return((a^(a>>>16))>>>0)/4294967296;};
   const shade=(c,k)=>c.map((v,i)=>i<3?v*k:v),mix=(a,b,k)=>a.map((v,i)=>v*(1-k)+b[i]*k);
   const IRON=[.14,.18,.18],DARK=[.075,.105,.115],SILL=[.69,.66,.58];
   const PALETTES=Object.freeze({
@@ -7717,9 +7720,9 @@ window.HubOnlineConfig = {
     soho:Object.freeze([[.78,.76,.68],[.54,.62,.57],[.69,.69,.65],[.78,.70,.60]]),
     midtown:Object.freeze([[.69,.64,.53],[.56,.38,.29],[.75,.72,.64],[.55,.51,.44]])
   });
-  const SHOPS=Object.freeze({chelsea:['COFFEE','BOOKS','BAKERY','GALLERY','DELI','PIZZA'],soho:['BOUTIQUE','GALLERY','COFFEE','BOOKS','BAKERY','PIZZA'],midtown:['DELI','PIZZA','NEWS','COFFEE','BAKERY','GALLERY']});
-  const SHOP_COLORS=Object.freeze({COFFEE:[.19,.31,.30],BAKERY:[.48,.23,.19],PIZZA:[.49,.18,.14],BOOKS:[.19,.32,.24],GALLERY:[.22,.25,.26],DELI:[.18,.35,.26],NEWS:[.23,.30,.34],BOUTIQUE:[.34,.25,.33]});
-  const shopKey=(area,seed,index)=>{const keys=SHOPS[area]||SHOPS.midtown;return keys[(Math.floor(hash(seed+72)*keys.length)+index)%keys.length];};
+  const SHOPS=Object.freeze({chelsea:['COFFEE','BOOKS','RECORDS','LAUNDRY','DELI','PIZZA','BARBER','GALLERY','BAKERY'],soho:['BOUTIQUE','GALLERY','RECORDS','BOOKS','COFFEE','BARBER','BAKERY','PIZZA'],midtown:['DELI','PIZZA','NEWS','COFFEE','LAUNDRY','BARBER','BAKERY','BOOKS']});
+  const SHOP_COLORS=Object.freeze({COFFEE:[.19,.31,.30],BAKERY:[.48,.23,.19],PIZZA:[.49,.18,.14],BOOKS:[.19,.32,.24],GALLERY:[.22,.25,.26],DELI:[.18,.35,.26],NEWS:[.23,.30,.34],BOUTIQUE:[.34,.25,.33],RECORDS:[.24,.23,.34],LAUNDRY:[.20,.37,.43],BARBER:[.43,.23,.22]});
+  const shopKey=(area,seed,index)=>{const keys=SHOPS[area]||SHOPS.midtown;return keys[(Math.floor(identityHash(seed+72)*keys.length)+index)%keys.length];};
   const material=(mesh,name)=>mesh.material?.(name);
   const finite=(n,fallback)=>Number.isFinite(n)?n:fallback;
 
@@ -7937,6 +7940,34 @@ window.HubOnlineConfig = {
         else{block(.399,.95,dz,.21,.12,.037,[.77,.48,.22]);s.face(.407,1.032,dz,.12,.022,[.96,.75,.40]);}
       }
       s.face(.383,1.52,z,w*.73,.10,[.76,.65,.43,.16]);
+    }else if(key==='RECORDS'){
+      // A record store has full-size vinyl discs and album sleeves, not the
+      // same restaurant window recoloured. These sit outside the opaque pane.
+      material(mesh,'wood');s.band(.397,.346,.84,z,w,.073,[.27,.24,.23]);
+      material(mesh,null);
+      const count=w>.90?3:2,step=w/count;
+      for(let j=0;j<count;j++){
+        const zz=z-w/2+step*(j+.5),r=Math.min(.145,step*.40),yy=1.22+j%2*.10;
+        s.face(.397,.94,zz,step*.80,.50,[[.69,.34,.28],[.29,.44,.43],[.60,.49,.27]][j%3]);
+        for(let i=0;i<12;i++){const a=i*Math.PI/6,b=(i+1)*Math.PI/6;mesh.tri(s.p(.407,yy,zz),s.p(.407,yy+Math.sin(a)*r,zz+Math.cos(a)*r),s.p(.407,yy+Math.sin(b)*r,zz+Math.cos(b)*r),[.075,.085,.09],[s.facing,0,0]);}
+        s.face(.411,yy-.026,zz,.052,.052,[.85,.63,.35]);
+      }
+      s.face(.402,1.66,z,w*.82,.05,[.90,.75,.53]);
+    }else if(key==='LAUNDRY'){
+      const count=2,step=w/count;
+      for(let j=0;j<count;j++){
+        const zz=z-w/2+step*(j+.5),r=Math.min(.132,step*.37),yy=1.14;
+        material(mesh,'metal');block(.401,.86,zz,step*.89,.52,.055,[.64,.69,.67]);
+        material(mesh,null);s.face(.409,1.27,zz-step*.24,.085,.046,[.19,.32,.34]);s.face(.409,1.27,zz+step*.18,.055,.046,[.71,.30,.19]);
+        for(let i=0;i<8;i++){const a=i*Math.PI/4,b=(i+1)*Math.PI/4,p=(angle,rr)=>s.p(.415,yy+Math.sin(angle)*rr,zz+Math.cos(angle)*rr);mesh.quad(p(a,r),p(b,r),p(b,r*.76),p(a,r*.76),[.82,.84,.77],[s.facing,0,0]);mesh.tri(s.p(.414,yy,zz),p(a,r*.75),p(b,r*.75),[.16,.29,.32],[s.facing,0,0]);}
+      }
+      material(mesh,null);s.face(.4,1.65,z,w*.77,.068,[.84,.86,.72]);
+    }else if(key==='BARBER'){
+      // Mirror, chair back, seat and footrest form one readable salon station.
+      material(mesh,null);s.face(.387,1.19,z,w*.48,.50,[.52,.62,.62]);s.face(.402,1.12,z,w*.54,.062,[.80,.77,.66]);
+      block(.407,.91,z,w*.30,.19,.06,[.57,.25,.21]);s.face(.414,.89,z,w*.39,.063,[.22,.25,.24]);
+      s.face(.410,.78,z,w*.05,.15,[.65,.67,.61]);s.face(.413,.745,z,w*.34,.04,[.65,.67,.61]);
+      for(const dz of [-w*.24,w*.24])s.face(.408,.98,z+dz,w*.07,.033,[.68,.69,.63]);
     }else if(key==='BOOKS'||key==='NEWS'){
       material(mesh,'wood');s.band(.395,.346,.83,z,w,.065,[.37,.29,.20]);
       material(mesh,null);const colors=[[.59,.28,.20],[.30,.43,.39],[.65,.55,.31],[.35,.38,.52]];
@@ -7968,6 +7999,24 @@ window.HubOnlineConfig = {
       s.pier(out,back,y+.045,z,.39,.17,[.82,.49,.22]);s.top(out,back,y+.215,z,.39,[.97,.74,.40]);for(const dz of [-.11,0,.11])s.face(out+.006,y+.12,z+dz,.032,.09,[.95,.71,.35]);
     }else if(key==='GALLERY'){
       s.pier(out,back,y,z,.33,.27,[.71,.60,.37]);s.face(out+.006,y+.035,z,.265,.19,[.32,.47,.43]);mesh.tri(s.p(out+.010,y+.04,z-.12),s.p(out+.010,y+.20,z),s.p(out+.010,y+.04,z+.12),[.92,.71,.44],[s.facing,0,0]);
+    }else if(key==='BARBER'){
+      // A cylindrical striped barber pole is a real small model: its bands
+      // wrap around the cylinder instead of lying on a rectangular shop sign.
+      const radius=.082,base=1.65,point=(a,y)=>s.p(out+Math.cos(a)*radius,y,z+Math.sin(a)*radius);
+      material(mesh,'metal');s.face(out,base+.39,z,.028,.23,IRON);material(mesh,null);
+      for(let band=0;band<3;band++)for(let i=0;i<6;i++){const a=i*Math.PI/3,b=(i+1)*Math.PI/3,y=base+band*.13;mesh.quad(point(a,y),point(b,y),point(b,y+.13),point(a,y+.13),[[.78,.24,.19],[.90,.86,.71],[.20,.36,.47]][band]);}
+      for(const y of [base-.033,base+.39])s.band(out+.09,back-.03,y,z,.19,.033,[.64,.67,.63]);
+    }
+  }
+
+  function produceCrate(mesh,s,z,width) {
+    const w=Math.max(.27,Math.min(.79,width*.65));
+    material(mesh,'wood');s.pier(.66,.37,.35,z,w,.24,[.49,.35,.22]);s.top(.66,.37,.59,z,w,[.64,.46,.28]);
+    s.face(.668,.405,z,w*.92,.022,[.27,.23,.18]);s.face(.668,.49,z,w*.92,.022,[.27,.23,.18]);
+    material(mesh,null);
+    for(let i=0;i<4;i++){
+      const zz=z-w*.36+i*w*.24,r=Math.min(.067,w*.10),top=s.p(.56,.72,zz),bottom=s.p(.56,.59,zz),ring=[s.p(.56-r,.654,zz),s.p(.56,.654,zz+r),s.p(.56+r,.654,zz),s.p(.56,.654,zz-r)],color=i%2?[.80,.30,.16]:[.52,.66,.27];
+      for(let j=0;j<4;j++){mesh.tri(top,ring[j],ring[(j+1)%4],color);mesh.tri(bottom,ring[(j+1)%4],ring[j],color);}
     }
   }
 
@@ -7994,7 +8043,8 @@ window.HubOnlineConfig = {
       material(mesh,'metal');s.band(.48,.31,2.38,z,w,.76,shopColor);
       if(typeof mesh.sign==='function')mesh.sign(key,s.p(.505,0,0)[0],2.825,z,w-.21,.29,s.facing);
       shopDisplay(mesh,s,paneZ,paneWidth,key,seed+j*73);
-      if(j===count-1&&paneWidth>.75&&['COFFEE','BAKERY','PIZZA','GALLERY'].includes(key))shopIcon(mesh,s,paneZ,key,shopColor);
+      if(key==='DELI'&&paneWidth>.67)produceCrate(mesh,s,paneZ,paneWidth);
+      if(paneWidth>.75&&(key==='BARBER'||j===count-1&&['COFFEE','BAKERY','PIZZA','GALLERY'].includes(key)))shopIcon(mesh,s,paneZ,key,shopColor);
       // Door tread, lettering fascia and individual frames read at pavement level.
       material(mesh,'stone');s.top(.53,.32,doorBottom,doorZ,doorWidth+.11,shade(look.trim,.79));
       if(j===count-1&&hash(seed+15)>.35){material(mesh,null);s.face(.478,.73,z+(w/2-.16)*-doorSide,.25,.48,[.12,.16,.15]);for(let q=0;q<3;q++)s.face(.479,.83+q*.105,z+(w/2-.16)*-doorSide,.16,.014,[.56,.56,.45]);}
@@ -8004,6 +8054,16 @@ window.HubOnlineConfig = {
     const reach=1.055;
     for(let j=0;j<count;j++){
       const key=shopKey(look.district,seed,j),color=SHOP_COLORS[key]||look.shopColor,awning=look.kind==='modern'?[.26,.38,.39]:shade(color,.93),left=-depth/2+j*spacing+.13,right=-depth/2+(j+1)*spacing-.13,center=(left+right)/2;
+      if(['RECORDS','LAUNDRY','GALLERY','BOOKS'].includes(key)){
+        // Galleries and record shops use shallow flat metal/glass canopies;
+        // laundromats have a ribbed metal hood. Food shops retain cloth roofs.
+        material(mesh,key==='GALLERY'?'glass':'metal');const edge=key==='LAUNDRY'?.75:.86;
+        mesh.quad(s.p(.43,2.57,left),s.p(.43,2.57,right),s.p(edge,2.57,right),s.p(edge,2.57,left),key==='GALLERY'?[.38,.49,.48]:awning,[0,1,0]);
+        s.face(edge,2.485,center,right-left,.085,shade(awning,.68));
+        for(const zz of [left+.10,right-.10])mesh.tri(s.p(.44,2.37,zz),s.p(edge-.03,2.50,zz),s.p(.44,2.50,zz),IRON,[0,0,zz<center?-1:1]);
+        if(key==='LAUNDRY'){material(mesh,'metal');for(let rib=0;rib<4;rib++)s.face(edge+.006,2.505,left+(right-left)*(rib+.5)/4,.025,.043,[.76,.77,.68]);}
+        continue;
+      }
       material(mesh,look.kind==='modern'?'glass':look.kind==='limestone'||look.kind==='artdeco'?'metal':'canvas');
       mesh.quad(s.p(.43,2.79,left),s.p(.43,2.79,right),s.p(reach,2.43,right),s.p(reach,2.43,left),awning,[s.facing*.50,.866,0]);
       s.face(reach,2.23,center,right-left,.20,shade(awning,.85));
@@ -8048,6 +8108,10 @@ window.HubOnlineConfig = {
           const x=front+side*(.035+(j+.5)*step),w=Math.min(look.kind==='modern'?1.65:1.25,step*(look.kind==='modern'?.80:.57));
           material(mesh,look.material);face(x,y-.05,w+.16,1.78,shade(look.trim,.70));
           material(mesh,'glass');face(x,y+.035,w,1.59,hash(seed+fl*14+j+direction)>.9?[.36,.34,.27]:[.15,.23,.255],.012);
+          // Upper party-wall windows are tiny from the street camera. Keep
+          // their full silhouettes while spending the saved mullion geometry
+          // on the varied shop models that the player can actually approach.
+          if(fl>=5)continue;
           material(mesh,'metal');face(x,y+.035,.037,1.59,IRON,.021);
           material(mesh,'stone');face(x,y-.095,w+.22,.07,look.trim,.055);
           if(fl<4&&['brownstone','limestone'].includes(look.kind)){material(mesh,'stone');face(x,y+1.77,w+.26,.065,shade(look.trim,.93),.043);}
@@ -8056,6 +8120,19 @@ window.HubOnlineConfig = {
       }
     }
     material(mesh,'metal');mesh.box(front+facing*.48,.30,-depth/2+.22,.072,height-.34,.072,shade(look.shopColor,.62));
+  }
+
+  function streetArt(mesh,front,side,width,depth,look,seed) {
+    // Art occupies the unglazed bottom of one party wall, never a shop window.
+    // A seed tied to the physical lot makes it stable when revisiting a block.
+    const chance=look.district==='chelsea'?.72:look.district==='soho'?.58:.27;
+    if(identityHash(seed+421)>chance||typeof mesh.sign!=='function')return;
+    const direction=identityHash(seed+428)>.5?1:-1,z=direction*(depth/2+.056),w=Math.min(width-1.20,4.35),x=front+side*(width*.52),key=['MURALTRAIN','MURALBLOCK','MURALBIRD'][Math.floor(identityHash(seed+432)*3)];
+    material(mesh,look.material);const bottom=.40,h=1.80,back=z-direction*.004;
+    // Slightly irregular old painted surround keeps a mural embedded in the
+    // masonry. Its opaque atlas picture cannot flicker with the wall behind it.
+    mesh.quad([x-w/2-.08,bottom-.035,back],[x+w/2+.055,bottom-.035,back],[x+w/2+.055,bottom+h+.04,back],[x-w/2-.08,bottom+h+.04,back],shade(look.wall,.87),[0,0,direction]);
+    material(mesh,null);mesh.sign(key,x,bottom,z,w,h,0);
   }
 
   function draw(mesh,options={}) {
@@ -8093,6 +8170,7 @@ window.HubOnlineConfig = {
     cornice(mesh,s,depth,height,look,seed);
     architecturalDetails(mesh,s,depth,height,floors,look,seed,spacing,w);
     returns(mesh,front,facing,side,width,depth,floors,height,look,seed);
+    streetArt(mesh,front,side,width,depth,look,seed);
     upperTiers(mesh,front,side,width,depth,height,look,seed);
     rooftop(mesh,s,front,side,width,depth,height,look,seed);
     mesh.frame(p);material(mesh,null);
@@ -8933,10 +9011,41 @@ window.HubOnlineConfig = {
     rearWing(mesh,b,side,seed,16.8+Math.floor(hash(seed+511)*3)*2.65,[.55,.30,.24]);
   }
 
+  function recordStore(mesh,side,seed,shape){
+    const b=body(mesh,side,shape,4.82,[.37,.30,.26]),f=b.facing,x=b.front,d=b.depth,gateZ=-d*.28,paneZ=d*.27,gateW=Math.min(3.65,d*.35),paneW=Math.min(4.05,d*.36);
+    // A Chelsea loading-door shop and a broad vinyl window have a different
+    // ground-floor silhouette from the repeated restaurant/front-door bays.
+    material(mesh,'metal');face(mesh,x+f*.025,.21,gateZ,gateW+.28,2.76,C.iron,f);
+    face(mesh,x+f*.035,.27,gateZ,gateW,2.56,[.24,.29,.29],f);
+    for(let slat=0;slat<13;slat++)face(mesh,x+f*.047,.30+slat*.185,gateZ,gateW-.05,.035,[.15,.20,.20],f);
+    // The art is mounted on the shutter slats, below the shop lettering, with
+    // enough depth separation to avoid the old overlapping-wall shimmer.
+    material(mesh,null);sign(mesh,'MURALTRAIN',x+f*.066,.63,gateZ,gateW-.30,1.53,f,'GRAFFITI');
+    window(mesh,x+f*.032,.38,paneZ,paneW,2.37,f,[.38,.40,.38],false);
+    material(mesh,'wood');mesh.box(x+f*.105,1.01,paneZ,.14,.085,paneW-.27,[.41,.32,.23]);
+    material(mesh,null);
+    for(let i=0;i<4;i++){
+      const zz=paneZ-paneW*.35+i*paneW*.235,yy=1.33+(i%2)*.33,r=Math.min(.30,paneW*.085);
+      face(mesh,x+f*.117,yy-r-.035,zz,r*2+.08,r*2+.08,[[.64,.38,.26],[.27,.42,.40],[.54,.44,.28],[.30,.31,.43]][i],f);
+      const point=a=>[x+f*.13,yy+Math.sin(a)*r,zz+Math.cos(a)*r];
+      for(let j=0;j<12;j++)mesh.tri([x+f*.13,yy,zz],point(j*Math.PI/6),point((j+1)*Math.PI/6),[.08,.10,.105],[f,0,0]);
+      face(mesh,x+f*.145,yy-.045,zz,.09,.09,[.88,.66,.39],f);
+    }
+    const doorZ=0,doorW=Math.min(.94,d*.14);material(mesh,'metal');face(mesh,x+f*.029,.25,doorZ,doorW,2.63,C.iron,f);material(mesh,'glass');face(mesh,x+f*.044,.53,doorZ,doorW-.13,2.18,[.30,.35,.32],f);
+    material(mesh,'metal');mesh.box(x+f*.15,3.03,0,.30,.70,d-.60,[.22,.25,.30]);sign(mesh,'RECORDS',x+f*.308,3.18,0,d-.9,.38,f,'BOOKS');
+    // A shallow metal marquee and roof exhaust are rigid shop features, rather
+    // than yet another full-width striped awning or sidewalk terrace.
+    mesh.box(x+f*.25,2.90,0,.56,.10,d-.46,[.35,.37,.38]);
+    for(const zz of [-d*.35,d*.35])mesh.tri([x+f*.07,2.57,zz],[x+f*.49,2.90,zz],[x+f*.07,2.90,zz],C.iron,[0,0,zz<0?-1:1]);
+    rearWing(mesh,b,side,seed,14.35+Math.floor(hash(seed+705)*3)*2.65,[.45,.33,.27]);
+    material(mesh,'metal');mesh.cylinder([b.x,4.93,-d*.23],[b.x,5.79,-d*.23],.13,C.steel,7);mesh.cylinder([b.x,5.75,-d*.23],[b.x,5.85,-d*.23],.21,C.iron,7);
+  }
+
   function kindForLot(seed,area='midtown') {
     if(hash(seed+47)>=.26)return null;
     const choices=area==='chelsea'?['gallery','market','library']:area==='soho'?['gallery','market','gallery']:['firehouse','library','market'];
     const base=choices[Math.min(2,Math.floor(hash(seed+131)*3))];
+    if(base==='gallery'&&hash(seed+771)<.43)return 'recordstore';
     if(base==='market'&&hash(seed+503)<.68)return hash(seed+811)<.48?'pizzeria':'cafe';
     if(base==='gallery'&&hash(seed+503)<.36)return 'cafe';
     if(area==='midtown'&&base==='firehouse'&&hash(seed+503)<.28)return 'diner';
@@ -8944,8 +9053,8 @@ window.HubOnlineConfig = {
   }
   function lot(mesh,p,side,seed,shape={}) {
     const kind=shape.kind||kindForLot(seed,p.district||'midtown');
-    if(!['firehouse','library','market','gallery','cafe','diner','pizzeria'].includes(kind))return false;
-    mesh.frame(p);({firehouse,library,market,gallery,cafe,diner,pizzeria})[kind](mesh,side<0?-1:1,seed,shape);material(mesh,null);return true;
+    if(!['firehouse','library','market','gallery','cafe','diner','pizzeria','recordstore'].includes(kind))return false;
+    mesh.frame(p);({firehouse,library,market,gallery,cafe,diner,pizzeria,recordstore:recordStore})[kind](mesh,side<0?-1:1,seed,shape);material(mesh,null);return true;
   }
 
   function detailedProp(mesh,id,x,y,z,heading=0) {
@@ -9393,6 +9502,7 @@ window.HubOnlineConfig = {
 (function(root,factory){'use strict';const api=factory(root);if(typeof module==='object'&&module.exports)module.exports=api;else root.NYSignArt=api;})(typeof globalThis!=='undefined'?globalThis:this,function(env){
   'use strict';
   const KEYS=Object.freeze(['TS_RUSH','TS_GOLF','TS_TOWER','TS_SHOW','TS_SPACE','SPONSOR','GRAFFITI','TS_CITY']);
+  const MURAL_KEYS=Object.freeze(['MURALTRAIN','MURALBLOCK','MURALBIRD']);
   let revision=0,sponsor=null,sponsorImage=null,policy=null,unsubscribe=null,displayAllowed=false;
   function syncPolicy(){
     const current=env.HubAdPolicy;
@@ -9411,6 +9521,39 @@ window.HubOnlineConfig = {
   function label(c,s,x,y,size,color,max=230){c.font='900 '+size+'px Arial, sans-serif';while(c.measureText(s).width>max&&size>10){c.font='900 '+--size+'px Arial, sans-serif';}c.fillStyle=color;c.textAlign='center';c.textBaseline='middle';c.fillText(s,x,y);}
   function star(c,x,y,r,color){c.beginPath();for(let i=0;i<10;i++){const a=-Math.PI/2+i*Math.PI/5,rr=i%2?r*.43:r;c.lineTo(x+Math.cos(a)*rr,y+Math.sin(a)*rr);}c.closePath();c.fillStyle=color;c.fill();}
   function flag(c,x,y,w,h){c.save();c.translate(x,y);c.fillStyle='#faf9ef';c.fillRect(0,0,w,h);for(let i=0;i<13;i+=2){c.fillStyle='#b92336';c.fillRect(0,i*h/13,w,h/13);}const cw=w*.4,ch=h*7/13;c.fillStyle='#16355e';c.fillRect(0,0,cw,ch);for(let row=0;row<9;row++)for(let col=0;col<(row%2?5:6);col++)star(c,cw*(col+1+(row%2?.5:0))/7,ch*(row+1)/10,h*.019,'#fff');c.restore();}
+  // Original wall paintings use the existing masonry/sign atlas. Their wider
+  // compositions remain readable from the street and receive normal lighting.
+  function paintMural(c,key,x,y,w,h){
+    if(!MURAL_KEYS.includes(key))return false;
+    c.save();c.translate(x,y);c.scale(w/720,h/240);c.beginPath();c.rect(0,0,720,240);c.clip();
+    const backgrounds={MURALTRAIN:'#ad6952',MURALBLOCK:'#dbba86',MURALBIRD:'#234c59'};
+    c.fillStyle=backgrounds[key];c.fillRect(0,0,720,240);
+    if(key==='MURALTRAIN'){
+      c.strokeStyle='#8e5241';c.lineWidth=2;for(let yy=0;yy<240;yy+=24){c.beginPath();c.moveTo(0,yy);c.lineTo(720,yy);c.stroke();for(let xx=(yy/24%2)*38;xx<720;xx+=76){c.beginPath();c.moveTo(xx,yy);c.lineTo(xx,yy+24);c.stroke();}}
+      c.fillStyle='#233846';c.fillRect(25,183,672,14);c.fillStyle='#b5c7c4';rounded(c,40,51,640,132,15);c.fill();c.fillStyle='#e4dbc6';c.fillRect(47,56,626,9);
+      for(let i=0;i<8;i++){const xx=59+i*75;c.fillStyle='#264e5c';rounded(c,xx,73,54,43,5);c.fill();c.fillStyle='#81abb1';c.fillRect(xx+5,78,38,5);}
+      c.strokeStyle='#455b61';c.lineWidth=4;for(const xx of [196,419]){c.strokeRect(xx,68,42,106);c.beginPath();c.moveTo(xx+21,68);c.lineTo(xx+21,174);c.stroke();}
+      for(const xx of [111,179,532,601]){c.fillStyle='#1b303c';c.beginPath();c.arc(xx,185,16,0,Math.PI*2);c.fill();c.fillStyle='#68808a';c.beginPath();c.arc(xx,185,6,0,Math.PI*2);c.fill();}
+      c.save();c.translate(356,140);c.rotate(-.025);c.font='italic 900 59px Arial, sans-serif';c.textAlign='center';c.textBaseline='middle';c.lineJoin='round';c.strokeStyle='#22384c';c.lineWidth=12;c.strokeText('CITY BEAT',0,0);c.strokeStyle='#f5dfb4';c.lineWidth=5;c.strokeText('CITY BEAT',0,0);c.fillStyle='#38a8a0';c.fillText('CITY BEAT',0,0);c.restore();
+      c.strokeStyle='#dfae49';c.lineWidth=6;c.beginPath();c.moveTo(72,160);c.bezierCurveTo(190,192,480,140,650,164);c.stroke();
+    }else if(key==='MURALBLOCK'){
+      c.fillStyle='#e5ca9a';c.beginPath();c.arc(495,84,65,0,Math.PI*2);c.fill();
+      for(let i=0;i<10;i++){const xx=20+i*69,hh=49+(i*37)%103;c.fillStyle=['#9c493d','#376171','#b67c4d','#4d7169'][i%4];c.fillRect(xx,207-hh,59,hh);c.fillStyle='#ead7ad';for(let yy=222-hh;yy<199;yy+=23)for(let q=0;q<3;q++)c.fillRect(xx+7+q*17,yy,8,11);c.fillStyle='#29434e';c.fillRect(xx-3,202-hh,65,6);if(i%3===0){c.fillRect(xx+15,190-hh,27,11);c.fillRect(xx+18,182-hh,21,8);for(const sx of [xx+19,xx+36])c.fillRect(sx,195-hh,3,9);}}
+      c.strokeStyle='#f1dfba';c.lineWidth=10;c.beginPath();c.moveTo(-12,181);c.bezierCurveTo(97,227,116,111,218,156);c.bezierCurveTo(328,201,386,75,494,133);c.bezierCurveTo(578,190,620,173,741,205);c.stroke();
+      c.font='900 44px Arial, sans-serif';c.textAlign='left';c.textBaseline='middle';c.strokeStyle='#29434e';c.lineWidth=9;c.strokeText('ON THE BLOCK',33,46);c.fillStyle='#fff1d1';c.fillText('ON THE BLOCK',33,46);
+      for(const xx of [332,623])star(c,xx,53,12,'#aa5544');
+    }else{
+      c.strokeStyle='#376573';c.lineWidth=19;for(let i=0;i<7;i++){c.beginPath();c.moveTo(-50+i*130,250);c.lineTo(120+i*130,-10);c.stroke();}
+      c.fillStyle='#e2b861';c.beginPath();c.arc(442,109,86,0,Math.PI*2);c.fill();
+      c.fillStyle='#a9bfc2';c.beginPath();c.moveTo(381,157);c.bezierCurveTo(307,181,213,154,153,84);c.lineTo(254,106);c.lineTo(178,31);c.bezierCurveTo(286,54,345,64,392,117);c.bezierCurveTo(416,78,444,62,480,69);c.bezierCurveTo(527,80,525,110,484,137);c.bezierCurveTo(461,178,422,186,381,157);c.fill();
+      c.fillStyle='#d0dfd7';c.beginPath();c.moveTo(381,127);c.bezierCurveTo(312,132,268,97,236,73);c.bezierCurveTo(295,86,363,90,381,127);c.fill();
+      c.fillStyle='#547b79';c.beginPath();c.moveTo(422,107);c.bezierCurveTo(433,80,459,84,468,108);c.lineTo(462,144);c.lineTo(415,145);c.fill();c.fillStyle='#203d48';c.beginPath();c.arc(477,84,5,0,Math.PI*2);c.fill();c.fillStyle='#e8d9ad';c.beginPath();c.moveTo(501,94);c.lineTo(528,105);c.lineTo(498,112);c.fill();
+      c.strokeStyle='#d48868';c.lineWidth=5;for(const xx of [406,435]){c.beginPath();c.moveTo(xx,170);c.lineTo(xx-5,199);c.lineTo(xx+17,201);c.stroke();}
+      c.font='900 38px Arial, sans-serif';c.textAlign='left';c.fillStyle='#f0dfbb';c.fillText('CITY WINGS',32,210);star(c,623,63,16,'#ebca83');star(c,586,159,10,'#75b5b0');
+    }
+    // Broad, deterministic scuffs suggest painted brick without shimmer.
+    c.globalAlpha=.09;c.fillStyle='#efe4ce';for(let i=0;i<40;i++){const xx=(i*173+31)%714,yy=(i*83+19)%238;c.fillRect(xx,yy,3+i%7,1+i%3);}c.globalAlpha=1;c.restore();return true;
+  }
   function poster(c,key,x,y,w,h){c.save();c.translate(x,y);c.scale(w/256,h/256);const colors={TS_RUSH:['#072c46','#ffab3d'],TS_GOLF:['#123b38','#ddf499'],TS_TOWER:['#24214c','#7ee9db'],TS_SHOW:['#38233f','#f7ca69'],TS_SPACE:['#161d48','#bbd9ff'],SPONSOR:['#184553','#ffcf59'],GRAFFITI:['#433849','#6ce0cf'],TS_CITY:['#143c50','#f1d87c']}[key]||['#142536','#ffe397'];
     const g=c.createLinearGradient(0,0,256,256);g.addColorStop(0,colors[0]);g.addColorStop(1,'#111d31');c.fillStyle=g;c.fillRect(0,0,256,256);c.strokeStyle=colors[1];c.lineWidth=3;c.strokeRect(7,7,242,242);
     if(key==='TS_RUSH'){c.fillStyle='#437b87';for(let i=0;i<8;i++){const hh=35+(i*43)%90;c.fillRect(12+i*30,182-hh,23,hh);c.fillStyle='#a7cddb';for(let yy=190-hh;yy<171;yy+=13)c.fillRect(17+i*30,yy,5,7);c.fillStyle='#437b87';}c.fillStyle='#eab439';rounded(c,63,144,130,40,9);c.fill();c.fillStyle='#203641';c.fillRect(89,129,72,23);c.fillStyle='#a7e0e4';c.fillRect(99,134,50,13);for(const xx of [88,172]){c.beginPath();c.arc(xx,184,11,0,Math.PI*2);c.fillStyle='#122936';c.fill();}star(c,128,92,24,'#ffe3a0');label(c,'NEW YORK',128,37,28,'#fff');label(c,'RUSH',128,66,39,colors[1]);label(c,'RUN THE CITY',128,220,17,'#fff');}
@@ -9425,7 +9568,7 @@ window.HubOnlineConfig = {
   function paintBillboards(canvas){const c=canvas.getContext('2d');c.fillStyle='#142536';c.fillRect(0,0,canvas.width,canvas.height);const atlas={};KEYS.forEach((key,i)=>{const x=i%4*256,y=Math.floor(i/4)*256;poster(c,key,x+4,y+4,248,248);atlas[key]=[2+(x+5)/canvas.width,1-(y+251)/canvas.height,2+(x+251)/canvas.width,1-(y+5)/canvas.height,1,'billboard'];});return atlas;}
   // Setters only prepare safe local content. Call HubAdPolicy.refresh() to
   // activate it after server approval. invalidate() hides it immediately.
-  return{KEYS,flag,poster,paintBillboards,setSponsorMessage,setSponsorImage,resetSponsor,get revision(){syncPolicy();return revision;}};
+  return{KEYS,MURAL_KEYS,flag,poster,paintMural,paintBillboards,setSponsorMessage,setSponsorImage,resetSponsor,get revision(){syncPolicy();return revision;}};
 });
 
 </script>
@@ -9436,10 +9579,20 @@ window.HubOnlineConfig = {
  const DARK=[.075,.10,.13],IRON=[.16,.20,.23],CREAM=[.82,.78,.65],RED=[.67,.12,.11],GLASS=[.16,.29,.34];
  const KEYS=Object.freeze(['TS_RUSH','TS_GOLF','TS_TOWER','TS_SHOW','TS_SPACE','SPONSOR','TS_CITY']);
  const STYLES=Object.freeze(['ledTower','broadwayTheatre','showPalace']);
+ // A fixed Midtown block, about 1.1 km north of the SoHo start. Keeping this
+ // independent of travelled distance prevents Times Square moving between
+ // neighborhoods when the player returns after a loop or a subway detour.
+ const CENTER=Object.freeze({x:0,z:-1131});
+ const BOUNDS=Object.freeze({left:-22,right:22,front:-1221,back:-1041});
  const hash=n=>{let a=(Math.floor(n*1009)^0x59371)>>>0;a^=a<<13;a^=a>>>17;a^=a<<5;return(a>>>0)/4294967296;};
  const num=(n,d)=>Number.isFinite(Number(n))?Number(n):d,tint=(c,k)=>c.map((v,i)=>i<3?v*k:v);
  const mat=(m,n)=>m.material?.(n);
- function contains(p={}){return Number.isFinite(p.x)&&Number.isFinite(p.z)&&Math.abs(p.x)<22&&p.z>-143&&p.z<40;}
+ function contains(p={}){return Number.isFinite(p.x)&&Number.isFinite(p.z)&&p.x>BOUNDS.left&&p.x<BOUNDS.right&&p.z>BOUNDS.front&&p.z<BOUNDS.back;}
+ function wayfinding(p={}){
+  const x=Number.isFinite(p.x)?p.x:0,z=Number.isFinite(p.z)?p.z:0,heading=Number.isFinite(p.heading)?p.heading:0,dx=CENTER.x-x,dz=CENTER.z-z;
+  const distance=Math.abs(dx)+Math.abs(dz),bearing=Math.atan2(dx,-dz)-heading,sector=((Math.round(bearing/(Math.PI/4))%8)+8)%8;
+  return Object.freeze({arrived:contains(p),distance,arrow:['↑','↗','→','↘','↓','↙','←','↖'][sector]});
+ }
  function describeLot(options={}){
   const shape=options.shape||{},seed=num(options.seed,0),side=options.side===-1?-1:1,width=Math.max(3.2,num(shape.width,7)),depth=Math.max(3.8,num(shape.depth,11.86)),setback=Math.max(7.6,num(shape.setback,8)),floors=Math.max(3,Math.min(9,Math.floor(num(shape.floors,6)))),height=floors*2.6+2.9,reach=Math.min(1.0,setback-6.92),style=STYLES[Math.floor(hash(seed+711)*3)];
   const min=setback-reach-.02,max=setback+width+.13;
@@ -9544,7 +9697,7 @@ window.HubOnlineConfig = {
   if(b.style==='ledTower')ledTower(mesh,b);else if(b.style==='broadwayTheatre')broadwayTheatre(mesh,b);else showPalace(mesh,b);
   mesh.frame(pose);mat(mesh,null);return true;
  }
- const api=Object.freeze({contains,drawLot,describeLot,styles:STYLES,keys:KEYS});
+ const api=Object.freeze({contains,wayfinding,center:CENTER,bounds:BOUNDS,drawLot,describeLot,styles:STYLES,keys:KEYS});
  if(typeof module==='object'&&module.exports)module.exports=api;if(root)root.NYTimesSquare=api;
 })(typeof globalThis!=='undefined'?globalThis:this);
 
@@ -9863,7 +10016,7 @@ window.HubOnlineConfig = {
     }
     disk(x,y,z,rx,rz,col) { for(let i=0;i<20;i++){const t=i/20*TAU,q=(i+1)/20*TAU;this.tri([x,y,z],[x+Math.cos(t)*rx,y,z+Math.sin(t)*rz],[x+Math.cos(q)*rx,y,z+Math.sin(q)*rz],col,[0,1,0]);} }
     sign(name,x,y,z,w,h,facing=0) {
-      const tile=this.atlas[name];if(!tile)return;const requestedHeight=h;w=Math.min(w,h*tile[4]);h=w/tile[4];y+=(requestedHeight-h)/2;const u=[[tile[0],tile[1]],[tile[2],tile[1]],[tile[2],tile[3]],[tile[0],tile[3]]],c=[1,1,1,tile[5]==='billboard'?(name==='GRAFFITI'?.03:.88):.45];
+      const tile=this.atlas[name];if(!tile)return;const requestedHeight=h;w=Math.min(w,h*tile[4]);h=w/tile[4];y+=(requestedHeight-h)/2;const u=[[tile[0],tile[1]],[tile[2],tile[1]],[tile[2],tile[3]],[tile[0],tile[3]]],c=[1,1,1,tile[5]==='wall-art'?0:tile[5]==='billboard'?(name==='GRAFFITI'?.03:.88):.45];
       if(facing===1)this.quad([x,y,z+w/2],[x,y,z-w/2],[x,y+h,z-w/2],[x,y+h,z+w/2],c,[1,0,0],u);
       else if(facing===-1)this.quad([x,y,z-w/2],[x,y,z+w/2],[x,y+h,z+w/2],[x,y+h,z-w/2],c,[-1,0,0],u);
       else { this.quad([x-w/2,y,z],[x+w/2,y,z],[x+w/2,y+h,z],[x-w/2,y+h,z],c,[0,0,1],u);const v=u.map(q=>q.slice());this.quad([x+w/2,y,z-.004],[x-w/2,y,z-.004],[x-w/2,y+h,z-.004],[x+w/2,y+h,z-.004],c,[0,0,-1],v); }
@@ -9888,10 +10041,13 @@ window.HubOnlineConfig = {
     ['BAKERY','NEIGHBORHOOD BAKERY','#704936','#ffe6b8'],['OPEN','OPEN','#293f38','#ffc978'],
     ['DINER','NEW YORK DINER','#34606b','#fff1d8'],['MENU','COFFEE · PASTRIES','#233b39','#ffecc0'],
     ['BOOKS','BOOKS & PAPER','#244b40','#fff3cf'],
-    ['FDNY','FDNY • ENGINE 7','#922b25','#fff0d1'],['MARKET','NEIGHBORHOOD MARKET','#245941','#fff2c8'],
+    ['FDNY','FDNY • ENGINE 7','#922b25','#fff0d1'],['MARKET','CORNER BODEGA','#245941','#fff2c8'],
     ['MAIL','US POST OFFICE','#254661','#f4f0df'],['PARK','PUBLIC COURTYARD','#27533a','#e5f0ce'],
     ['BIKE','CITI BIKE','#246c8f','#e9f5f4'],['HOTDOG','HOT DOGS • PRETZELS','#f2bf52','#47332b'],
-    ['TIMES','TIMES SQUARE','#182f45','#f4e4bf'],['USFLAG','','#faf9ef','#16355e']
+    ['TIMES','TIMES SQUARE','#182f45','#f4e4bf'],['USFLAG','','#faf9ef','#16355e'],
+    ['RECORDS','VINYL & RECORDS','#322936','#f6df9d'],['LAUNDRY','WASH & FOLD','#345c6b','#f5eee0'],
+    ['BARBER','NEIGHBORHOOD BARBER','#7b3b39','#fff1d4'],
+    ['MURALTRAIN','','#ad6952','#ad6952'],['MURALBLOCK','','#dbba86','#dbba86'],['MURALBIRD','','#234c59','#234c59']
   ];
   // Tileable surface paintings share the existing sign atlas: no image downloads,
   // extra textures or per-frame painting. Mipmaps keep distant masonry stable.
@@ -9925,6 +10081,7 @@ window.HubOnlineConfig = {
     const ctx=canvas.getContext('2d'),atlas={};ctx.fillStyle='#263b37';ctx.fillRect(0,0,canvas.width,canvas.height);
     SIGN_SPECS.forEach((s,i)=>{const x=(i%4)*512,y=Math.floor(i/4)*128;let font=48;ctx.font='700 '+font+'px Arial, sans-serif';while(ctx.measureText(s[1]).width>454&&font>30){font--;ctx.font='700 '+font+'px Arial, sans-serif';}const w=Math.max(180,Math.ceil(ctx.measureText(s[1]).width+46)),h=96;ctx.fillStyle=s[2];ctx.fillRect(x,y,w,h);ctx.strokeStyle=s[3];ctx.lineWidth=3;ctx.strokeRect(x+7,y+7,w-14,h-14);ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle=s[3];ctx.fillText(s[1],x+w/2,y+h/2+1);atlas[s[0]]=[(x+2)/canvas.width,1-(y+h-2)/canvas.height,(x+w-2)/canvas.width,1-(y+2)/canvas.height,(w-4)/(h-4)];});
     if(SignArt){const i=SIGN_SPECS.findIndex(spec=>spec[0]==='USFLAG'),x=(i%4)*512,y=Math.floor(i/4)*128,w=228,h=120;SignArt.flag(ctx,x+2,y+2,w,h);atlas.USFLAG=[(x+2)/canvas.width,1-(y+h+2)/canvas.height,(x+w+2)/canvas.width,1-(y+2)/canvas.height,1.9];}
+    if(SignArt?.paintMural)for(const key of SignArt.MURAL_KEYS){const i=SIGN_SPECS.findIndex(s=>s[0]===key),x=(i%4)*512+6,y=Math.floor(i/4)*128+4,w=360,h=120;if(i<0)continue;SignArt.paintMural(ctx,key,x,y,w,h);atlas[key]=[x/canvas.width,1-(y+h)/canvas.height,(x+w)/canvas.width,1-y/canvas.height,3,'wall-art'];}
     for(const index of Object.values(MATERIALS))paintMaterial(ctx,index);
     const texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,texture);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,canvas);gl.generateMipmap(gl.TEXTURE_2D);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const aniso=gl.getExtension('EXT_texture_filter_anisotropic')||gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic');if(aniso)gl.texParameterf(gl.TEXTURE_2D,aniso.TEXTURE_MAX_ANISOTROPY_EXT,Math.min(8,gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));return {atlas,texture,canvas};
   }
@@ -10055,9 +10212,6 @@ window.HubOnlineConfig = {
       for(const zz of [doorZ-.65,doorZ+.65]){mesh.cylinder([facex-side*1.1,.34,zz],[facex-side*1.1,1.22,zz],.036,C.iron,6);mesh.cylinder([facex-side*.16,.82,zz],[facex-side*.16,1.70,zz],.036,C.iron,6);mesh.cylinder([facex-side*1.1,1.22,zz],[facex-side*.16,1.70,zz],.045,C.iron,6);}
     }
     mesh.frame(p);BuildingDetails?.draw(mesh,{pose:p,side,seed,width:w,height:h,depth:d,facex,floors,district:area,bodyColor:col});mesh.frame(p);
-    // A sparse original painted mural sits on a windowless end-wall, below
-    // upper windows and away from doors, canopies and the walking corridor.
-    if(SignArt&&hash(seed+891)>.76){mesh.material(null);mesh.sign('GRAFFITI',x,.40,d/2+.043,Math.min(w*.7,2.1),1.85);}
 
   }
   const SURFACE_CLEARANCE=Object.freeze({kinds:['street','corner','descent','ascent'],halfWidth:4.55});
@@ -10276,7 +10430,7 @@ window.HubOnlineConfig = {
       for(let i=0;i<3;i++)mesh.box(side*6.8,4.43+i*.31,5.77,.26,.22,.038,C.iron);
       // Front-facing, legible discs on the three vertically stacked lenses.
       for(let i=0;i<3;i++)mesh.sphere(side*6.8,4.47+i*.31,5.806,.076,i===0?[.26,.67,.32,.35]:i===1?[.52,.39,.12]:[.56,.21,.15],7,3,[1,1,.12]);
-      if(p.district==='midtown'&&side===-1){mesh.box(side*6.8,3.52,5.58,2.5,.45,.12,C.iron);mesh.sign('TIMES',side*6.8,3.55,5.65,2.38,.36);}
+      if(TimesSquare?.contains(p)&&side===-1){mesh.box(side*6.8,3.52,5.58,2.5,.45,.12,C.iron);mesh.sign('TIMES',side*6.8,3.55,5.65,2.38,.36);}
     }mesh.material(null);
   }
   function importedFrontLots(model,original,branches,stairOpening){
@@ -10806,6 +10960,7 @@ window.HubOnlineConfig = {
   'use strict';
   const World = root.NYRushWorld || (typeof require === 'function' ? require('./ny-rush-world.js') : null);
   const Graphics = root.NYRush3D || (typeof require === 'function' ? require('./ny-rush-3d.js') : null);
+  const Square = root.NYTimesSquare || (typeof require === 'function' ? require('./ny-times-square.js') : null);
   const COPY = {
     de: {tag:'DEIN WEG DURCH DIE STADT',desc:'Um die Ecke, unter die Straße, mitten durch New York.',start:'Lauf starten',again:'Neuer Lauf',back:'Zum Hub',pause:'Pause',resume:'Weiterlaufen',paused:'Eine kleine Verschnaufpause.',over:'Dein Lauf durch New York',best:'Rekord',score:'Punkte',stars:'Sterne',distance:'Strecke',lives:'Leben',turns:'Abbiegungen',stations:'U-Bahn-Besuche',streets:'Straßen & Kreuzungen',metro:'Station & Tunnel',moves:'Springen & Rutschen',help:'So steuerst du',closeHelp:'Anleitung schließen',hint:'A/D oder ←/→: Spur wechseln · W/↑/Leertaste: springen · S/↓: rutschen',routeHint:'An Kreuzungen: ← links · ↑ geradeaus · → rechts · ↓ in die U-Bahn',swipeHint:'Wische in die gewünschte Richtung oder nutze die vier Tasten unten.',padHint:'Controller: Stick oder Steuerkreuz · A: springen · B: rutschen · Start: Pause',jump:'Springen',slide:'Rutschen',left:'Links',right:'Rechts',straight:'Geradeaus',subway:'U-Bahn',junction:'Wohin geht’s?',approach:'Kreuzung voraus',chosen:'Gewählt',surface:'{district} · NEW YORK',underground:'{station} · UNTER DER STADT',descent:'NÄCHSTER HALT: {station}',ascent:'ZURÜCK AUF DIE STRASSE',safe:'Goldene Sterne sammeln. Taxis ausweichen, orange Absperrungen überspringen, unter blauen Schildern rutschen.',webgl:'Die 3D-Grafik konnte nicht gestartet werden. Aktiviere Hardwarebeschleunigung im Browser oder verwende einen Browser mit WebGL.',music:'Musik',on:'An',off:'Aus',end:'Lauf beenden?',endDesc:'Du kehrst zum Hub zurück. Der bisherige Lauf wird gespeichert.',cancel:'Weiterspielen',finish:'Zum Hub zurück',hit:'Treffer – ein Herz verloren',pickup:'Stern gesammelt',routeTitle:'Jede Kreuzung ist deine Entscheidung.',routeDesc:'Biege links oder rechts ab. Der U-Bahn-Weg führt über Treppen in die Station und durch den Tunnel zurück in die Stadt.'},
     en: {tag:'YOUR WAY THROUGH THE CITY',desc:'Around the corner, below the street, through the heart of New York.',start:'Start running',again:'Another run',back:'Back to hub',pause:'Pause',resume:'Keep running',paused:'Take a breather.',over:'Your run through New York',best:'Best',score:'Score',stars:'Stars',distance:'Distance',lives:'Lives',turns:'Turns',stations:'Subway visits',streets:'Streets & intersections',metro:'Station & tunnel',moves:'Jump & slide',help:'How to play',closeHelp:'Close guide',hint:'A/D or ←/→: change lane · W/↑/Space: jump · S/↓: slide',routeHint:'At intersections: ← left · ↑ straight · → right · ↓ enter subway',swipeHint:'Swipe in the direction you want or use the four buttons below.',padHint:'Controller: stick or D-pad · A: jump · B: slide · Start: pause',jump:'Jump',slide:'Slide',left:'Left',right:'Right',straight:'Straight',subway:'Subway',junction:'Where next?',approach:'Intersection ahead',chosen:'Selected',surface:'{district} · NEW YORK',underground:'{station} · BELOW THE CITY',descent:'NEXT STOP: {station}',ascent:'BACK TO THE STREET',safe:'Collect gold stars. Dodge taxis, jump orange barriers and slide under blue signs.',webgl:'The 3D graphics could not start. Enable browser hardware acceleration or use a browser with WebGL.',music:'Music',on:'On',off:'Off',end:'End this run?',endDesc:'You will return to the hub. This run will be saved.',cancel:'Keep playing',finish:'Return to hub',hit:'Hit – one heart lost',pickup:'Star collected',routeTitle:'Every intersection is your choice.',routeDesc:'Turn left or right. The subway route takes you down the stairs, through a station and tunnel, and back to the city.'},
@@ -10820,6 +10975,13 @@ window.HubOnlineConfig = {
     es:{reward:'Ver un anuncio · 1 vida extra',rewardRule:'Una vez por carrera. El récord y los logros se detienen al perder por primera vez.',rewardUnavailable:'No hay anuncios disponibles ahora.',rewardLoading:'Preparando un anuncio …',rewardReady:'Anuncio listo: verlo para recibir 1 vida extra',rewardCancel:'Continuar sin anuncio',rewardSkipped:'Sin recompensa. Tu carrera sigue guardada.',rewardWatching:'Anuncio en curso …',practice:'CARRERA EXTRA · RÉCORD GUARDADO',ranked:'Récord guardado',bonusDistance:'Distancia extra'}
   };
   for(const lang of Object.keys(COPY))Object.assign(COPY[lang],REWARD_COPY[lang]);
+  const JOURNEY_COPY={
+    de:{journeyTitle:'VON SOHO ZU DEN LICHTERN',journeyDesc:'Starte in SoHo. Nach Norden geht es über Chelsea und Midtown zum Times Square – etwa 1,1 km vom Start. Die Stadt geht danach weiter.',destination:'Times Square',arrived:'Times Square erreicht',north:'Norden'},
+    en:{journeyTitle:'FROM SOHO TO THE LIGHTS',journeyDesc:'Start in SoHo. Head north through Chelsea and Midtown to Times Square, about 1.1 km from the start. The city continues beyond it.',destination:'Times Square',arrived:'Times Square reached',north:'North'},
+    fr:{journeyTitle:'DE SOHO AUX LUMIÈRES',journeyDesc:'Partez de SoHo. Au nord, traversez Chelsea et Midtown jusqu’à Times Square, à environ 1,1 km du départ. La ville continue ensuite.',destination:'Times Square',arrived:'Times Square atteint',north:'Nord'},
+    es:{journeyTitle:'DE SOHO A LAS LUCES',journeyDesc:'Sal de SoHo y ve al norte por Chelsea y Midtown hasta Times Square, a unos 1,1 km del inicio. La ciudad continúa más allá.',destination:'Times Square',arrived:'Has llegado a Times Square',north:'Norte'}
+  };
+  for(const lang of Object.keys(COPY))Object.assign(COPY[lang],JOURNEY_COPY[lang]);
   const CSS = `
   .arcade-view.ny-rush-view{position:fixed;inset:0;width:100%;height:100dvh;min-height:0;padding:0;display:block;background:#95b7cc;color:#fff5df;font:500 15px/1.4 system-ui,sans-serif;isolation:isolate;touch-action:none;overflow:hidden}
   .ny-rush-view .ny-canvas{position:absolute;inset:0;display:block;width:100%;height:100%;max-width:none;max-height:none;outline:none;touch-action:none}
@@ -10828,27 +10990,37 @@ window.HubOnlineConfig = {
   .ny-rush-view button:hover{background:#28404a;border-color:#ffd471}.ny-rush-view button:active{transform:scale(.95)}.ny-rush-view button:focus-visible{outline:3px solid #ffd471;outline-offset:3px}
   .ny-hud{position:absolute;z-index:2;top:max(18px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;gap:16px;max-width:calc(100% - 310px);padding:9px 20px;border-radius:16px;background:#172b35df;box-shadow:0 5px 24px #10253530;pointer-events:none;backdrop-filter:blur(8px)}
   .ny-hud div{min-width:42px;text-align:center}.ny-hud small{display:block;color:#c7d2ce;font-size:10px;letter-spacing:.07em}.ny-hud strong{display:block;color:#fff5dd;font-size:21px;line-height:1.15;font-variant-numeric:tabular-nums}.ny-hud .ny-hearts{color:#ffae91;font-size:18px}
-  .ny-location{position:absolute;z-index:2;left:max(22px,env(safe-area-inset-left));top:96px;color:#fff7e4;padding:7px 12px;background:#172b35b8;border-left:3px solid #ffd06b;font-size:11px;font-weight:800;letter-spacing:.1em;pointer-events:none}
+  .ny-location{position:absolute;z-index:2;left:max(22px,env(safe-area-inset-left));top:96px;max-width:calc(100% - 44px);box-sizing:border-box;color:#fff7e4;padding:7px 12px;background:#172b35b8;border-left:3px solid #ffd06b;font-size:11px;font-weight:800;letter-spacing:.06em;pointer-events:none;white-space:pre-line;line-height:1.65}
   .ny-overlay{position:absolute;z-index:4;inset:0;display:flex;align-items:center;padding:90px clamp(22px,6vw,100px) 30px;box-sizing:border-box;background:linear-gradient(90deg,#0c222bde,#10232b70 55%,transparent 90%);overflow:auto;overscroll-behavior:contain;touch-action:pan-y}
   .ny-panel{max-width:460px;width:100%;padding:27px;box-sizing:border-box;border:1px solid #e2d4ac55;border-radius:24px;background:#182c35ed;box-shadow:0 18px 70px #06121d50;backdrop-filter:blur(15px)}
   .ny-panel .ny-eyebrow{font-size:10px;letter-spacing:.18em;font-weight:800;color:#ffce70}.ny-panel h1{font-size:clamp(42px,5vw,65px);line-height:.94;letter-spacing:-.05em;margin:19px 0 15px;font-weight:900;color:#fff2d6}.ny-panel h1 span{display:block;color:#ffd16e}
   .ny-panel p{margin:12px 0;color:#d0d8d2;font-size:14px;line-height:1.5}.ny-features{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:21px 0}.ny-feature{padding:12px 6px;border-radius:11px;background:#263e45;color:#e7ebde;text-align:center;font-size:10px;line-height:1.35}.ny-feature b{display:block;font-size:23px;font-weight:600;margin-bottom:6px;color:#ffd06b}.ny-feature small{display:block}
+  .ny-itinerary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin:16px 0 8px}.ny-itinerary div{min-width:0;padding:8px 5px;border-top:2px solid #748c85;background:#233c42;border-radius:0 0 8px 8px;line-height:1.25}.ny-itinerary div:first-child{border-color:#ffd06b}.ny-itinerary div:last-child{border-color:#e4a18c}.ny-itinerary small{display:block;font-size:8px;color:#a8bcb8;margin-bottom:4px}.ny-itinerary b{font-size:10px;color:#fff0cc;overflow-wrap:anywhere}.ny-panel .ny-journey-description{font-size:11px;color:#bbcfca;line-height:1.5}
   .ny-rush-view .ny-primary{background:#ffd06b;border-color:#ffe2a0;color:#20313a;box-shadow:0 5px 20px #d8ad4b28}.ny-rush-view .ny-primary:hover{background:#ffe19c}.ny-panel>button{display:block;width:100%;margin-top:10px;font-size:15px;min-height:48px}.ny-panel .ny-help{background:transparent;border-color:#78919466;box-shadow:none;font-size:12px;min-height:39px}.ny-best{display:flex;justify-content:space-between;gap:10px;align-items:center;margin:15px 0;color:#becfce;font-size:12px}.ny-best strong{color:#fff0cc;font-size:19px}
   .ny-guide{margin:18px 0;padding:15px;background:#10232bc4;border-radius:14px;border:1px solid #627d7d44}.ny-guide p{font-size:12px}.ny-guide h2{font-size:16px;margin:0;color:#ffdc98}.ny-route-map{width:100%;height:64px;color:#ffd477;margin-top:12px}
   .ny-result-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:20px 0}.ny-result-grid div{background:#263e45;padding:13px;border-radius:12px}.ny-result-grid small{display:block;color:#bcd0ce;font-size:10px;letter-spacing:.08em}.ny-result-grid strong{font-size:24px;color:#fff1d1}
   .ny-touch{position:absolute;z-index:3;left:max(20px,env(safe-area-inset-left));right:max(20px,env(safe-area-inset-right));bottom:max(20px,env(safe-area-inset-bottom));display:flex;justify-content:space-between;gap:18px;pointer-events:none}.ny-touch-group{display:flex;gap:10px}.ny-touch button{width:70px;height:66px;min-height:66px;padding:7px;border-color:#ffffff40;background:#172d37ad;backdrop-filter:blur(8px);touch-action:none}.ny-touch button b{display:block;font-size:24px;line-height:1.1}.ny-touch button span{display:block;font-size:9px;font-weight:700;margin-top:4px}.ny-touch button[data-action=jump]{color:#ffe09b}.ny-touch button[data-action=slide]{color:#c4e1f0}
-  .ny-junction{position:absolute;z-index:3;top:142px;left:50%;transform:translateX(-50%);max-width:calc(100% - 32px);width:390px;box-sizing:border-box;padding:12px 15px;border:1px solid #fcd47a90;border-radius:16px;background:#17313bed;box-shadow:0 12px 30px #12253440;text-align:center;backdrop-filter:blur(10px)}.ny-junction strong{display:block;font-size:15px;color:#ffe3a6}.ny-junction small{display:block;color:#c6d7d8;font-size:11px;margin:3px 0 8px}.ny-routes{display:flex;justify-content:center;gap:6px}.ny-rush-view .ny-routes button{flex:1;min-width:0;min-height:43px;padding:8px 5px;background:#2b4550;font-size:10px;box-shadow:none}.ny-routes button b{display:block;font-size:19px;margin-bottom:2px}.ny-rush-view .ny-routes button[aria-pressed=true]{background:#ffd06b;color:#263039;border-color:#ffe3a2}.ny-junction[data-open=false]{border-color:#cedede44;background:#17313bc0}.ny-junction[data-open=false] .ny-routes{display:none}
+  .ny-junction{position:absolute;z-index:3;top:160px;left:50%;transform:translateX(-50%);max-width:calc(100% - 32px);width:390px;box-sizing:border-box;padding:12px 15px;border:1px solid #fcd47a90;border-radius:16px;background:#17313bed;box-shadow:0 12px 30px #12253440;text-align:center;backdrop-filter:blur(10px)}.ny-junction strong{display:block;font-size:15px;color:#ffe3a6}.ny-junction small{display:block;color:#c6d7d8;font-size:11px;margin:3px 0 8px}.ny-routes{display:flex;justify-content:center;gap:6px}.ny-rush-view .ny-routes button{flex:1;min-width:0;min-height:43px;padding:8px 5px;background:#2b4550;font-size:10px;box-shadow:none}.ny-routes button b{display:block;font-size:19px;margin-bottom:2px}.ny-rush-view .ny-routes button[aria-pressed=true]{background:#ffd06b;color:#263039;border-color:#ffe3a2}.ny-junction[data-open=false]{border-color:#cedede44;background:#17313bc0}.ny-junction[data-open=false] .ny-routes{display:none}
   .ny-toast{position:absolute;z-index:3;bottom:107px;left:50%;transform:translateX(-50%);padding:7px 15px;border-radius:20px;background:#6e302cde;border:1px solid #ffba9755;color:#ffe5cf;font-size:12px;pointer-events:none;max-width:calc(100% - 32px);text-align:center}
   .ny-practice{position:absolute;z-index:3;left:50%;transform:translateX(-50%);bottom:96px;max-width:calc(100% - 30px);padding:7px 14px;border-radius:16px;background:#17313bed;color:#ffe09b;font-size:10px;text-align:center;pointer-events:none}.ny-reward{margin:14px 0;padding:13px;border:1px solid #ddc68f44;border-radius:14px;background:#243d46}.ny-reward p{font-size:12px}.ny-reward button{width:100%;margin-top:7px}.ny-rush-view button:disabled{opacity:.55;cursor:default}
   .ny-rush-view [hidden]{display:none!important}
-  @media(max-width:640px){.ny-toolbar{inset:max(10px,env(safe-area-inset-top)) 12px auto}.ny-toolbar button{padding:9px 11px;font-size:12px;min-height:40px}.ny-hud{top:max(61px,calc(env(safe-area-inset-top) + 50px));max-width:calc(100% - 26px);width:calc(100% - 26px);box-sizing:border-box;justify-content:space-around;gap:7px;padding:9px 10px;border-radius:13px}.ny-hud div{min-width:0}.ny-hud strong{font-size:18px}.ny-hud small{font-size:8px}.ny-location{top:125px;left:14px;font-size:9px;padding:5px 9px}.ny-junction{top:159px;padding:10px 12px;width:350px}.ny-overlay{align-items:flex-end;padding:67px 14px 16px;background:linear-gradient(180deg,transparent,#10232b66 22%,#10232bde)}.ny-panel{max-width:100%;padding:21px;border-radius:20px}.ny-panel h1{font-size:47px;margin:13px 0}.ny-panel p{font-size:12px}.ny-features{margin:15px 0;gap:5px}.ny-feature{padding:9px 5px}.ny-feature b{font-size:20px}.ny-touch{left:13px;right:13px;bottom:max(14px,env(safe-area-inset-bottom));gap:9px}.ny-touch-group{gap:7px}.ny-touch button{width:61px;height:62px;min-height:62px;border-radius:16px}.ny-guide{padding:11px}.ny-toast{bottom:96px}.ny-result-grid{margin:12px 0}}
-  @media(max-height:520px) and (min-width:641px){.ny-overlay{padding:67px 22px 15px}.ny-panel{padding:18px;max-width:390px}.ny-panel h1{font-size:39px;margin:10px 0}.ny-panel p{font-size:11px;margin:7px 0}.ny-features{margin:10px 0}.ny-feature{padding:7px 5px}.ny-panel>button{min-height:39px;font-size:13px;margin-top:7px}.ny-best{margin:8px 0}.ny-panel .ny-eyebrow{font-size:9px}.ny-location{top:78px}.ny-junction{top:98px;width:320px;padding:7px 10px}.ny-touch{bottom:12px}.ny-touch button{width:60px;height:51px;min-height:51px}.ny-hud strong{font-size:18px}.ny-guide p{font-size:10px}.ny-guide{padding:10px;margin:10px 0}.ny-route-map{height:40px}}
+  @media(max-width:640px){.ny-toolbar{inset:max(10px,env(safe-area-inset-top)) 12px auto}.ny-toolbar button{padding:9px 11px;font-size:12px;min-height:40px}.ny-hud{top:max(61px,calc(env(safe-area-inset-top) + 50px));max-width:calc(100% - 26px);width:calc(100% - 26px);box-sizing:border-box;justify-content:space-around;gap:7px;padding:9px 10px;border-radius:13px}.ny-hud div{min-width:0}.ny-hud strong{font-size:18px}.ny-hud small{font-size:8px}.ny-location{top:125px;left:14px;font-size:9px;padding:5px 9px}.ny-junction{top:181px;padding:10px 12px;width:350px}.ny-overlay{align-items:flex-end;padding:67px 14px 16px;background:linear-gradient(180deg,transparent,#10232b66 22%,#10232bde)}.ny-panel{max-width:100%;padding:21px;border-radius:20px}.ny-panel h1{font-size:47px;margin:13px 0}.ny-panel p{font-size:12px}.ny-features{margin:15px 0;gap:5px}.ny-feature{padding:9px 5px}.ny-feature b{font-size:20px}.ny-touch{left:13px;right:13px;bottom:max(14px,env(safe-area-inset-bottom));gap:9px}.ny-touch-group{gap:7px}.ny-touch button{width:61px;height:62px;min-height:62px;border-radius:16px}.ny-guide{padding:11px}.ny-toast{bottom:96px}.ny-result-grid{margin:12px 0}}
+  @media(max-height:520px) and (min-width:641px){.ny-overlay{padding:67px 22px 15px}.ny-panel{padding:18px;max-width:390px}.ny-panel h1{font-size:39px;margin:10px 0}.ny-panel p{font-size:11px;margin:7px 0}.ny-features{margin:10px 0}.ny-feature{padding:7px 5px}.ny-panel>button{min-height:39px;font-size:13px;margin-top:7px}.ny-best{margin:8px 0}.ny-panel .ny-eyebrow{font-size:9px}.ny-location{top:78px}.ny-junction{top:128px;width:320px;padding:7px 10px}.ny-touch{bottom:12px}.ny-touch button{width:60px;height:51px;min-height:51px}.ny-hud strong{font-size:18px}.ny-guide p{font-size:10px}.ny-guide{padding:10px;margin:10px 0}.ny-route-map{height:40px}}
   @media(prefers-reduced-motion:reduce){.ny-rush-view button{transition:none}}
   `;
   const PLACES = Object.fromEntries(World.DISTRICTS.map(d=>[d.id,{name:d.name.toUpperCase(),station:d.station.toUpperCase()}]));
   const ROUTE_ICON = {left:'↰',straight:'↑',right:'↱',subway:'Ⓜ'};
   const textIfChanged=(node,text)=>{if(node.textContent!==text)node.textContent=text;};
   const attributeIfChanged=(node,key,value)=>{if(node.getAttribute(key)!==value)node.setAttribute(key,value);};
+  function destinationText(pose,language='de'){
+    if(!['street','corner','intersection'].includes(pose?.kind)||!Square?.wayfinding)return '';
+    const copy=COPY[language]||COPY.en,guide=Square.wayfinding(pose);
+    if(guide.arrived)return copy.arrived;
+    const metres=Math.max(25,Math.round(guide.distance/25)*25),distance=metres>=1000
+      ? (metres/1000).toFixed(metres<10000?1:0).replace('.',language==='en'?'.':',')+' km'
+      : metres+' m';
+    return copy.destination+' · ~'+distance+' '+guide.arrow;
+  }
   class View {
     constructor(options={}) {
       // The card and the full game never need separate live 3D cities together.
@@ -10940,6 +11112,10 @@ window.HubOnlineConfig = {
       if(this.confirm){this.el('h1',this.t('end'),panel).style.fontSize='32px';this.el('p',this.t('endDesc'),panel);this.button(this.t('cancel'),()=>{this.confirm=false;this.togglePause();},panel,'ny-primary');this.button(this.t('finish'),()=>{this.model.finish();this.exit();},panel);this.focusMenu();return;}
       if(phase==='menu'){
         const title=this.el('h1','NEW YORK',panel);this.el('span','RUSH',title);this.el('p',this.t('desc'),panel);
+        this.el('small',this.t('journeyTitle'),panel,'ny-eyebrow');
+        const itinerary=this.el('div',null,panel,'ny-itinerary');
+        for(const [index,name] of ['SoHo','Chelsea','Midtown','Times Square'].entries()){const stop=this.el('div',null,itinerary);this.el('small',String(index+1).padStart(2,'0'),stop);this.el('b',name,stop);}
+        this.el('p',this.t('journeyDesc'),panel,'ny-journey-description');
         const features=this.el('div',null,panel,'ny-features');for(const [icon,key] of [['↰','streets'],['Ⓜ','metro'],['↟','moves']]){const e=this.el('div',null,features,'ny-feature');this.el('b',icon,e);this.el('small',this.t(key),e);}
         const best=this.el('div',null,panel,'ny-best');this.el('span',this.t('best'),best);this.el('strong',String(this.options.best||0),best);
       }else if(phase==='over'){
@@ -10955,9 +11131,9 @@ window.HubOnlineConfig = {
       if(this.adShowing)for(const b of this.overlay.querySelectorAll('button'))b.disabled=true;
       this.focusMenu(previousPhase===phase&&previousConfirm===this.confirm?focusedAction:'start');
     }
-    updateHud(){const m=this.model;textIfChanged(this.hudFields.score,String(m.rewardUsed?m.results.score:m.score));this.practice.hidden=m.phase!=='playing'||!m.rewardUsed;textIfChanged(this.hudFields.distance,m.rewardUsed?'+'+Math.max(0,Math.floor(m.distance)-m.results.distance)+' m':Math.floor(m.distance)+' m');textIfChanged(this.hudFields.distance.parentElement.querySelector('small'),this.t(m.rewardUsed?'bonusDistance':'distance'));textIfChanged(this.hudFields.stars,'★ '+(m.rewardUsed?m.results.stars:m.stars));textIfChanged(this.hudFields.lives,'♥'.repeat(Math.max(0,m.lives)));
-      const pose=m.pose,kind=pose.kind,atTimesSquare=['street','corner','intersection'].includes(kind)&&root.NYTimesSquare?.contains(pose),place=atTimesSquare?{name:'TIMES SQUARE',station:PLACES.midtown.station}:PLACES[pose.district]||PLACES.midtown,locationKey=this.lang+':'+kind+':'+pose.district+':'+!!atTimesSquare;
-      if(locationKey!==this.hudLocationKey){textIfChanged(this.location,this.t(kind==='descent'?'descent':kind==='ascent'?'ascent':['station','tunnel'].includes(kind)?'underground':'surface').replace('{district}',place.name).replace('{station}',place.station));this.hudLocationKey=locationKey;}
+    updateHud(){const m=this.model;textIfChanged(this.hudFields.score,String(m.rewardUsed?m.results.score:m.score));const practiceHidden=m.phase!=='playing'||!m.rewardUsed;if(this.practice.hidden!==practiceHidden)this.practice.hidden=practiceHidden;textIfChanged(this.hudFields.distance,m.rewardUsed?'+'+Math.max(0,Math.floor(m.distance)-m.results.distance)+' m':Math.floor(m.distance)+' m');textIfChanged(this.hudFields.distance.parentElement.querySelector('small'),this.t(m.rewardUsed?'bonusDistance':'distance'));textIfChanged(this.hudFields.stars,'★ '+(m.rewardUsed?m.results.stars:m.stars));textIfChanged(this.hudFields.lives,'♥'.repeat(Math.max(0,m.lives)));
+      const pose=m.pose,kind=pose.kind,atTimesSquare=['street','corner','intersection'].includes(kind)&&Square?.contains(pose),place=atTimesSquare?{name:'TIMES SQUARE',station:PLACES.midtown.station}:PLACES[pose.district]||PLACES.soho,journey=destinationText(pose,this.lang),locationKey=this.lang+':'+kind+':'+pose.district+':'+!!atTimesSquare+':'+journey;
+      if(locationKey!==this.hudLocationKey){const name=this.t(kind==='descent'?'descent':kind==='ascent'?'ascent':['station','tunnel'].includes(kind)?'underground':'surface').replace('{district}',place.name).replace('{station}',place.station);textIfChanged(this.location,name+(journey?'\n'+journey:''));this.hudLocationKey=locationKey;}
       const j=m.junction,hidden=!(j&&m.phase==='playing');if(this.junctionPanel.hidden!==hidden)this.junctionPanel.hidden=hidden;
       if(j){
         attributeIfChanged(this.junctionPanel,'data-open',String(j.open));
@@ -11013,7 +11189,7 @@ window.HubOnlineConfig = {
       c.fillStyle='#91b2c4';c.fillRect(0,0,w,h);c.fillStyle='#4f656d';for(let i=0;i<11;i++)c.fillRect(i*w/10,h*.3+(i%3)*12,w/14,h);c.fillStyle='#ffd174';c.font='900 '+Math.min(38,h/5)+'px system-ui';c.textAlign='center';c.fillText('NEW YORK RUSH',w/2,h*.67);
     }
   }
-  const api={View,COPY,open:options=>new View(options),preview};
+  const api={View,COPY,destinationText,open:options=>new View(options),preview};
   if(typeof module==='object'&&module.exports)module.exports=api;else root.NYRushUI=api;
 })(typeof window==='object'?window:globalThis);
 
