@@ -68,6 +68,12 @@ CREATE TABLE IF NOT EXISTS social_ad_exemptions (
  code TEXT PRIMARY KEY REFERENCES social_accounts(code) ON DELETE CASCADE,
  expires_at BIGINT, note TEXT NOT NULL DEFAULT '', updated_at BIGINT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS social_notice (
+ key TEXT PRIMARY KEY CHECK (key='global'), enabled BOOLEAN NOT NULL DEFAULT FALSE,
+ messages JSONB NOT NULL DEFAULT '{"de":"","en":"","fr":"","es":""}'::jsonb,
+ expires_at BIGINT, updated_at BIGINT NOT NULL DEFAULT 0
+);
+INSERT INTO social_notice(key) VALUES ('global') ON CONFLICT DO NOTHING;
 `;
 
 class SocialStore{
@@ -132,6 +138,20 @@ class SocialStore{
   return {exemption:this.adExemption({...row,name:account.name})};
  });}
  async removeAdExemption(code){await this.query('DELETE FROM social_ad_exemptions WHERE code=$1',[code]);return {ok:true};}
+ async adminOverviewCounts(){
+  const row=(await this.query('SELECT (SELECT COUNT(*) FROM social_accounts) AS profiles,(SELECT COUNT(*) FROM social_friends) AS friendships,(SELECT COUNT(*) FROM social_ad_exemptions WHERE expires_at IS NULL OR expires_at>$1) AS active_exemptions,(SELECT COUNT(*) FROM social_ad_exemptions WHERE expires_at<=$1) AS expired_exemptions',[this.now()]))[0];
+  return {profiles:Number(row.profiles),friendships:Number(row.friendships),activeExemptions:Number(row.active_exemptions),expiredExemptions:Number(row.expired_exemptions)};
+ }
+ noticeValue(row){
+  const messages={};for(const key of ['de','en','fr','es'])messages[key]=typeof row.messages?.[key]==='string'?row.messages[key]:'';
+  return {enabled:!!row.enabled,messages,until:row.expires_at==null?null:Number(row.expires_at),updatedAt:Number(row.updated_at)};
+ }
+ async adminNotice(){const row=(await this.query("SELECT enabled,messages,expires_at,updated_at FROM social_notice WHERE key='global'"))[0];if(!row)throw new Error('Missing online notice');return this.noticeValue(row);}
+ async putNotice({enabled,messages,until}){
+  const row=(await this.query("UPDATE social_notice SET enabled=$1,messages=$2::jsonb,expires_at=$3,updated_at=GREATEST(updated_at+1,$4) WHERE key='global' RETURNING enabled,messages,expires_at,updated_at",[enabled,JSON.stringify(messages),until,this.now()]))[0];
+  if(!row)throw new Error('Missing online notice');return this.noticeValue(row);
+ }
+ async publicNotice(){const notice=await this.adminNotice(),active=notice.enabled&&(notice.until===null||notice.until>this.now());return {active,messages:active?notice.messages:{de:'',en:'',fr:'',es:''},until:active?notice.until:null,updatedAt:notice.updatedAt};}
  async sessionHashes(code){return (await this.query('SELECT hash FROM social_sessions WHERE code=$1 AND expires_at>$2',[code,this.now()])).map(row=>row.hash);}
  async update(code,fields){
   const columns={name:'name',avatar:'avatar',visibility:'visibility',shareProgress:'share_progress',showOnline:'show_online'},values=[code],parts=[];

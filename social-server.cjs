@@ -4,6 +4,7 @@ const {SocialStore,SocialError}=require('./social-store.cjs');
 const derive=promisify(crypto.scrypt),CODE=/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/,ROOM=/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/,TOKEN=/^[a-f0-9]{64}$/,UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ALPHABET='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',SESSION_MS=30*24*60*60e3,PRESENCE_MS=60e3,MAX_BODY=32*1024;
 const ADMIN_SESSION_MS=30*60e3,ADMIN_SESSION_LIMIT=20,MAX_EXEMPTION_MS=5*366*24*60*60e3;
+const NOTICE_LANGS=Object.freeze(['de','en','fr','es']),MAX_NOTICE_MS=30*24*60*60e3;
 const STAT_KEYS=Object.freeze(['arena_event_games','bosses_killed','bot_wins','breaker_best','breaker_bricks','breaker_games','breaker_wins','catches','cloud_bounces','cloud_games','cloud_height','cloud_stars','coop_played','crystalrun_best','crystalrun_clean_runs','crystalrun_distance','crystalrun_games','crystalrun_gems','crystalrun_missions','crystalrun_worlds_visited','easter_eggs_found','freeze_pu','games_played','ghost_pu','hub_rounds','maps_explored','max_survived','minigolf_best','minigolf_four_player_cups','minigolf_games','modes_explored','newyork_best','newyork_distance','newyork_games','newyork_stars','newyork_subway_visits','newyork_turns','orbit_best','orbit_games','orbit_stars','orbit_time','powerups','prism_games','prism_merges','prism_tile','prism_time_best','quest_completions','rally_best','rally_games','rally_hits','rally_longest','rally_wins','revives','shield_pu','shrink_pu','snake_apples','snake_best','snake_combo','snake_games','snake_variant_count','speed_pu','tower_best','tower_bosses','tower_built','tower_challenge_games','tower_diverse','tower_endless_wave','tower_games','tower_gold_peak','tower_kills','tower_morphs','tower_perfect','tower_sold','tower_special_hits','tower_upgrades','tower_waves','weapons','weekly_challenges']);
 const STAT_SET=new Set(STAT_KEYS),SKINS=new Set(['classic','aurora','ember','nebula','coral','void']),WORLDS=new Set(['canyon','ember','aurora']);
 const fail=(code,status=400)=>{throw new SocialError(code,status);};
@@ -13,6 +14,12 @@ const cleanCode=value=>{if(typeof value!=='string')fail('invalid_input');const c
 function cleanName(value){if(typeof value!=='string')fail('invalid_input');const name=value.replace(/[\u0000-\u001f\u007f-\u009f]/g,'').trim();if(!name||Array.from(name).length>18)fail('invalid_input');return name;}
 function password(value){if(typeof value!=='string'||Array.from(value).length<10||Array.from(value).length>128)fail('invalid_input');return value;}
 function avatar(value){if(!Number.isInteger(value)||value<0||value>11)fail('invalid_input');return value;}
+function cleanNotice(body,time){
+ if(Object.keys(body).some(key=>!['enabled','messages','until'].includes(key))||typeof body.enabled!=='boolean'||!object(body.messages)||Object.keys(body.messages).length!==4||Object.keys(body.messages).some(key=>!NOTICE_LANGS.includes(key)))fail('invalid_input');
+ const messages={};for(const key of NOTICE_LANGS){if(typeof body.messages[key]!=='string')fail('invalid_input');const text=body.messages[key].replace(/[\u0000-\u001f\u007f-\u009f]/g,'').trim();if(Array.from(text).length>220)fail('invalid_input');messages[key]=text;}
+ if(body.enabled&&!messages.de&&!messages.en)fail('invalid_input');const until=body.until??null;
+ if(until!==null&&(!Number.isSafeInteger(until)||until<=time||until>time+MAX_NOTICE_MS))fail('invalid_input');return {enabled:body.enabled,messages,until};
+}
 async function hashPassword(value){const salt=crypto.randomBytes(16),hash=await derive(value,salt,64,{N:32768,r:8,p:1,maxmem:64*1024*1024});return 'scrypt:32768:8:1:'+salt.toString('hex')+':'+hash.toString('hex');}
 const validPasswordHash=stored=>/^scrypt:32768:8:1:[a-f0-9]{32}:[a-f0-9]{128}$/.test(typeof stored==='string'?stored:'');
 async function verifyPassword(value,stored){
@@ -78,6 +85,15 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
  async function authenticate(token){if(!TOKEN.test(token||'')||!await ensureReady())return null;try{const hash=sessionHash(token);for(let attempt=0;attempt<3;attempt++){const generation=authGeneration,account=await store.session(hash);if(generation!==authGeneration)continue;return account?{code:account.code,name:account.name,avatar:Number(account.avatar),expiresAt:Number(account.expires_at)}:null;}return null;}catch{available=false;return null;}}
  async function authenticateRequest(req){const token=bearer(req);if(!token)fail('unauthorized',401);const account=await store.session(sessionHash(token));if(!account)fail('unauthorized',401);presence.set(account.code,now()+PRESENCE_MS);return {account,token};}
  function authenticateAdmin(req){const token=bearer(req),hash=token&&sessionHash(token),expiresAt=hash&&adminSessions.get(hash);if(!expiresAt||expiresAt<=now()){if(hash)adminSessions.delete(hash);fail('unauthorized',401);}return hash;}
+ async function adminOverview(){
+  const counts=await store.adminOverviewCounts(),activeRooms=[];
+  for(const room of rooms?.rooms?.values?.()||[]){
+   if(!room||!ROOM.test(room.code||'')||!Number.isSafeInteger(room.expires)||room.expires<=now()||typeof room.gameType!=='string'||!/^[a-z][a-z-]{0,31}$/.test(room.gameType)||!['lobby','countdown','playing','paused','over'].includes(room.phase))continue;
+   const capacity=Number.isInteger(room.capacity)&&room.capacity>=2&&room.capacity<=4?room.capacity:room.gameType==='minigolf'?4:2;
+   activeRooms.push({code:room.code,game:room.gameType,phase:room.phase,players:Array.isArray(room.players)?room.players.slice(0,capacity).filter(Boolean).length:0,capacity,expiresAt:room.expires,visibility:room.visibility==='public'?'public':'private'});
+  }
+  activeRooms.sort((a,b)=>a.expiresAt-b.expiresAt||a.code.localeCompare(b.code));return {counts,rooms:activeRooms};
+ }
  async function adminRequest(req,url,ip){
   if(!adminConfigured)fail('admin_unconfigured',503);
   if(url.pathname==='/social/admin/login'&&req.method==='POST'){
@@ -88,7 +104,10 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
   }
   const hash=authenticateAdmin(req);rate('admin:'+hash,120,60e3);
   if(req.method==='GET'&&url.pathname==='/social/admin/state')return store.adminAdState();
+  if(req.method==='GET'&&url.pathname==='/social/admin/overview')return adminOverview();
+  if(req.method==='GET'&&url.pathname==='/social/admin/notice')return store.adminNotice();
   const body=req.method==='GET'?{}:await readBody(req);
+  if(req.method==='PUT'&&url.pathname==='/social/admin/notice')return store.putNotice(cleanNotice(body,now()));
   if(req.method==='POST'&&url.pathname==='/social/admin/logout'){if(Object.keys(body).length)fail('invalid_input');adminSessions.delete(hash);return {ok:true};}
   if(req.method==='PATCH'&&url.pathname==='/social/admin/policy'){if(Object.keys(body).length!==1||typeof body.adsDisabled!=='boolean')fail('invalid_input');return store.setAdsDisabled(body.adsDisabled);}
   if(req.method==='PUT'&&url.pathname==='/social/admin/exemptions'){
@@ -129,6 +148,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
    if(url.pathname==='/social/config'&&req.method==='GET'){const enabled=await ensureReady();json(res,200,{enabled,adminConfigured,...(!enabled?{reason:configured?'unavailable':'database_required'}:{})});return true;}
    if(!await ensureReady())fail(configured?'unavailable':'database_required',503);
    if(url.pathname.startsWith('/social/admin/')){json(res,200,await adminRequest(req,url,ip));return true;}
+   if(url.pathname==='/social/notice'&&req.method==='GET'){json(res,200,await store.publicNotice());return true;}
    if(url.pathname==='/social/ad-policy'&&req.method==='GET'){let code;if(req.headers.authorization){const auth=await authenticateRequest(req);code=auth.account.code;}json(res,200,await store.adPolicy(code));return true;}
    const publicAuth=['/social/register','/social/login'].includes(url.pathname)&&req.method==='POST';
    if(publicAuth)rate(url.pathname+':'+ip,url.pathname==='/social/register'?5:30,url.pathname==='/social/register'?60*60e3:60e3);
@@ -174,7 +194,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
     }else fail('not_found',404);
    }
    json(res,status,value);
-  }catch(error){const fallback=url.pathname==='/social/ad-policy'?{adsDisabled:true,exempt:false}:{};if(error instanceof SocialError)json(res,error.status,{error:error.code,...fallback});else{available=false;json(res,503,{error:'unavailable',...fallback});}}
+  }catch(error){const fallback=url.pathname==='/social/ad-policy'?{adsDisabled:true,exempt:false}:url.pathname==='/social/notice'?{active:false,messages:{de:'',en:'',fr:'',es:''},until:null,updatedAt:0}:{};if(error instanceof SocialError)json(res,error.status,{error:error.code,...fallback});else{available=false;json(res,503,{error:'unavailable',...fallback});}}
   return true;
  }
  async function close(){closed=true;clearInterval(timer);rates.clear();presence.clear();adminSessions.clear();await initializing?.catch(()=>{});if(pool)await pool.end();}
