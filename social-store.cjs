@@ -1,7 +1,7 @@
 'use strict';
 const crypto=require('node:crypto');
 
-const LIMITS=Object.freeze({accounts:10000,friends:200,follows:300,requests:100,blocks:200,invites:100,sessions:5});
+const LIMITS=Object.freeze({accounts:10000,friends:200,follows:300,requests:100,blocks:200,invites:100,sessions:5,adExemptions:1000});
 class SocialError extends Error{constructor(code,status=400){super(code);this.code=code;this.status=status;}}
 const fail=(code,status)=>{throw new SocialError(code,status);};
 const pair=(a,b)=>a<b?[a,b]:[b,a];
@@ -60,6 +60,14 @@ CREATE TABLE IF NOT EXISTS social_invites (
 );
 CREATE INDEX IF NOT EXISTS social_invites_recipient ON social_invites(recipient);
 CREATE INDEX IF NOT EXISTS social_invites_expiry ON social_invites(expires_at);
+CREATE TABLE IF NOT EXISTS social_ad_policy (
+ key TEXT PRIMARY KEY CHECK (key='global'), ads_disabled BOOLEAN NOT NULL DEFAULT FALSE
+);
+INSERT INTO social_ad_policy(key,ads_disabled) VALUES ('global',FALSE) ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS social_ad_exemptions (
+ code TEXT PRIMARY KEY REFERENCES social_accounts(code) ON DELETE CASCADE,
+ expires_at BIGINT, note TEXT NOT NULL DEFAULT '', updated_at BIGINT NOT NULL
+);
 `;
 
 class SocialStore{
@@ -103,6 +111,27 @@ class SocialStore{
  });}
  async session(hash){return (await this.query('SELECT a.'+ACCOUNT_COLUMNS.split(',').join(',a.')+',s.expires_at FROM social_sessions s JOIN social_accounts a ON a.code=s.code WHERE s.hash=$1 AND s.expires_at>$2',[hash,this.now()]))[0]||null;}
  async logout(hash){await this.query('DELETE FROM social_sessions WHERE hash=$1',[hash]);}
+ async adPolicy(code){
+  const row=(await this.query("SELECT ads_disabled FROM social_ad_policy WHERE key='global'"))[0];if(!row)throw new Error('Missing advertising policy');
+  const result={adsDisabled:!!row.ads_disabled};
+  if(code){const exemption=(await this.query('SELECT expires_at FROM social_ad_exemptions WHERE code=$1',[code]))[0],until=exemption?.expires_at==null?null:Number(exemption.expires_at);result.exempt=!!exemption&&(until===null||until>this.now());result.until=result.exempt?until:null;}
+  return result;
+ }
+ async adminAdState(){
+  const policy=await this.adPolicy(),rows=await this.query('SELECT e.code,a.name,e.expires_at,e.note FROM social_ad_exemptions e JOIN social_accounts a ON a.code=e.code ORDER BY a.name,e.code LIMIT $1',[this.limits.adExemptions]);
+  return {...policy,exemptions:rows.map(row=>this.adExemption(row))};
+ }
+ adExemption(row){const until=row.expires_at==null?null:Number(row.expires_at);return {code:row.code,name:row.name,until,note:row.note,active:until===null||until>this.now()};}
+ async setAdsDisabled(disabled){const rows=await this.query("UPDATE social_ad_policy SET ads_disabled=$1 WHERE key='global' RETURNING ads_disabled",[disabled]);if(!rows.length)throw new Error('Missing advertising policy');return {adsDisabled:!!rows[0].ads_disabled};}
+ async putAdExemption(code,until,note){return this.transaction(async db=>{
+  await this.query("SELECT key FROM social_ad_policy WHERE key='global' FOR UPDATE",[],db);
+  const account=(await this.query('SELECT code,name FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db))[0];if(!account)fail('not_found',404);
+  const exists=(await this.query('SELECT code FROM social_ad_exemptions WHERE code=$1',[code],db)).length;
+  if(!exists&&await this.count('SELECT COUNT(*) AS n FROM social_ad_exemptions',[],db)>=this.limits.adExemptions)fail('rate',429);
+  const row=(await this.query('INSERT INTO social_ad_exemptions(code,expires_at,note,updated_at) VALUES($1,$2,$3,$4) ON CONFLICT(code) DO UPDATE SET expires_at=EXCLUDED.expires_at,note=EXCLUDED.note,updated_at=EXCLUDED.updated_at RETURNING code,expires_at,note',[code,until,note,this.now()],db))[0];
+  return {exemption:this.adExemption({...row,name:account.name})};
+ });}
+ async removeAdExemption(code){await this.query('DELETE FROM social_ad_exemptions WHERE code=$1',[code]);return {ok:true};}
  async sessionHashes(code){return (await this.query('SELECT hash FROM social_sessions WHERE code=$1 AND expires_at>$2',[code,this.now()])).map(row=>row.hash);}
  async update(code,fields){
   const columns={name:'name',avatar:'avatar',visibility:'visibility',shareProgress:'share_progress',showOnline:'show_online'},values=[code],parts=[];

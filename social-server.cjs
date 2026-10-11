@@ -3,6 +3,7 @@ const crypto=require('node:crypto'),{promisify}=require('node:util');
 const {SocialStore,SocialError}=require('./social-store.cjs');
 const derive=promisify(crypto.scrypt),CODE=/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/,ROOM=/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/,TOKEN=/^[a-f0-9]{64}$/,UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ALPHABET='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',SESSION_MS=30*24*60*60e3,PRESENCE_MS=60e3,MAX_BODY=32*1024;
+const ADMIN_SESSION_MS=30*60e3,ADMIN_SESSION_LIMIT=20,MAX_EXEMPTION_MS=5*366*24*60*60e3;
 const STAT_KEYS=Object.freeze(['arena_event_games','bosses_killed','bot_wins','breaker_best','breaker_bricks','breaker_games','breaker_wins','catches','cloud_bounces','cloud_games','cloud_height','cloud_stars','coop_played','crystalrun_best','crystalrun_clean_runs','crystalrun_distance','crystalrun_games','crystalrun_gems','crystalrun_missions','crystalrun_worlds_visited','easter_eggs_found','freeze_pu','games_played','ghost_pu','hub_rounds','maps_explored','max_survived','minigolf_best','minigolf_four_player_cups','minigolf_games','modes_explored','newyork_best','newyork_distance','newyork_games','newyork_stars','newyork_subway_visits','newyork_turns','orbit_best','orbit_games','orbit_stars','orbit_time','powerups','prism_games','prism_merges','prism_tile','prism_time_best','quest_completions','rally_best','rally_games','rally_hits','rally_longest','rally_wins','revives','shield_pu','shrink_pu','snake_apples','snake_best','snake_combo','snake_games','snake_variant_count','speed_pu','tower_best','tower_bosses','tower_built','tower_challenge_games','tower_diverse','tower_endless_wave','tower_games','tower_gold_peak','tower_kills','tower_morphs','tower_perfect','tower_sold','tower_special_hits','tower_upgrades','tower_waves','weapons','weekly_challenges']);
 const STAT_SET=new Set(STAT_KEYS),SKINS=new Set(['classic','aurora','ember','nebula','coral','void']),WORLDS=new Set(['canyon','ember','aurora']);
 const fail=(code,status=400)=>{throw new SocialError(code,status);};
@@ -13,6 +14,7 @@ function cleanName(value){if(typeof value!=='string')fail('invalid_input');const
 function password(value){if(typeof value!=='string'||Array.from(value).length<10||Array.from(value).length>128)fail('invalid_input');return value;}
 function avatar(value){if(!Number.isInteger(value)||value<0||value>11)fail('invalid_input');return value;}
 async function hashPassword(value){const salt=crypto.randomBytes(16),hash=await derive(value,salt,64,{N:32768,r:8,p:1,maxmem:64*1024*1024});return 'scrypt:32768:8:1:'+salt.toString('hex')+':'+hash.toString('hex');}
+const validPasswordHash=stored=>/^scrypt:32768:8:1:[a-f0-9]{32}:[a-f0-9]{128}$/.test(typeof stored==='string'?stored:'');
 async function verifyPassword(value,stored){
  const parts=String(stored||'').split(':'),valid=parts.length===6&&parts[0]==='scrypt'&&parts[1]==='32768'&&parts[2]==='8'&&parts[3]==='1'&&/^[a-f0-9]{32}$/.test(parts[4])&&/^[a-f0-9]{128}$/.test(parts[5]);
  const salt=valid?Buffer.from(parts[4],'hex'):Buffer.alloc(16,71),expected=valid?Buffer.from(parts[5],'hex'):Buffer.alloc(64),hash=await derive(value,salt,64,{N:32768,r:8,p:1,maxmem:64*1024*1024});
@@ -34,9 +36,9 @@ function postgresConfig(connectionString,{allowInsecureLocalDb=false}={}){
  const local=['localhost','127.0.0.1','[::1]'].includes(url.hostname.toLowerCase());
  return {connectionString:url.href,ssl:allowInsecureLocalDb===true&&local&&process.env.NODE_ENV!=='production'?false:{rejectUnauthorized:true},enableChannelBinding:true,max:4,connectionTimeoutMillis:3500,idleTimeoutMillis:30000,query_timeout:5000,statement_timeout:5000};
 }
-function createSocial({connectionString=process.env.DATABASE_URL,db,rooms,originAllowed=()=>false,clientAddress=req=>req.socket?.remoteAddress||'unknown',now=Date.now,limits={},retryMs=10000,cleanupMs=10000,allowInsecureLocalDb=false}={}){
+function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHash=process.env.ADMIN_PASSWORD_HASH,db,rooms,originAllowed=()=>false,clientAddress=req=>req.socket?.remoteAddress||'unknown',now=Date.now,limits={},retryMs=10000,cleanupMs=10000,allowInsecureLocalDb=false}={}){
  let pool=null,store=null,available=false,closed=false,initializing=null,lastAttempt=-Infinity,passwordJobs=0,authGeneration=0;
- const configured=!!db||typeof connectionString==='string'&&!!connectionString.trim(),rates=new Map(),presence=new Map();
+ const configured=!!db||typeof connectionString==='string'&&!!connectionString.trim(),adminConfigured=configured&&validPasswordHash(adminPasswordHash),rates=new Map(),presence=new Map(),adminSessions=new Map();
  async function initialize(){
   if(!configured||closed)return false;if(initializing)return initializing;
   lastAttempt=now();initializing=(async()=>{try{
@@ -46,7 +48,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,db,rooms,origin
  }
  const ready=configured?initialize():Promise.resolve(false);
  async function ensureReady(){if(!configured||closed)return false;if(available)return true;if(initializing)return initializing;if(now()-lastAttempt>=retryMs)return initialize();return false;}
- function prune(){const time=now();for(const [key,value]of rates)if(value.end<=time)rates.delete(key);for(const [code,until]of presence)if(until<=time)presence.delete(code);}
+ function prune(){const time=now();for(const [key,value]of rates)if(value.end<=time)rates.delete(key);for(const [code,until]of presence)if(until<=time)presence.delete(code);for(const [hash,expiresAt]of adminSessions)if(expiresAt<=time)adminSessions.delete(hash);}
  function rate(key,limit,window){const time=now();let row=rates.get(key);if(!row||row.end<=time){if(rates.size>=10000){prune();if(rates.size>=10000)fail('rate',429);}row={n:0,end:time+window};rates.set(key,row);}if(++row.n>limit)fail('rate',429);}
  function* sockets(){const seen=new Set();for(const room of rooms?.rooms?.values?.()||[])for(const p of room.players||[])if(p?.ws&&!seen.has(p.ws)){seen.add(p.ws);yield p.ws;}}
  function unbind(ws){ws.socialAuthGeneration=(ws.socialAuthGeneration||0)+1;ws.socialCode=null;ws.socialTokenHash=null;ws.socialPendingTokenHash=null;ws.socialExpiresAt=null;if(ws.readyState===1&&typeof ws.send==='function')try{ws.send(JSON.stringify({type:'account',ok:false}));}catch{}}
@@ -75,6 +77,29 @@ function createSocial({connectionString=process.env.DATABASE_URL,db,rooms,origin
  }
  async function authenticate(token){if(!TOKEN.test(token||'')||!await ensureReady())return null;try{const hash=sessionHash(token);for(let attempt=0;attempt<3;attempt++){const generation=authGeneration,account=await store.session(hash);if(generation!==authGeneration)continue;return account?{code:account.code,name:account.name,avatar:Number(account.avatar),expiresAt:Number(account.expires_at)}:null;}return null;}catch{available=false;return null;}}
  async function authenticateRequest(req){const token=bearer(req);if(!token)fail('unauthorized',401);const account=await store.session(sessionHash(token));if(!account)fail('unauthorized',401);presence.set(account.code,now()+PRESENCE_MS);return {account,token};}
+ function authenticateAdmin(req){const token=bearer(req),hash=token&&sessionHash(token),expiresAt=hash&&adminSessions.get(hash);if(!expiresAt||expiresAt<=now()){if(hash)adminSessions.delete(hash);fail('unauthorized',401);}return hash;}
+ async function adminRequest(req,url,ip){
+  if(!adminConfigured)fail('admin_unconfigured',503);
+  if(url.pathname==='/social/admin/login'&&req.method==='POST'){
+   rate('admin-login:'+ip,5,15*60e3);rate('admin-login-global',30,60e3);
+   const body=await readBody(req);if(Object.keys(body).some(k=>k!=='password'))fail('invalid_input');const pass=password(body.password);
+   if(!await passwordJob(()=>verifyPassword(pass,adminPasswordHash)))fail('wrong_password',401);
+   prune();if(adminSessions.size>=ADMIN_SESSION_LIMIT)fail('rate',429);const token=crypto.randomBytes(32).toString('hex'),expiresAt=now()+ADMIN_SESSION_MS;adminSessions.set(sessionHash(token),expiresAt);return {token,expiresAt};
+  }
+  const hash=authenticateAdmin(req);rate('admin:'+hash,120,60e3);
+  if(req.method==='GET'&&url.pathname==='/social/admin/state')return store.adminAdState();
+  const body=req.method==='GET'?{}:await readBody(req);
+  if(req.method==='POST'&&url.pathname==='/social/admin/logout'){if(Object.keys(body).length)fail('invalid_input');adminSessions.delete(hash);return {ok:true};}
+  if(req.method==='PATCH'&&url.pathname==='/social/admin/policy'){if(Object.keys(body).length!==1||typeof body.adsDisabled!=='boolean')fail('invalid_input');return store.setAdsDisabled(body.adsDisabled);}
+  if(req.method==='PUT'&&url.pathname==='/social/admin/exemptions'){
+   if(Object.keys(body).some(k=>!['code','until','note'].includes(k)))fail('invalid_input');const code=cleanCode(body.code),until=body.until??null;
+   if(until!==null&&(!Number.isSafeInteger(until)||until<=now()||until>now()+MAX_EXEMPTION_MS))fail('invalid_input');
+   if(body.note!==undefined&&typeof body.note!=='string')fail('invalid_input');const note=(body.note||'').replace(/[\u0000-\u001f\u007f-\u009f]/g,'').trim();if(Array.from(note).length>120)fail('invalid_input');
+   return store.putAdExemption(code,until,note);
+  }
+  if(req.method==='DELETE'&&url.pathname.startsWith('/social/admin/exemptions/')){if(Object.keys(body).length)fail('invalid_input');return store.removeAdExemption(cleanCode(url.pathname.slice('/social/admin/exemptions/'.length)));}
+  fail('not_found',404);
+ }
  async function passwordJob(fn){if(passwordJobs>=4)fail('rate',429);passwordJobs++;try{return await fn();}finally{passwordJobs--;}}
  function freshSession(){const token=crypto.randomBytes(32).toString('hex');return {token,hash:sessionHash(token),expiresAt:now()+SESSION_MS};}
  async function sessionResult(account,session){presence.set(account.code,now()+PRESENCE_MS);return {token:session.token,expiresAt:session.expiresAt,me:await profile(account.code,account.code,account)};}
@@ -101,8 +126,10 @@ function createSocial({connectionString=process.env.DATABASE_URL,db,rooms,origin
    if(req.method==='OPTIONS'){if(!allowed)fail('forbidden',403);res.setHeader('Access-Control-Allow-Methods','GET,POST,PATCH,PUT,DELETE,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Authorization,Content-Type');res.setHeader('Access-Control-Max-Age','600');json(res,200,{ok:true});return true;}
    if(req.method!=='GET'&&!allowed)fail('forbidden',403);
    const ip=String(clientAddress(req)||'unknown');rate('all:'+ip,600,60e3);
-   if(url.pathname==='/social/config'&&req.method==='GET'){const enabled=await ensureReady();json(res,200,{enabled,...(!enabled?{reason:configured?'unavailable':'database_required'}:{})});return true;}
+   if(url.pathname==='/social/config'&&req.method==='GET'){const enabled=await ensureReady();json(res,200,{enabled,adminConfigured,...(!enabled?{reason:configured?'unavailable':'database_required'}:{})});return true;}
    if(!await ensureReady())fail(configured?'unavailable':'database_required',503);
+   if(url.pathname.startsWith('/social/admin/')){json(res,200,await adminRequest(req,url,ip));return true;}
+   if(url.pathname==='/social/ad-policy'&&req.method==='GET'){let code;if(req.headers.authorization){const auth=await authenticateRequest(req);code=auth.account.code;}json(res,200,await store.adPolicy(code));return true;}
    const publicAuth=['/social/register','/social/login'].includes(url.pathname)&&req.method==='POST';
    if(publicAuth)rate(url.pathname+':'+ip,url.pathname==='/social/register'?5:30,url.pathname==='/social/register'?60*60e3:60e3);
    const body=req.method==='GET'?{}:await readBody(req);let value;
@@ -147,10 +174,10 @@ function createSocial({connectionString=process.env.DATABASE_URL,db,rooms,origin
     }else fail('not_found',404);
    }
    json(res,status,value);
-  }catch(error){if(error instanceof SocialError)json(res,error.status,{error:error.code});else{available=false;json(res,503,{error:'unavailable'});}}
+  }catch(error){const fallback=url.pathname==='/social/ad-policy'?{adsDisabled:true,exempt:false}:{};if(error instanceof SocialError)json(res,error.status,{error:error.code,...fallback});else{available=false;json(res,503,{error:'unavailable',...fallback});}}
   return true;
  }
- async function close(){closed=true;clearInterval(timer);rates.clear();presence.clear();await initializing?.catch(()=>{});if(pool)await pool.end();}
+ async function close(){closed=true;clearInterval(timer);rates.clear();presence.clear();adminSessions.clear();await initializing?.catch(()=>{});if(pool)await pool.end();}
  return {ready,handle,authenticate,close};
 }
 module.exports={createSocial,STAT_KEYS,cleanProgress,postgresConfig};
