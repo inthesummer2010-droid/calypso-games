@@ -6839,6 +6839,7 @@ window.HubOnlineConfig = {
   const GRID_SPACING = 220;
   const GRID_ORIGIN_Z = -141;
   const ROUTE_NOTICE_DISTANCE = 30;
+  const ROUTE_PREVIEW_DISTANCE = 60;
   const ROUTE_APPROACH_DISTANCE = 20;
   const STEP = 1 / 120;
   const JUMP_DURATION = 0.94;
@@ -7111,7 +7112,7 @@ window.HubOnlineConfig = {
       // A decision closes before the fixed tangent point. A late input can
       // change the branch, but can never move a junction or the city itself.
       const remaining = (junction.decisionS ?? junction.atS) - this.distance;
-      if (remaining > 60) return null;
+      if (remaining > ROUTE_PREVIEW_DISTANCE) return null;
       return {
         id: junction.id,
         remaining: Math.max(0, remaining),
@@ -7593,6 +7594,12 @@ window.HubOnlineConfig = {
       const segment = this._segmentAt(s);
       if (!segment || !['street', 'station', 'tunnel'].includes(segment.kind)) return false;
       if (s - segment.startS < 18 || segment.endS - s < 28) return false;
+      // The announcement precedes route-selection input. Keep the complete
+      // object/body collision envelope out of it, including a recovery margin.
+      for (const junction of this._junctions) {
+        const begin = (junction.decisionS ?? junction.atS) - ROUTE_PREVIEW_DISTANCE - 4;
+        if (s >= begin && s <= junction.atS + 12) return false;
+      }
       return true;
     }
 
@@ -7703,7 +7710,7 @@ window.HubOnlineConfig = {
     }
   }
 
-  return { Model, LANE_WIDTH, CORNER_RADIUS, GRID_SPACING, GRID_ORIGIN_Z, ROUTE_NOTICE_DISTANCE, ROUTE_APPROACH_DISTANCE, JUMP_DURATION, JUMP_PEAK, SLIDE_DURATION, HAZARDS, STEP, DISTRICTS, districtAtSurfaceDistance, districtAtPosition, ITEM_SPAWN_AHEAD, ITEM_RETAIN_DISTANCE, PATH_RETAIN_DISTANCE, CORRIDOR_WIDTHS };
+  return { Model, LANE_WIDTH, CORNER_RADIUS, GRID_SPACING, GRID_ORIGIN_Z, ROUTE_NOTICE_DISTANCE, ROUTE_PREVIEW_DISTANCE, ROUTE_APPROACH_DISTANCE, JUMP_DURATION, JUMP_PEAK, SLIDE_DURATION, HAZARDS, STEP, DISTRICTS, districtAtSurfaceDistance, districtAtPosition, ITEM_SPAWN_AHEAD, ITEM_RETAIN_DISTANCE, PATH_RETAIN_DISTANCE, CORRIDOR_WIDTHS };
 });
 
 </script>
@@ -9363,14 +9370,16 @@ window.HubOnlineConfig = {
     // Two elliptical outlines form a rounded toe and snug ankle. The bottom
     // lies on the pavement, so the footwear has neither a block toe nor a gap.
     const low=t=>[x+Math.cos(t)*.071,y,z-.037+Math.sin(t)*.137],high=t=>[x+Math.cos(t)*.052,y+.086,z+.009+Math.sin(t)*.103];
-    for(let i=0;i<8;i++){
-      const a=i/8*TAU,b=(i+1)/8*TAU,n=norm([Math.cos((a+b)/2),.20,Math.sin((a+b)/2)]);
+    for(let i=0;i<6;i++){
+      const a=i/6*TAU,b=(i+1)/6*TAU,n=norm([Math.cos((a+b)/2),.20,Math.sin((a+b)/2)]);
       mesh.quad(low(a),high(a),high(b),low(b),col,n);
       mesh.tri([x,y+.086,z+.009],high(b),high(a),col,[0,1,0]);
     }
   }
-  function coat(mesh,col,bounce){
-    const rings=[[.795+bounce,.142,.098],[1.17+bounce,.180,.111],[1.278+bounce,.136,.091]],sides=8;
+  function coat(mesh,col,bounce,variant=0){
+    // Real shoulder width sits at the top; the old tapered neckline made the
+    // torso look like a cone and left the arms visibly hanging off its sides.
+    const rings=[[ (variant%3===0?.765:.845)+bounce,.148,.103],[1.11+bounce,.172,.110],[1.278+bounce,.194,.101]],sides=8;
     const point=(ring,t)=>[Math.cos(t)*ring[1],ring[0],Math.sin(t)*ring[2]];
     const normal=(j,t)=>{
       const r=rings[j],lo=rings[Math.max(0,j-1)],hi=rings[Math.min(2,j+1)],drx=(hi[1]-lo[1])/(hi[0]-lo[0]),drz=(hi[2]-lo[2])/(hi[0]-lo[0]);
@@ -9391,15 +9400,15 @@ window.HubOnlineConfig = {
   }
   function hair(mesh,y,col,style){
     // A rounded crown, a close-fitting side band and an asymmetric fringe.
-    const lower=[y+.026,.121,.110],upper=[y+.102,.091,.086],top=[0,y+.156,-.003];
+    const lower=[y+.061,.113,.101],upper=[y+.120,.083,.073],top=[0,y+.155,-.003];
     for(let i=0;i<8;i++){
       const a=i/8*TAU,b=(i+1)/8*TAU,p=(r,t)=>[Math.cos(t)*r[1],r[0],-.003+Math.sin(t)*r[2]],m=(a+b)/2;
       mesh.quad(p(lower,a),p(upper,a),p(upper,b),p(lower,b),col,norm([Math.cos(m),.35,Math.sin(m)]));
       mesh.tri(p(upper,a),top,p(upper,b),col);
     }
     const part=style%2?-.048:.036;
-    mesh.tri([-.104,y+.050,-.079],[part,y+.071,-.106],[part+.035,y+.025,-.110],col);
-    mesh.tri([part,y+.071,-.106],[.104,y+.047,-.079],[part+.035,y+.025,-.110],col);
+    mesh.tri([-.098,y+.065,-.079],[part,y+.086,-.104],[part+.035,y+.048,-.110],col);
+    mesh.tri([part,y+.086,-.104],[.098,y+.065,-.079],[part+.035,y+.048,-.110],col);
   }
   function elbow(shoulder,wrist,side){
     // Two fixed arm lengths share an elbow. Coffee changes the target hand,
@@ -9414,33 +9423,41 @@ window.HubOnlineConfig = {
     }
   }
   function person(mesh,actor,p,time){
-    const s=STYLE[actor.style%STYLE.length],coffee=actor.role==='coffee',cycle=time*3.5+actor.phase,bounce=p.walking?.008*(1-Math.cos(cycle*2)):.0035*Math.sin(time*.85+actor.phase),sipWeight=coffee?Math.pow(Math.max(0,Math.sin(time*.62+actor.phase)),2):0,sip=.140*sipWeight,hip=.80+bounce,head=1.523+bounce;
+    const s=STYLE[actor.style%STYLE.length],coffee=actor.role==='coffee',cycle=time*3.5+actor.phase,bounce=p.walking?.008*(1-Math.cos(cycle*2)):.0035*Math.sin(time*.85+actor.phase),sipWeight=coffee?Math.pow(Math.max(0,Math.sin(time*.62+actor.phase)),2):0,sip=.140*sipWeight,hip=.80+bounce,head=1.493+bounce;
     mesh.frame(p);mesh.material(null);shadow(mesh,.20,.28);
-    coat(mesh,s.coat,bounce);
+    coat(mesh,s.coat,bounce,actor.style);
     const lapel=[.67,.62,.50];
     mesh.tri([-.11,1.251+bounce,-.092],[-.031,1.109+bounce,-.110],[0,1.275+bounce,-.096],tint(s.coat,1.10));
     mesh.tri([.11,1.251+bounce,-.092],[0,1.275+bounce,-.096],[.031,1.109+bounce,-.110],tint(s.coat,1.04));
     mesh.quad([-.020,1.09+bounce,-.111],[-.020,1.25+bounce,-.099],[.020,1.25+bounce,-.099],[.020,1.09+bounce,-.111],lapel);
-    tube(mesh,[0,1.276+bounce,0],[0,1.410+bounce,0],.047,s.skin,5);
-    skin(mesh,0,head,-.003,.117,.145,.109,s.skin,8,4);
+    tube(mesh,[0,1.276+bounce,0],[0,1.397+bounce,0],.056,s.skin,5);
+    skin(mesh,0,head,-.003,.120,.145,.112,s.skin,9,4);
+    for(const side of [-1,1])skin(mesh,side*.119,head-.004,.005,.019,.035,.023,s.skin,3,2);
     hair(mesh,head,s.hair,actor.style);
-    for(const x of[-.043,.043])mesh.quad([x-.009,head+.018,-.109],[x-.009,head+.029,-.109],[x+.009,head+.029,-.109],[x+.009,head+.018,-.109],[.075,.072,.065],[0,0,-1]);
-    mesh.tri([-.016,head-.010,-.108],[.014,head-.010,-.108],[0,head-.011,-.130],tint(s.skin,.91));
-    mesh.quad([-.015,head-.042,-.108],[-.015,head-.036,-.108],[.015,head-.036,-.108],[.015,head-.042,-.108],tint(s.skin,.58),[0,0,-1]);
+    if(actor.style%3===2){
+      // A close brim and contrast collar distinguish a casual jacket from coats.
+      mesh.quad([-.104,head+.042,-.078],[.104,head+.042,-.078],[.102,head+.029,-.145],[-.102,head+.029,-.145],tint(s.coat,.66),[0,1,0]);
+      tube(mesh,[-.105,1.286+bounce,-.070],[.105,1.286+bounce,-.070],.025,tint(s.coat,.70),5);
+    }
+    // Facial marks sit outside the rounded skin, rather than being swallowed
+    // by the head mesh as the old flat eye/mouth decals were.
+    for(const x of[-.043,.043])mesh.quad([x-.009,head+.018,-.120],[x-.009,head+.029,-.120],[x+.009,head+.029,-.120],[x+.009,head+.018,-.120],[.075,.072,.065],[0,0,-1]);
+    mesh.tri([-.016,head-.010,-.118],[.014,head-.010,-.118],[0,head-.011,-.136],tint(s.skin,.91));
+    mesh.quad([-.015,head-.042,-.116],[-.015,head-.036,-.116],[.015,head-.036,-.116],[.015,head-.042,-.116],tint(s.skin,.58),[0,0,-1]);
     for(const side of [-1,1]){
-      const angle=cycle+(side<0?0:Math.PI),stride=p.walking?Math.sin(angle)*.132:0,lift=p.walking?Math.pow(Math.max(0,Math.cos(angle)),2)*.051:0;
-      const ankle=[side*.083,.090+lift,stride],knee=[side*.088,.447+bounce*.35,stride*.45-.036-lift*.75];
+      const angle=cycle+(side<0?0:Math.PI),stride=p.walking?Math.sin(angle)*.155:0,lift=p.walking?Math.pow(Math.max(0,Math.cos(angle)),2)*.064:0;
+      const ankle=[side*.083,.090+lift,stride],knee=[side*.088,.447+bounce*.35+lift*.35,stride*.45-.036-lift*.65];
       tube(mesh,[side*.083,hip,.018],knee,.068,s.pants,5,.055);
       tube(mesh,knee,ankle,.056,tint(s.pants,.97),5,.043);shoe(mesh,ankle[0],lift,ankle[2],[.145,.16,.17]);
-      const swing=p.walking?-Math.sin(angle)*.089:0,shoulder=[side*.164,1.249+bounce,.004],hand=coffee&&side>0?[.225-.150*sipWeight,1.208+bounce+sip,-.177+.012*sipWeight]:[side*.230,.858+bounce,swing];
+      const swing=p.walking?-Math.sin(angle)*.100:0,shoulder=[side*.185,1.249+bounce,.004],hand=coffee&&side>0?[.225-.150*sipWeight,1.208+bounce+sip,-.177+.012*sipWeight]:[side*.230,.858+bounce,swing];
       const joint=elbow(shoulder,hand,side);
       tube(mesh,shoulder,joint,.050,s.coat,5,.044);skin(mesh,...joint,.045,.045,.045,s.coat,5,2);
       tube(mesh,joint,hand,.042,s.coat,5,.030);skin(mesh,...hand,.032,.046,.031,s.skin,6,2);
     }
     if(coffee){
       const x=.225-.150*sipWeight,z=-.187+.012*sipWeight,top=[x-.023*sipWeight,1.307+bounce+sip,z+.016*sipWeight],lid=[top[0]-.0023*sipWeight,top[1]+.012,top[2]+.0016*sipWeight];
-      mesh.material('canvas');mesh.cylinder([x,1.189+bounce+sip,z],top,.029,[.75,.69,.54],6,.037);
-      mesh.material(null);mesh.cylinder(top,lid,.039,[.89,.87,.80],6);
+      mesh.material('canvas');mesh.cylinder([x,1.189+bounce+sip,z],top,.029,[.75,.69,.54],5,.037);
+      mesh.material(null);mesh.cylinder(top,lid,.039,[.89,.87,.80],5);
     }else{
       mesh.material('canvas');mesh.beveled(.288,.805+bounce,.045,.119,.21,.135,.018,s.bag);
       mesh.material(null);tube(mesh,[.118,1.244+bounce,.033],[.288,1.011+bounce,.045],.012,tint(s.bag,.83),4);
@@ -10312,6 +10329,17 @@ window.HubOnlineConfig = {
     if(station)railMouths(mesh,model.poseAt(seg.startS),-1);
     else railMouths(mesh,model.poseAt(seg.endS),1);
     if(station){for(let s=seg.startS+9;s<seg.endS-4;s+=18){const p=model.poseAt(s);mesh.frame(p);mesh.box(0,4.32,0,5.2,.79,.12,C.iron);mesh.sign(style.station,0,4.42,.072,4.85,.59);for(const xx of [-2.0,2.0])mesh.box(xx,5.11,0,.05,.21,.08,C.iron);subwayCar(mesh,p,8.1,0,seg.id);if(Math.floor((s-seg.startS)/18)%2===0)subwayCar(mesh,p,-8.1,0,seg.id+1);mesh.frame(p);mesh.box(-3.95,.28,0,.75,.22,3.1,[.43,.35,.22]);mesh.box(-4.25,.48,0,.15,.6,3.1,[.43,.35,.22]);for(const zz of [-1.1,1.1])mesh.box(-3.95,0,zz,.6,.3,.2,C.iron);mesh.sign('EXIT',-11.73,2.3,0,3.4,.75,1);}}
+    // Painted panels fill the quiet end of the platform and adjoining tunnel.
+    // They sit on the existing side walls, never across the pedestrian opening.
+    for(const s of (station?[seg.endS-8]:[seg.startS+8,seg.endS-8])){
+      if(s<seg.startS+4||s>seg.endS-4)continue;
+      mesh.frame(model.poseAt(s));mesh.material(null);
+      for(const side of [-1,1]){
+        const x=side*11.72,face=-side,key=side<0?'MURALTRAIN':'MURALBLOCK';
+        mesh.facade(x,1.03,0,6.45,2.24,[.20,.28,.29],face);
+        mesh.sign(key,x-side*.016,1.10,0,6.15,2.05,face);
+      }
+    }
   }
   function railMouths(mesh,p,direction){
     // Side tracks enter their own dark tubes beside the staircase. The centre
