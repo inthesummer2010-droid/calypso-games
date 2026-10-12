@@ -7745,7 +7745,7 @@ window.HubOnlineConfig = {
     };
     const prepared=[];
     try {
-      for(const spec of [{source:2,target:0,tone:.86,contrast:.64},{source:15,target:1,tone:.93,contrast:.40}]){
+      for(const spec of [{source:2,target:0,tone:.86,contrast:.74},{source:15,target:1,tone:.93,contrast:.47}]){
         const tile=create(),ctx=tile?.getContext('2d',{willReadFrequently:true});if(!ctx)return false;
         const x=(spec.source%8)*256+4,y=Math.floor(spec.source/8)*256+4;
         ctx.drawImage(importedImage,x,y,248,248,0,0,248,248);
@@ -8040,6 +8040,13 @@ window.HubOnlineConfig = {
       material(mesh,'glass');s.face(.365,doorBottom+.23,doorZ,doorWidth-.14,doorHeight-.37,[.23,.31,.30]);
       material(mesh,'metal');s.face(.384,doorBottom+.24,doorZ,doorWidth-.12,.048,shade(look.trim,.55));
       s.face(.385,doorBottom+.72,doorZ-doorSide*(doorWidth/2-.13),.035,.29,shade(look.trim,1.05));
+      // Stable address plaques and inset letter slots give each entrance an
+      // identifiable detail while staying behind its existing frontage limit.
+      material(mesh,'metal');s.face(.390,doorBottom+.13,doorZ,.29,.042,shade(look.trim,.63));
+      material(mesh,null);s.face(.392,doorBottom+.14,doorZ,.24,.016,DARK);
+      const address=10+Math.floor(hash(seed+j*97+614)*89),numberY=doorBottom+doorHeight-.23,numberX=s.p(.397,0,0)[0];
+      s.face(.394,numberY,doorZ,.21,.17,[.15,.20,.22]);
+      if(typeof mesh.sign==='function')for(const [i,n]of String(address).split('').entries())mesh.sign('N'+n,numberX,numberY+.013,doorZ+(i-.5)*.083,.070,.145,s.facing);
       const paneWidth=raised?z+w/2-doorZ-doorWidth/2-.11:w-doorWidth-.11,paneZ=raised?(z+w/2+doorZ+doorWidth/2+.11)/2:z-doorSide*(doorWidth+.09)/2;
       material(mesh,'glass');s.face(.34,bottom+.22,paneZ,paneWidth,1.56,mix([.22,.30,.31],[.32,.38,.35],hash(seed+j*11+2)));
       material(mesh,null);s.face(.347,bottom+.38,paneZ,paneWidth,.055,[.12,.18,.18]);
@@ -9582,7 +9589,7 @@ window.HubOnlineConfig = {
     else {const permitted=syncPolicy(),o=permitted&&sponsor||{title:'CALYPSO',tagline:'YOUR NEXT ADVENTURE'};label(c,key==='TS_CITY'?'TIMES SQUARE':o.title,128,47,32,'#fff');for(let i=0;i<7;i++){c.fillStyle=i%2?'#6b8e98':'#365f73';c.fillRect(19+i*31,187-(i*37)%77,21,42+(i*37)%77);}star(c,128,115,33,colors[1]);label(c,key==='TS_CITY'?'THE CITY NEVER STOPS':o.tagline,128,226,16,colors[1]);if(key==='SPONSOR'&&permitted&&sponsorImage){try{c.drawImage(sponsorImage,12,12,232,232);label(c,'ADVERTISEMENT',128,239,10,'#fff');}catch{sponsorImage=null;}}}
     c.restore();
   }
-  function paintBillboards(canvas){const c=canvas.getContext('2d');c.fillStyle='#142536';c.fillRect(0,0,canvas.width,canvas.height);const atlas={};KEYS.forEach((key,i)=>{const x=i%4*256,y=Math.floor(i/4)*256;poster(c,key,x+4,y+4,248,248);atlas[key]=[2+(x+5)/canvas.width,1-(y+251)/canvas.height,2+(x+251)/canvas.width,1-(y+5)/canvas.height,1,'billboard'];});return atlas;}
+  function paintBillboards(canvas){const c=canvas.getContext('2d'),cell=canvas.width/4,k=cell/256;c.fillStyle='#142536';c.fillRect(0,0,canvas.width,canvas.height);const atlas={};KEYS.forEach((key,i)=>{const x=i%4*cell,y=Math.floor(i/4)*cell;poster(c,key,x+4*k,y+4*k,248*k,248*k);atlas[key]=[2+(x+5*k)/canvas.width,1-(y+251*k)/canvas.height,2+(x+251*k)/canvas.width,1-(y+5*k)/canvas.height,1,'billboard'];});return atlas;}
   // Setters only prepare safe local content. Call HubAdPolicy.refresh() to
   // activate it after server approval. invalidate() hides it immediately.
   return{KEYS,MURAL_KEYS,flag,poster,paintMural,paintBillboards,setSponsorMessage,setSponsorImage,resetSponsor,get revision(){syncPolicy();return revision;}};
@@ -9971,7 +9978,7 @@ window.HubOnlineConfig = {
   const MATERIALS=Object.freeze({brick:0,stone:1,asphalt:2,concrete:3,metal:4,wood:5,tile:6,glass:7,canvas:8,leaf:9});
   // A phone can show two real pixels per CSS pixel without asking a large
   // laptop screen to allocate a four-times-larger colour/depth buffer.
-  const RENDER_QUALITY=Object.freeze({pixelBudget:2800000,maxPhoneRatio:2,maxDesktopRatio:1.75,minAdaptiveScale:.62,slowFrameMs:29,fastFrameMs:19,sampleFrames:90});
+  const RENDER_QUALITY=Object.freeze({pixelBudget:2800000,maxPhoneRatio:2.25,maxDesktopRatio:2,minAdaptiveScale:.62,slowFrameMs:29,fastFrameMs:19,sampleFrames:90});
   function renderResolution(width,height,dpr=1,scale=1,gpuLimit=4096){
     width=Math.max(1,Number(width)||1);height=Math.max(1,Number(height)||1);
     const requested=clamp(Number(dpr)||1,.5,width<800?RENDER_QUALITY.maxPhoneRatio:RENDER_QUALITY.maxDesktopRatio),budget=Math.sqrt(RENDER_QUALITY.pixelBudget/(width*height)),maximum=Math.min(requested,budget,gpuLimit/width,gpuLimit/height);
@@ -10064,7 +10071,8 @@ window.HubOnlineConfig = {
     ['TIMES','TIMES SQUARE','#182f45','#f4e4bf'],['USFLAG','','#faf9ef','#16355e'],
     ['RECORDS','VINYL & RECORDS','#322936','#f6df9d'],['LAUNDRY','WASH & FOLD','#345c6b','#f5eee0'],
     ['BARBER','NEIGHBORHOOD BARBER','#7b3b39','#fff1d4'],
-    ['MURALTRAIN','','#ad6952','#ad6952'],['MURALBLOCK','','#dbba86','#dbba86'],['MURALBIRD','','#234c59','#234c59']
+    ['MURALTRAIN','','#ad6952','#ad6952'],['MURALBLOCK','','#dbba86','#dbba86'],['MURALBIRD','','#234c59','#234c59'],
+    ['NUMBERS','','#23343b','#f3e1b4']
   ];
   // Tileable surface paintings share the existing sign atlas: no image downloads,
   // extra textures or per-frame painting. Mipmaps keep distant masonry stable.
@@ -10080,14 +10088,22 @@ window.HubOnlineConfig = {
       if(index===3){if(x%128<2||y%128<2)tone=.63;else tone*=.98+.025*Math.sin(x*.16+y*.06);}
       if(index===4){tone=.83+.09*Math.sin(y*.055)+.02*Math.sin(x*2.2);if(x%128<2)tone=.64;}
       if(index===5){tone*=.89+.11*Math.sin(y*.10+Math.sin(x*.023)*1.3);if(y%64<2)tone=.60;}
-      if(index===6){if(x%32<2||y%32<2)tone=.65;else tone*=.98+.04*((Math.floor(x/32)+Math.floor(y/32))%2);}
+      if(index===6){const row=Math.floor(y/32),xx=(x+(row%2)*32)%64;if(xx<2||y%32<2)tone=.64;else tone*=.965+.025*hash(row*41+Math.floor((x+(row%2)*32)/64));}
       if(index===7)tone=.83+.13*(y/size)+.055*Math.sin((x+y)*.025);
-      if(index===8)tone=.93+.035*Math.sin(x*Math.PI)+.035*Math.sin(y*Math.PI);
-      if(index===9)tone=.82+.18*Math.sin(x*.12)*Math.sin(y*.13);
+      if(index===8)tone=.93+.028*Math.sin(x*Math.PI/2)+.025*Math.sin(y*Math.PI/2)+(random()-.5)*.025;
+      if(index===9)tone=.90+.045*Math.sin(x*.067+y*.043)+.035*Math.sin(x*.029-y*.097)+(random()-.5)*.04;
       const i=(y*size+x)*4,value=Math.round(clamp(tone,0,1)*255),warm=index===0&&!brickMortar?.97+.03*hash(brickRow*31+Math.floor(x/36)):1;
       pixels.data[i]=value;pixels.data[i+1]=Math.round(value*(brickMortar?1.04:warm));pixels.data[i+2]=Math.round(value*(brickMortar?1.10:index===0?warm*.96:index===1?.98:1));pixels.data[i+3]=255;
     }
     c.putImageData(pixels,0,0);
+    if(index===2||index===3){
+      // Broad low-contrast weathering and fine mineral grains survive mipmaps;
+      // the surface has no regularly spaced crack lines across the horizon.
+      for(let i=0;i<4;i++){const xx=24+random()*205,yy=24+random()*205,r=12+random()*25,g=c.createRadialGradient(xx,yy,0,xx,yy,r);g.addColorStop(0,index===2?'rgba(38,40,41,.14)':'rgba(70,68,62,.065)');g.addColorStop(1,'rgba(70,70,65,0)');c.fillStyle=g;c.fillRect(xx-r,yy-r,r*2,r*2);}
+      for(let i=0;i<430;i++){const xx=4+random()*248,yy=4+random()*248;c.fillStyle=i%3?'rgba(255,250,230,.065)':'rgba(28,33,31,.10)';c.fillRect(xx,yy,1+random()*1.4,1+random()*1.2);}
+    }
+    if(index===4){c.strokeStyle='rgba(250,252,248,.065)';c.lineWidth=.65;for(let i=0;i<40;i++){const yy=4+random()*248;c.beginPath();c.moveTo(5,yy);c.lineTo(251,yy+(random()-.5)*1.5);c.stroke();}}
+    if(index===5){for(let i=0;i<3;i++){const xx=38+i*77,yy=37+random()*167;c.strokeStyle='rgba(45,37,25,.13)';c.lineWidth=1;for(let j=1;j<4;j++){c.beginPath();c.ellipse(xx,yy,j*5,j*12,.08,0,TAU);c.stroke();}}}
     const x=(index%8)*256,y=1536+Math.floor(index/8)*256;ctx.drawImage(paint,x,y);
     // Wrapped four-pixel gutters prevent another material bleeding into a tile.
     ctx.drawImage(paint,248,4,4,248,x, y+4,4,248);ctx.drawImage(paint,4,4,4,248,x+252,y+4,4,248);
@@ -10099,6 +10115,7 @@ window.HubOnlineConfig = {
     SIGN_SPECS.forEach((s,i)=>{const x=(i%4)*512,y=Math.floor(i/4)*128;let font=48;ctx.font='700 '+font+'px Arial, sans-serif';while(ctx.measureText(s[1]).width>454&&font>30){font--;ctx.font='700 '+font+'px Arial, sans-serif';}const w=Math.max(180,Math.ceil(ctx.measureText(s[1]).width+46)),h=96;ctx.fillStyle=s[2];ctx.fillRect(x,y,w,h);ctx.strokeStyle=s[3];ctx.lineWidth=3;ctx.strokeRect(x+7,y+7,w-14,h-14);ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle=s[3];ctx.fillText(s[1],x+w/2,y+h/2+1);atlas[s[0]]=[(x+2)/canvas.width,1-(y+h-2)/canvas.height,(x+w-2)/canvas.width,1-(y+2)/canvas.height,(w-4)/(h-4)];});
     if(SignArt){const i=SIGN_SPECS.findIndex(spec=>spec[0]==='USFLAG'),x=(i%4)*512,y=Math.floor(i/4)*128,w=228,h=120;SignArt.flag(ctx,x+2,y+2,w,h);atlas.USFLAG=[(x+2)/canvas.width,1-(y+h+2)/canvas.height,(x+w+2)/canvas.width,1-(y+2)/canvas.height,1.9];}
     if(SignArt?.paintMural)for(const key of SignArt.MURAL_KEYS){const i=SIGN_SPECS.findIndex(s=>s[0]===key),x=(i%4)*512+6,y=Math.floor(i/4)*128+4,w=360,h=120;if(i<0)continue;SignArt.paintMural(ctx,key,x,y,w,h);atlas[key]=[x/canvas.width,1-(y+h)/canvas.height,(x+w)/canvas.width,1-y/canvas.height,3,'wall-art'];}
+    {const i=SIGN_SPECS.findIndex(s=>s[0]==='NUMBERS'),x=(i%4)*512,y=Math.floor(i/4)*128;ctx.fillStyle='#26343a';ctx.fillRect(x,y,512,120);ctx.font='700 78px Arial, sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillStyle='#f5e5b6';for(let n=0;n<10;n++){const xx=x+n*50;ctx.fillText(String(n),xx+25,y+60);atlas['N'+n]=[(xx+3)/2048,1-(y+110)/2048,(xx+47)/2048,1-(y+10)/2048,.44,'address'];}}
     for(const index of Object.values(MATERIALS))paintMaterial(ctx,index);
     const texture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,texture);gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,canvas);gl.generateMipmap(gl.TEXTURE_2D);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);const aniso=gl.getExtension('EXT_texture_filter_anisotropic')||gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic');if(aniso)gl.texParameterf(gl.TEXTURE_2D,aniso.TEXTURE_MAX_ANISOTROPY_EXT,Math.min(8,gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));return {atlas,texture,canvas};
   }
@@ -10144,6 +10161,7 @@ window.HubOnlineConfig = {
       float glint=pow(max(dot(reflected,lightDirection),0.0),36.0)*.28;
       shaded=mix(shaded,skyline,fresnel*(1.0-uIndoor*.85))+vec3(1.0,.90,.72)*glint*(1.0-uIndoor);
     }else if(material>3.5&&material<4.5){float glint=pow(max(dot(normal,normalize(lightDirection+viewDirection)),0.0),24.0);shaded+=vec3(.10,.11,.12)*glint*(1.0-uIndoor*.5);}
+    else if(material>5.5&&material<6.5){float glaze=pow(max(dot(normal,normalize(lightDirection+viewDirection)),0.0),42.0);shaded+=vec3(.035,.041,.038)*glaze;}
     // Painted lettering and warm lit windows retain their intended colours.
     shaded=mix(shaded,base,vColor.a>1.5?0.0:clamp(vColor.a,0.0,1.0));
     float fog=smoothstep(uFogEnd*.32,uFogEnd,length(vViewOffset));gl_FragColor=vec4(mix(shaded,uFog,fog),1.0);}`;
@@ -10320,7 +10338,7 @@ window.HubOnlineConfig = {
       mesh.box(0,-.72,0,24,.14,n+.04,[.29,.33,.30]);
       if(station){mesh.box(0,-.34,0,10.8,.34,n+.04,[.60,.62,.55]);mesh.box(0,.002,0,10.8,.012,n+.04,area==='soho'?[.73,.72,.63]:[.67,.67,.57]);for(let x=-5.0;x<5.2;x+=1.2)mesh.box(x,.017,0,.022,.006,n,[.51,.53,.47]);mesh.box(0,.017,0,10.8,.006,.022,[.51,.53,.47]);}
       else {mesh.material('tile');mesh.box(0,-.34,0,10.8,.34,n+.04,[.48,.51,.45]);mesh.material(null);for(const side of [-1,1]){mesh.box(side*5.24,.04,0,.17,.82,n+.04,C.iron);mesh.box(side*5.24,.86,0,.22,.05,n+.04,C.steel);}}
-      const wall=12;for(const side of [-1,1]){mesh.box(side*wall,-.65,0,.50,6.02,n+.04,station?C.tile:[.43,.49,.46]);mesh.box(side*(wall-.26),.8,0,.05,.22,n,trim);mesh.box(side*(wall-.26),3.35,0,.05,.16,n,trim);for(let yy=.35;yy<5;yy+=.52)mesh.box(side*(wall-.26),yy,0,.025,.016,n,[.68,.72,.66]);}
+      const wall=12;for(const side of [-1,1]){mesh.material('tile');mesh.box(side*wall,-.65,0,.50,6.02,n+.04,station?C.tile:[.43,.49,.46]);mesh.material('metal');mesh.box(side*(wall-.26),.8,0,.05,.22,n,trim);mesh.box(side*(wall-.26),3.35,0,.05,.16,n,trim);mesh.material(null);for(let yy=.35;yy<5;yy+=.52)mesh.box(side*(wall-.26),yy,0,.025,.016,n,[.68,.72,.66]);}
       mesh.box(0,5.32,0,wall*2+.55,.35,n+.04,[.27,.35,.34]);mesh.box(0,5.08,0,wall*2,.24,.18,C.iron);mesh.box(-2.7,5.15,0,.25,.055,3.3,[1,.93,.73,.65]);mesh.box(2.7,5.15,0,.25,.055,3.3,[1,.93,.73,.65]);
       // Two continuous train tracks flank a separate central walking platform.
       for(const x of [-8.1,8.1]){mesh.material('stone');mesh.box(x,-.55,0,4.2,.08,n,[.29,.30,.26]);mesh.material('metal');for(const side of [-1,1]){mesh.box(x+side*.72,-.30,0,.12,.04,n,C.iron);mesh.box(x+side*.72,-.26,0,.078,.12,n,C.steel);}mesh.material('wood');for(let ss=Math.ceil(s/.68)*.68;ss<s+n;ss+=.68){const zz=s+n/2-ss;mesh.box(x,-.44,zz,2.7,.14,.21,[.34,.30,.23]);}mesh.material(null);}
@@ -10739,7 +10757,7 @@ window.HubOnlineConfig = {
       this.makeBillboardTexture();this.loadImportedTexture();this.bindTextures();
     }
     makeBillboardTexture(){
-      if(!SignArt)return;const gl=this.gl,canvas=document.createElement('canvas');canvas.width=1024;canvas.height=512;this.billboardCanvas=canvas;this.billboardTexture=gl.createTexture();this.billboardRevision=-1;this.refreshBillboards();
+      if(!SignArt)return;const gl=this.gl,canvas=document.createElement('canvas');canvas.width=2048;canvas.height=1024;this.billboardCanvas=canvas;this.billboardTexture=gl.createTexture();this.billboardRevision=-1;this.refreshBillboards();
     }
     refreshBillboards(){
       if(!SignArt||!this.billboardCanvas||this.billboardRevision===SignArt.revision)return;
