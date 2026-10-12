@@ -667,7 +667,36 @@
       }
       if(this.kind==='prism')this.model.update(dt);else if(this.kind==='tower')this.model.update(dt);else this.model.update(dt,{axis:axis||(this.keys.has('KeyD')||this.keys.has('ArrowRight')?1:0)-(this.keys.has('KeyA')||this.keys.has('ArrowLeft')?1:0),target:this.target});this.refresh();
     }
-      refresh(){const m=this.model;this.pauseButton.hidden=!['playing','paused'].includes(m.phase);this.pauseButton.textContent=this.tr(m.phase==='paused'?'resume':'pause');this.actionButton.hidden=m.phase==='menu'||m.phase==='over'||m.phase==='won';this.actionButton.disabled=m.phase!=='playing'||(this.kind==='prism'?m.undos===0||!m.previous:this.kind==='cloud'?m.cooldown>0:m.waveActive||m.wave>=m.maxWaves);const actionText=this.kind==='prism'?this.tr('undo')+' · '+m.undos:this.kind==='cloud'?this.tr('boost')+' · '+(m.cooldown>0?Math.ceil(m.cooldown)+' s':this.tr('ready')):this.tr('wave')+' '+(m.wave+1)+' / '+(m.endless?'∞':m.maxWaves);if(this.actionButton.textContent!==actionText)this.actionButton.textContent=actionText;for(let i=0;i<(this.towerButtons||[]).length;i++){const item=this.towerButtons[i],type=m.loadout?.[i];item.type=type||null;item.button.hidden=m.phase!=='playing'||!type;item.button.disabled=m.phase!=='playing'||!type;if(type){item.button.textContent=`${this.tr(type)} · ${TD_TYPES[type].cost}`;item.button.className='tower-type-button'+(m.selectedType===type?' selected':'');item.button.setAttribute('aria-label',`${this.tr(type)} · ${TD_TYPES[type].cost} ${this.tr('gold')} · ${this.tr(type+'Desc')}`);}}if(this.sellButton){const canSell=m.phase==='playing'&&!!m.selectedTower;this.sellButton.textContent=canSell?`${this.tr('sell')} · +${m.refund()} ${this.tr('gold')}`:this.tr('sell');this.sellButton.hidden=!canSell;this.sellButton.disabled=!canSell;this.sellButton.setAttribute('aria-label',this.sellButton.textContent);}if(this.morphButton){const picking=m.morphSelection?.length||0,morphReady=m.phase==='playing'&&m.canMorph?.();this.morphButton.hidden=!morphReady;this.morphButton.disabled=!morphReady;this.morphButton.textContent=picking===3?`${this.tr('morphConfirm')} · 3/3`:picking?`${this.tr('morphCancel')} · ${picking}/3`:`${this.tr('morph')} · 0/3`;this.morphButton.setAttribute('aria-label',this.morphButton.textContent);}const toolbarSig=Array.from(this.toolbar.querySelectorAll('button')).map(button=>button.hidden?'0':'1').join('');if(toolbarSig!==this.toolbarSignature){this.toolbarSignature=toolbarSig;this.resize();}
+    refreshTowerToolbar(){
+      const m=this.model,playing=m.phase==='playing',set=(el,key,value)=>{if(el[key]!==value)el[key]=value;},label=(el,value)=>{if(el.getAttribute('aria-label')!==value)el.setAttribute('aria-label',value);};
+      set(this.pauseButton,'hidden',!['playing','paused'].includes(m.phase));
+      set(this.pauseButton,'textContent',this.tr(m.phase==='paused'?'resume':'pause'));
+      set(this.actionButton,'hidden',m.phase==='menu'||m.phase==='over'||m.phase==='won');
+      set(this.actionButton,'disabled',!playing||m.waveActive||m.wave>=m.maxWaves);
+      set(this.actionButton,'textContent',this.tr('wave')+' '+(m.wave+1)+' / '+(m.endless?'∞':m.maxWaves));
+      for(let i=0;i<this.towerButtons.length;i++){
+        const item=this.towerButtons[i],type=m.loadout[i];item.type=type||null;
+        set(item.button,'hidden',!playing||!type);set(item.button,'disabled',!playing||!type);
+        if(type){
+          set(item.button,'textContent',`${this.tr(type)} · ${TD_TYPES[type].cost}`);
+          set(item.button,'className','tower-type-button'+(m.selectedType===type?' selected':''));
+          label(item.button,`${this.tr(type)} · ${TD_TYPES[type].cost} ${this.tr('gold')} · ${this.tr(type+'Desc')}`);
+        }
+      }
+      const canSell=playing&&!!m.selectedTower;
+      set(this.sellButton,'textContent',canSell?`${this.tr('sell')} · +${m.refund()} ${this.tr('gold')}`:this.tr('sell'));
+      set(this.sellButton,'hidden',!canSell);set(this.sellButton,'disabled',!canSell);label(this.sellButton,this.sellButton.textContent);
+      const picking=m.morphSelection.length,morphReady=playing&&m.canMorph();
+      set(this.morphButton,'hidden',!morphReady);set(this.morphButton,'disabled',!morphReady);
+      set(this.morphButton,'textContent',picking===3?`${this.tr('morphConfirm')} · 3/3`:picking?`${this.tr('morphCancel')} · ${picking}/3`:`${this.tr('morph')} · 0/3`);
+      label(this.morphButton,this.morphButton.textContent);
+      // These controls stay mounted through waves, upgrades and menu changes.
+      const buttons=this.towerToolbarControls||(this.towerToolbarControls=Array.from(this.toolbar.querySelectorAll('button'))),sig=buttons.map(button=>button.hidden?'0':'1').join('');
+      if(sig!==this.toolbarSignature){this.toolbarSignature=sig;this.resize();}
+    }
+    refresh(){const m=this.model;
+      if(this.kind==='tower')this.refreshTowerToolbar();
+      else{this.pauseButton.hidden=!['playing','paused'].includes(m.phase);this.pauseButton.textContent=this.tr(m.phase==='paused'?'resume':'pause');this.actionButton.hidden=m.phase==='menu'||m.phase==='over'||m.phase==='won';this.actionButton.disabled=m.phase!=='playing'||(this.kind==='prism'?m.undos===0||!m.previous:m.cooldown>0);const actionText=this.kind==='prism'?this.tr('undo')+' · '+m.undos:this.tr('boost')+' · '+(m.cooldown>0?Math.ceil(m.cooldown)+' s':this.tr('ready'));if(this.actionButton.textContent!==actionText)this.actionButton.textContent=actionText;const toolbarSig=Array.from(this.toolbar.querySelectorAll('button')).map(button=>button.hidden?'0':'1').join('');if(toolbarSig!==this.toolbarSignature){this.toolbarSignature=toolbarSig;this.resize();}}
       const sig=m.phase+'|'+this.confirm+'|'+(['prism','cloud','tower'].includes(this.kind)?this.worldIndex:'')+(this.kind==='tower'?'|'+(m.endless?'endless':'campaign')+'|'+m.challengeId+'|'+m.loadout.join(',')+'|'+m.availableTypes().join(','):'')+(this.kind==='prism'?'|'+(m.timeAttack?'time':'free'):'');if(sig===this.signature)return;this.signature=sig;this.selected=0;this.overlay.replaceChildren();this.previewCanvas=null;this.overlay.hidden=m.phase==='playing'&&!this.confirm;if(this.overlay.hidden)return;
       const card=this.el('section',undefined,this.overlay,'arcade-sheet');this.el('small',this.tr(this.kind+'Tag'),card);const title=this.el('h1',this.title,card);title.addEventListener('pointerdown',()=>this.secretTap());
       if(this.confirm){this.el('h2',this.tr('exit'),card);this.el('p',this.tr('exitNote'),card);this.button(this.tr('back'),()=>{this.confirm=false;this.clearInput();m.resume();},card);this.button(this.tr('hub'),()=>this.exit(),card);}
