@@ -25,7 +25,7 @@
 <script>
 // Persistent progress is optional. Existing saves are retained until explicitly deleted.
 window.HubStorage = (() => {
-    const keys = ['ua_stats', 'ua_highscores', 'ua_language', 'snake17_highscore', 'ua_audio', 'ua_feedback'];
+    const keys = ['ua_stats', 'ua_highscores', 'ua_language', 'snake17_highscore', 'ua_audio', 'ua_feedback', 'ua_navigation'];
     const memory = new Map();
     let enabled = false, available = true;
     try { enabled = localStorage.getItem('ua_storage_choice') === 'on'; } catch (_) { available = false; }
@@ -6783,9 +6783,285 @@ window.HubOnlineConfig = {
 
 </script>
 <script>
+/* Explicit, progress-independent artwork specifications for all 93 achievements.
+ * Motifs describe the goal; tiers distinguish successive goals in the same family.
+ * No achievement requirements, saved progress, or unlock conditions are changed. */
+(function(root){
+  'use strict';
+  // id, game, motif, tier, semantic detail, goal value, optional visible symbol
+  const records = [
+    ['play_1','hub','controller',1,'first-round',1,'1'],
+    ['play_10','hub','controller',2,'regular-player',10,'10'],
+    ['play_50','hub','controller',3,'seasoned-player',50,'50'],
+    ['play_100','hub','controller',4,'hub-veteran',100,'100'],
+    ['play_coop','arena','team',1,'duo',5],
+    ['coop_20','arena','team',2,'united-team',20],
+    ['survive_60','arena','stopwatch',1,'survival',60,'60'],
+    ['survive_120','arena','stopwatch',2,'survival',120,'120'],
+    ['survive_180','arena','stopwatch',3,'survival',180,'180'],
+    ['survive_300','arena','stopwatch',4,'survival',300,'300'],
+    ['catch_10','arena','target',1,'catch-player',10],
+    ['catch_50','arena','target',2,'catch-player',50],
+    ['pu_10','arena','power',1,'powerup-collection',10],
+    ['pu_50','arena','power',2,'powerup-collection',50],
+    ['pu_100','arena','power',3,'powerup-collection',100],
+    ['wep_10','arena','weapon',1,'single-weapon',10],
+    ['wep_50','arena','weapon',2,'crossed-weapons',50],
+    ['wep_100','arena','weapon',3,'full-arsenal',100],
+    ['boss_1','arena','boss',1,'guardian',1],
+    ['boss_5','arena','boss',2,'guardian',5],
+    ['boss_10','arena','boss',3,'guardian',10],
+    ['revive_5','arena','revive',1,'heart-return',5],
+    ['speed_10','arena','speed',1,'speed-powerup',10],
+    ['shield_10','arena','shield',1,'shield-powerup',10],
+    ['ghost_10','arena','ghost',1,'ghost-powerup',10],
+    ['freeze_10','arena','frost',1,'freeze-powerup',10],
+    ['shrink_10','arena','shrink',1,'shrink-powerup',10],
+    ['bot_win_1','arena','robot',1,'computer-win',1],
+    ['bot_win_10','arena','robot',2,'computer-win',10],
+    ['maps_8','arena','map',1,'eight-maps',8,'8'],
+    ['modes_5','arena','modes',1,'five-modes',5,'5'],
+    ['arena_event','arena','power',2,'special-event',1],
+
+    ['snake_1','snake','snake',1,'first-snake-round',1],
+    ['snake_10','snake','snake',2,'snake-friend',10],
+    ['snake_25','snake','apple',1,'apple-basket',25],
+    ['snake_100','snake','apple',2,'orchard',100],
+    ['snake_score_25','snake','snake-length',1,'long-snake',25],
+    ['snake_score_100','snake','snake-length',2,'master-snake',100],
+    ['snake_combo','snake','combo',1,'apple-chain',5,'5'],
+    ['snake_variant','snake','variants',1,'snake-variants',3,'3'],
+
+    ['breaker_1','breaker','paddle',1,'first-breaker-round',1],
+    ['breaker_bricks','breaker','bricks',1,'broken-blocks',100],
+    ['breaker_score','breaker','score',1,'breaker-record',5000,'5K'],
+    ['breaker_win','breaker','levels',1,'five-cleared-levels',1,'5'],
+
+    ['rally_first','rally','paddle',1,'rally-court',1],
+    ['rally_win','rally','paddle',2,'rally-victory',1],
+    ['rally_hits','rally','paddle',3,'rally-hits',100],
+    ['rally_long','rally','combo',2,'rally-streak',15,'15'],
+
+    ['orbit_first','orbit','rocket',1,'first-launch',1],
+    ['orbit_stars','orbit','star',1,'orbit-star-collection',100],
+    ['orbit_time','orbit','stopwatch',1,'orbit-survival',60,'60'],
+    ['orbit_score','orbit','score',2,'orbit-record',5000,'5K'],
+
+    ['prism_first','prism','tile',1,'first-prism-round',1,'2'],
+    ['prism_merge','prism','merge',1,'tile-pair',100],
+    ['prism_512','prism','tile',2,'prism-milestone',512,'512'],
+    ['prism_2048','prism','tile',3,'prism-milestone',2048,'2048'],
+    ['prism_time','prism','stopwatch',2,'prism-time-attack',512],
+
+    ['cloud_first','cloud','cloud',1,'first-cloud-round',1],
+    ['cloud_height','cloud','jump',1,'cloud-ascent',250,'250'],
+    ['cloud_stars','cloud','star',2,'cloud-star-collection',100],
+    ['cloud_bounce','cloud','platform',1,'island-landings',100],
+
+    ['tower_first','tower','tower',1,'castle-watch',1],
+    ['tower_siege','tower','tower',2,'siege-challenge',1],
+    ['tower_waves','tower','wave',1,'wave-defense',8,'8'],
+    ['tower_kills','tower','cannon',1,'monster-defeat',100],
+    ['tower_build','tower','tower',3,'tower-construction',10],
+    ['tower_upgrade','tower','upgrade',1,'tower-upgrade',20],
+    ['tower_boss','tower','boss',2,'monster-boss',3],
+    ['tower_perfect','tower','castle-shield',1,'perfect-defense',1],
+    ['tower_gold','tower','coin',1,'gold-reserve',1000],
+    ['tower_morph','tower','morph',1,'three-tower-morph',1],
+    ['tower_recycler','tower','recycle',1,'tower-sale',10],
+    ['tower_roster','tower','roster',1,'five-tower-types',5],
+    ['tower_storm','tower','storm',1,'frost-and-storm',100],
+    ['tower_endless','tower','endless',1,'endless-watch',20,'20'],
+
+    ['crystal_mission','crystalrun','mission',1,'crystal-orders',3,'3'],
+    ['crystalrun_first','crystalrun','compass',1,'first-crystal-run',1],
+    ['crystalrun_gems','crystalrun','gem',1,'crystal-collection',50],
+    ['crystalrun_gems_100','crystalrun','gem',2,'crystal-collection',100],
+    ['crystalrun_distance','crystalrun','distance',1,'crystal-run-distance',2000,'2K'],
+    ['crystalrun_flawless','crystalrun','shield',2,'crystal-clean-run',1],
+    ['crystalrun_two_worlds','crystalrun','worlds',1,'crystal-worlds',2,'2'],
+    ['crystalrun_all_worlds','crystalrun','worlds',2,'crystal-worlds',3,'3'],
+
+    ['ny_first','newyork','nyc',1,'big-apple',1],
+    ['ny_5k','newyork','distance',2,'city-route',5000,'5K'],
+    ['ny_stars','newyork','star',3,'broadway-lights',100],
+    ['ny_corners','newyork','turn',1,'street-corners',20],
+    ['ny_metro','newyork','subway',1,'subway-stations',5],
+
+    ['golf_first','minigolf','golf',1,'first-cup',1],
+    ['golf_party','minigolf','golf-party',1,'four-person-flight',1,'4'],
+
+    ['weekly_first','hub','calendar',1,'weekly-challenge',1],
+    ['quest_first','hub','quest',1,'arcade-journey',1],
+    ['eggs_three','hub','easter',1,'hidden-eggs',3,'3']
+  ];
+  const byId = Object.freeze(Object.fromEntries(records.map(([id,game,motif,tier,detail,value,symbol])=>[
+    id,Object.freeze({id,game,motif,tier,detail,value,...(symbol===undefined?{}:{symbol})})
+  ])));
+  const groups = Object.freeze(['hub','arena','snake','breaker','rally','orbit','prism','cloud','tower','crystalrun','newyork','minigolf']);
+  const motifs = Object.freeze([...new Set(records.map(r=>r[2]))]);
+  function inferGame(key){
+    if(/^(?:hub_rounds|games_played|weekly_|quest_|easter_)/.test(key))return 'hub';
+    return groups.find(g=>g!=='hub'&&g!=='arena'&&key.startsWith(g+'_'))||'arena';
+  }
+  function fallbackMotif(game,key){
+    if(/(?:weekly|quest|easter)/.test(key))return /weekly/.test(key)?'calendar':/quest/.test(key)?'quest':'easter';
+    if(game==='hub')return 'controller';
+    if(/boss/.test(key))return 'boss';
+    if(/surviv|time/.test(key))return 'stopwatch';
+    if(/coop/.test(key))return 'team';
+    if(/reviv/.test(key))return 'revive';
+    if(/weapon/.test(key))return 'weapon';
+    if(/power/.test(key))return 'power';
+    if(/catch/.test(key))return 'target';
+    return {arena:'controller',snake:'snake',breaker:'bricks',rally:'paddle',orbit:'rocket',prism:'tile',cloud:'cloud',tower:'tower',crystalrun:'gem',newyork:'nyc',minigolf:'golf'}[game];
+  }
+  function resolve(achievement){
+    const a=typeof achievement==='string'?{id:achievement}:achievement||{};
+    if(Object.prototype.hasOwnProperty.call(byId,a.id))return byId[a.id];
+    // Deliberate fallback for album summaries and third-party/test fixtures only.
+    // Actual shipped achievements are exhaustively listed above.
+    const key=String(a.req_key||''),game=inferGame(key),value=Number(a.req_val);
+    return {id:String(a.id||''),game,motif:fallbackMotif(game,key),tier:1,detail:'summary',value:Number.isFinite(value)&&value>0?value:1};
+  }
+  const api=Object.freeze({byId,resolve,groups,motifs,count:records.length});
+  if(typeof module==='object'&&module.exports)module.exports=api;
+  else root.HubAchievementIcons=api;
+})(typeof window==='object'?window:globalThis);
+
+</script>
+<script>
+/* Original achievement illustrations. Geometry stays crisp at small sizes;
+   status has a separate lock/check shape and never depends on colour alone. */
+(function(root){
+  'use strict';
+  const COLORS={hub:'#f4bf62',arena:'#75bcff',snake:'#79dd98',breaker:'#bb9cff',rally:'#68ddcd',orbit:'#ffbf73',prism:'#e9a0e4',cloud:'#91d5ff',tower:'#addc70',crystalrun:'#62e3d9',newyork:'#ffd26c',minigolf:'#9dde83'};
+  const MOTIFS=['controller','team','stopwatch','target','power','weapon','boss','revive','speed','shield','ghost','frost','shrink','robot','map','modes','snake','apple','snake-length','combo','variants','paddle','bricks','score','levels','rocket','star','gem','merge','tile','cloud','jump','platform','tower','cannon','wave','upgrade','castle-shield','coin','morph','recycle','roster','storm','endless','compass','distance','worlds','mission','nyc','turn','subway','golf','golf-party','calendar','quest','easter','album'];
+  function mix(a,b,t){const ca=a.slice(1).match(/../g).map(x=>parseInt(x,16)),cb=b.slice(1).match(/../g).map(x=>parseInt(x,16));return '#'+ca.map((x,i)=>Math.round(x+(cb[i]-x)*t).toString(16).padStart(2,'0')).join('');}
+  function art(c,done,color){
+    const ink='#102339',main=done?color:'#9aafc0',light=done?'#f2f5dd':'#c8d3dc',gold=done?'#ffd479':'#8295a8',pink=done?'#f58eac':'#a6a8bc',blue=done?'#75c8ff':'#8fa6bb',green=done?'#83dfa2':'#99b2ab';
+    function line(points,fill=ink,width=4){c.beginPath();points.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.strokeStyle=fill;c.lineWidth=width;c.stroke();}
+    function path(commands,fill,stroke=ink,width=4){c.beginPath();commands(c);if(fill){c.fillStyle=fill;c.fill();}if(stroke){c.strokeStyle=stroke;c.lineWidth=width;c.stroke();}}
+    function disk(x,y,r,fill=main,stroke=ink,width=4){path(c=>c.arc(x,y,r,0,Math.PI*2),fill,stroke,width);}
+    function box(x,y,w,h,fill=main,r=6,stroke=ink,width=4){path(c=>c.roundRect(x,y,w,h,r),fill,stroke,width);}
+    function poly(points,fill=main,stroke=ink,width=4){path(c=>{points.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.closePath();},fill,stroke,width);}
+    function star(x,y,r=14,fill=gold){const p=[];for(let i=0;i<10;i++){const a=-Math.PI/2+i*Math.PI/5,rr=i%2?r*.46:r;p.push([x+Math.cos(a)*rr,y+Math.sin(a)*rr]);}poly(p,fill,ink,3);}
+    function arc(x,y,r,a,b,stroke=main,width=5){path(c=>c.arc(x,y,r,a,b),null,stroke,width);}
+    function text(label,x,y,size=17,fill=ink){c.save();c.fillStyle=fill;c.font='900 '+size+'px Arial, sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillText(String(label),x,y);c.restore();}
+    function bolt(x=64,y=60,s=1,fill=gold){poly([[x+7*s,y-29*s],[x-21*s,y+4*s],[x-3*s,y+4*s],[x-9*s,y+29*s],[x+24*s,y-8*s],[x+4*s,y-8*s]],fill);}
+    function gem(x,y,r=22,fill=main){poly([[x,y-r],[x+r*.76,y-r*.37],[x+r*.66,y+r*.47],[x,y+r],[x-r*.66,y+r*.47],[x-r*.76,y-r*.37]],fill);poly([[x,y-r],[x+r*.76,y-r*.37],[x,y],[x-r*.76,y-r*.37]],mix(fill,light,.4),null);poly([[x,y],[x+r*.76,y-r*.37],[x+r*.66,y+r*.47],[x,y+r]],mix(fill,ink,.16),null);line([[x,y-r],[x,y+r]],mix(fill,ink,.2),2);}
+    function apple(x,y,r=18){path(c=>{c.moveTo(x,y-r*.65);c.bezierCurveTo(x+r*.8,y-r*1.15,x+r*1.15,y-r*.17,x+r*.77,y+r*.61);c.bezierCurveTo(x+r*.45,y+r*1.1,x+r*.12,y+r*.87,x,y+r*.87);c.bezierCurveTo(x-r*.14,y+r*.87,x-r*.63,y+r*1.1,x-r*.92,y+r*.35);c.bezierCurveTo(x-r*1.14,y-r*.42,x-r*.63,y-r*1.1,x,y-r*.65);},pink);line([[x,y-r*.63],[x-2,y-r*1.28]],ink,4);path(c=>{c.moveTo(x,y-r*.96);c.quadraticCurveTo(x+r*.55,y-r*1.48,x+r*.7,y-r*.98);c.quadraticCurveTo(x+r*.35,y-r*.6,x,y-r*.96);},green,ink,2);arc(x-r*.32,y-r*.06,r*.36,Math.PI,Math.PI*1.48,light,3);}
+    function cloud(x=64,y=68,s=1){path(c=>{c.moveTo(x-27*s,y+10*s);c.bezierCurveTo(x-43*s,y+7*s,x-38*s,y-14*s,x-24*s,y-13*s);c.bezierCurveTo(x-23*s,y-38*s,x+11*s,y-39*s,x+17*s,y-15*s);c.bezierCurveTo(x+38*s,y-21*s,x+45*s,y+9*s,x+24*s,y+10*s);c.closePath();},light);}
+    function shield(x=64,y=58,s=1){poly([[x-27*s,y-25*s],[x,y-33*s],[x+27*s,y-25*s],[x+24*s,y+11*s],[x,y+32*s],[x-24*s,y+11*s]],main);poly([[x,y-24*s],[x+19*s,y-18*s],[x+16*s,y+7*s],[x,y+22*s]],mix(main,light,.35),null);}
+    function tower(x=64,y=62,s=1,fill=main){box(x-22*s,y-13*s,44*s,39*s,fill,3);poly([[x-27*s,y-13*s],[x-27*s,y-27*s],[x-14*s,y-27*s],[x-14*s,y-19*s],[x-6*s,y-19*s],[x-6*s,y-27*s],[x+6*s,y-27*s],[x+6*s,y-19*s],[x+14*s,y-19*s],[x+14*s,y-27*s],[x+27*s,y-27*s],[x+27*s,y-13*s]],light);box(x-7*s,y+5*s,14*s,21*s,ink,7,null);line([[x-17*s,y-3*s],[x-7*s,y-3*s]],mix(fill,light,.4),3);line([[x+9*s,y+7*s],[x+17*s,y+7*s]],mix(fill,light,.4),3);}
+    function robot(x=64,y=61,s=1){line([[x,y-30*s],[x,y-39*s]],main,4);disk(x,y-40*s,4*s,gold,ink,2);box(x-26*s,y-25*s,52*s,46*s,main,10);box(x-29*s,y-9*s,5*s,16*s,light,2);box(x+24*s,y-9*s,5*s,16*s,light,2);box(x-18*s,y-12*s,36*s,16*s,ink,6,null);disk(x-9*s,y-4*s,3*s,light,null);disk(x+9*s,y-4*s,3*s,light,null);line([[x-10*s,y+12*s],[x+10*s,y+12*s]],ink,4);}
+    function controller(x=64,y=58,s=1){path(c=>{c.moveTo(x-18*s,y-16*s);c.lineTo(x+18*s,y-16*s);c.quadraticCurveTo(x+30*s,y-16*s,x+36*s,y+8*s);c.quadraticCurveTo(x+42*s,y+29*s,x+24*s,y+26*s);c.lineTo(x+10*s,y+12*s);c.lineTo(x-10*s,y+12*s);c.lineTo(x-24*s,y+26*s);c.quadraticCurveTo(x-42*s,y+29*s,x-36*s,y+8*s);c.quadraticCurveTo(x-30*s,y-16*s,x-18*s,y-16*s);},main);line([[x-26*s,y+1*s],[x-10*s,y+1*s]],ink,5);line([[x-18*s,y-7*s],[x-18*s,y+9*s]],ink,5);disk(x+17*s,y-3*s,4*s,gold,ink,2);disk(x+26*s,y+6*s,4*s,pink,ink,2);}
+    function snake(x=64,y=60,s=1,long=false){path(c=>{c.moveTo(x-28*s,y+20*s);c.lineTo(x-6*s,y+20*s);c.quadraticCurveTo(x+13*s,y+20*s,x+13*s,y+3*s);c.lineTo(x+13*s,y-10*s);c.quadraticCurveTo(x+13*s,y-23*s,x+28*s,y-23*s);},null,ink,18*s);path(c=>{c.moveTo(x-28*s,y+20*s);c.lineTo(x-6*s,y+20*s);c.quadraticCurveTo(x+13*s,y+20*s,x+13*s,y+3*s);c.lineTo(x+13*s,y-10*s);c.quadraticCurveTo(x+13*s,y-23*s,x+28*s,y-23*s);},null,green,12*s);box(x+18*s,y-33*s,23*s,21*s,green,8*s);disk(x+32*s,y-28*s,2.6*s,ink,null);disk(x+32*s,y-19*s,2.6*s,ink,null);line([[x-23*s,y+17*s],[x-23*s,y+23*s]],mix(green,ink,.2),2);line([[x-12*s,y+17*s],[x-12*s,y+23*s]],mix(green,ink,.2),2);if(long){path(c=>{c.moveTo(x-28*s,y+20*s);c.quadraticCurveTo(x-47*s,y+20*s,x-37*s,y-1*s);c.quadraticCurveTo(x-30*s,y-16*s,x-14*s,y-11*s);},null,ink,18*s);path(c=>{c.moveTo(x-28*s,y+20*s);c.quadraticCurveTo(x-47*s,y+20*s,x-37*s,y-1*s);c.quadraticCurveTo(x-30*s,y-16*s,x-14*s,y-11*s);},null,green,12*s);}}
+    function paddle(x,y,s=1){box(x-25*s,y-5*s,50*s,11*s,main,5*s);line([[x-15*s,y],[x+15*s,y]],light,2);}
+    function flag(x=75,y=32,s=1){line([[x,y],[x,y+42*s]],light,5*s);poly([[x+2*s,y],[x+28*s,y+8*s],[x+2*s,y+18*s]],pink,ink,3);}
+    function ball(x,y,r=10){disk(x,y,r,light);arc(x,y,r*.55,Math.PI*1.1,Math.PI*1.75,blue,4);}
+    function numberTile(x,y,s=1,label='2',fill=main){box(x-24*s,y-24*s,48*s,48*s,fill,9*s);poly([[x-19*s,y-18*s],[x+19*s,y-18*s],[x,y-4*s]],mix(fill,light,.4),null);poly([[x+19*s,y-18*s],[x+19*s,y+18*s],[x+8*s,y+18*s],[x,y-4*s]],mix(fill,ink,.12),null);text(label,x,y+4*s,String(label).length>3?14*s:20*s);}
+    function timer(x=64,y=59,s=1){box(x-7*s,y-33*s,14*s,7*s,gold,2*s);line([[x,y-27*s],[x,y-22*s]],ink,4);disk(x,y+1*s,25*s,light);arc(x,y+1*s,20*s,Math.PI*1.05,Math.PI*1.9,main,4);line([[x,y-14*s],[x,y+1*s],[x+11*s,y+9*s]],ink,4);disk(x,y+1*s,3*s,main,ink,1);}
+    function shoe(x=65,y=66,s=1){path(c=>{c.moveTo(x-22*s,y-20*s);c.lineTo(x-6*s,y-20*s);c.lineTo(x+2*s,y-3*s);c.lineTo(x+26*s,y+7*s);c.quadraticCurveTo(x+31*s,y+12*s,x+26*s,y+19*s);c.lineTo(x-29*s,y+19*s);c.lineTo(x-26*s,y+5*s);c.closePath();},main);line([[x-26*s,y+12*s],[x+25*s,y+12*s]],light,4);line([[x-5*s,y-5*s],[x+4*s,y-11*s]],ink,3);line([[x+4*s,y],[x+11*s,y-5*s]],ink,3);}
+    function smallCheck(x,y,s=1){line([[x-7*s,y],[x-1*s,y+6*s],[x+10*s,y-8*s]],ink,5*s);}
+    return {ink,main,light,gold,pink,blue,green,line,path,disk,box,poly,star,arc,text,bolt,gem,apple,cloud,shield,tower,robot,controller,snake,paddle,flag,ball,numberTile,timer,shoe,smallCheck};
+  }
+  function drawMotif(c,s,p){
+    const {ink,main,light,gold,pink,blue,green,line,path,disk,box,poly,star,arc,text,bolt,gem,apple,cloud,shield,tower,robot,controller,snake,paddle,flag,ball,numberTile,timer,shoe,smallCheck}=p;
+    const tier=Math.max(1,Math.min(4,Number(s.tier)||1)),detail=String(s.detail||''),value=s.symbol;
+    switch(s.motif){
+      case 'controller':controller(64,58,.9);if(tier>1)star(64,31,9,gold);break;
+      case 'team':disk(45,42,11,main);disk(80,42,11,green);box(29,56,32,25,main,12);box(64,56,32,25,green,12);line([[51,68],[66,76],[79,65]],light,5);if(tier>1)star(64,25,9);break;
+      case 'stopwatch':if(s.game==='prism'){timer(75,62,.79);numberTile(40,43,.53,'2',main);}else{timer(64,59,1.05);if(s.game==='orbit')star(38,31,10);if(tier>2)star(87,39,9);}break;
+      case 'target':disk(64,58,29,light);disk(64,58,20,pink);disk(64,58,10,light);disk(64,58,3,ink,null);line([[83,36],[66,55]],gold,7);poly([[78,34],[94,29],[91,45]],gold);break;
+      case 'power':if(detail==='special-event'){arc(64,59,31,Math.PI*.08,Math.PI*.85,main,5);arc(64,59,31,Math.PI*1.08,Math.PI*1.85,pink,5);bolt(64,59,.83,light);star(36,32,9);star(92,83,9);}else{bolt(62,60,1.1);if(tier>1){disk(88,38,7,blue);disk(35,75,6,pink);}if(tier>2)star(89,77,8);}break;
+      case 'weapon':poly([[39,34],[49,28],[82,61],[76,70],[69,74],[37,41]],light);line([[42,72],[72,42]],main,9);line([[42,82],[29,69]],gold,9);if(tier>1){poly([[82,27],[91,36],[54,73],[46,64]],blue);line([[77,72],[94,55]],gold,7);}break;
+      case 'boss':poly([[38,40],[30,23],[48,34]],gold);poly([[90,40],[99,23],[80,34]],gold);box(35,34,58,53,pink,18);line([[47,47],[58,51]],ink,5);line([[80,47],[70,51]],ink,5);disk(51,56,3,ink,null);disk(76,56,3,ink,null);box(48,69,33,10,ink,5,null);poly([[53,68],[60,68],[57,76]],light,ink,1);poly([[73,68],[80,68],[77,76]],light,ink,1);if(tier>1)star(64,27,7);break;
+      case 'revive':disk(64,61,28,main);poly([[57,40],[71,40],[71,54],[85,54],[85,68],[71,68],[71,82],[57,82],[57,68],[43,68],[43,54],[57,54]],light,ink,3);arc(64,58,36,Math.PI*.9,Math.PI*1.8,gold,5);poly([[92,29],[97,46],[79,42]],gold,ink,2);break;
+      case 'speed':shoe(71,65,.9);line([[26,39],[48,39]],gold,5);line([[23,52],[39,52]],gold,5);line([[27,64],[38,64]],gold,5);break;
+      case 'shield':shield();if(detail==='crystal-clean-run')gem(64,54,17,light);else star(64,55,14,light);break;
+      case 'ghost':path(c=>{c.moveTo(36,82);c.lineTo(36,52);c.bezierCurveTo(36,19,92,19,92,52);c.lineTo(92,82);c.lineTo(80,75);c.lineTo(69,83);c.lineTo(57,75);c.lineTo(46,83);c.closePath();},light);disk(53,52,5,ink,null);disk(75,52,5,ink,null);arc(64,62,7,0,Math.PI,main,3);break;
+      case 'frost':for(let i=0;i<6;i++){const a=i*Math.PI/3;c.save();c.translate(64,59);c.rotate(a);line([[0,0],[0,-30]],blue,6);line([[-8,-23],[0,-16],[8,-23]],light,4);c.restore();}disk(64,59,5,light,ink,2);break;
+      case 'shrink':robot(64,65,.55);poly([[30,30],[30,49],[49,49]],gold,ink,3);line([[28,28],[46,46]],gold,5);poly([[98,30],[98,49],[79,49]],gold,ink,3);line([[100,28],[82,46]],gold,5);break;
+      case 'robot':robot();if(tier>1)star(87,28,10);break;
+      case 'map':poly([[27,37],[49,29],[76,37],[99,29],[99,78],[76,87],[49,79],[27,87]],light);poly([[49,29],[76,37],[76,87],[49,79]],main,ink,3);line([[49,31],[49,76]],mix(main,ink,.2),2);disk(73,55,11,pink,ink,3);poly([[65,64],[81,64],[73,77]],pink,ink,3);disk(73,55,4,light,ink,1);break;
+      case 'modes':controller(64,59,.75);for(const [x,y,fill] of [[39,31,green],[64,27,gold],[89,31,pink]])disk(x,y,7,fill,ink,2);break;
+      case 'snake':snake(58,61,.8);if(tier>1)apple(37,37,10);break;
+      case 'snake-length':snake(62,60,.79,true);line([[32,87],[91,87]],light,3);for(let x=32;x<96;x+=10)line([[x,83],[x,90]],main,3);if(tier>1)star(89,30,9);break;
+      case 'apple':if(tier>1){apple(41,62,14);apple(84,60,15);apple(65,39,15);}else{box(32,62,63,24,gold,3);line([[39,76],[87,76]],ink,3);apple(49,56,15);apple(80,51,16);}break;
+      case 'combo':if(s.game==='rally'){paddle(46,83,.67);paddle(83,34,.67);ball(65,59,12);line([[38,39],[48,50]],gold,4);line([[82,69],[89,79]],gold,4);box(23,25,30,21,light,5);text(value||'15',38,36,14);}else{snake(61,65,.67);star(38,35,15);text(value||'5',38,37,16);line([[74,30],[82,25]],gold,4);line([[83,37],[94,37]],gold,4);}break;
+      case 'variants':snake(56,57,.58);disk(38,77,8,green,ink,3);disk(62,81,8,blue,ink,3);disk(86,77,8,pink,ink,3);break;
+      case 'paddle':if(/rally|court|win|streak|long|hit/.test(detail)){paddle(43,34,.67);paddle(83,82,.67);ball(63,56,12);line([[56,38],[63,43]],gold,3);line([[71,68],[76,74]],gold,3);if(/victory|win/.test(detail))star(92,31,10);if(/hits/.test(detail)){line([[29,56],[39,61]],gold,3);line([[32,67],[43,69]],gold,3);}}else{paddle(64,81,1.1);ball(68,53,13);line([[40,34],[51,43]],gold,4);line([[48,30],[60,39]],gold,4);}break;
+      case 'bricks':for(let i=0;i<5;i++){const x=31+(i%3)*24,y=35+Math.floor(i/3)*20;box(x,y,21,15,i%2?main:light,3,ink,3);}poly([[81,56],[91,57],[94,64],[83,67]],pink,ink,2);ball(80,84,9);line([[82,71],[86,77]],gold,3);break;
+      case 'score':if(s.game==='breaker'){box(30,34,30,15,main,3);box(64,34,32,15,light,3);paddle(64,85,.8);ball(57,68,8);star(85,68,12);}else if(s.game==='orbit'){arc(62,60,28,Math.PI*.2,Math.PI*1.6,blue,4);star(62,56,21);star(93,35,8);}else{disk(64,57,29,main);star(64,57,19);}break;
+      case 'levels':box(29,65,23,18,main,3);box(52,48,23,35,blue,3);box(75,29,23,54,light,3);star(63,29,10);text(value||'5',87,62,18);break;
+      case 'rocket':poly([[62,29],[80,54],[77,71],[64,82],[50,71],[46,54]],light);poly([[48,60],[35,78],[50,76]],main);poly([[79,60],[94,78],[78,76]],main);disk(63,52,8,blue,ink,3);poly([[55,80],[64,95],[72,80]],gold);star(91,31,8);break;
+      case 'star':star(64,60,29);if(tier>1){star(31,31,9,light);star(99,42,8,main);}if(s.game==='newyork'){box(27,84,73,5,main,2,ink,2);line([[32,87],[32,76]],main,4);line([[94,87],[94,76]],main,4);}break;
+      case 'gem':if(/clean|flawless/.test(detail)){shield(64,60,.9);gem(64,55,19,light);}else if(tier>1){gem(42,68,17,blue);gem(85,69,17,main);gem(64,43,22,light);}else gem(64,58,32);break;
+      case 'merge':numberTile(44,56,.65,'2',green);numberTile(84,56,.65,'2',blue);line([[50,82],[77,82]],gold,5);poly([[75,75],[87,82],[75,89]],gold,ink,2);star(64,28,8);break;
+      case 'tile':numberTile(64,59,1.2,value||s.value||'512');if(tier>1){star(30,30,8);star(98,87,8,light);}break;
+      case 'cloud':cloud(65,66,.85);star(67,34,14);break;
+      case 'jump':cloud(65,76,.8);line([[64,60],[64,32]],main,8);poly([[48,44],[64,25],[80,44]],main);if(value)text(value,64,77,14);break;
+      case 'platform':box(27,75,32,12,main,4);box(68,42,33,12,main,4);ball(44,61,9);path(c=>{c.moveTo(47,45);c.quadraticCurveTo(59,20,81,32);},null,gold,4);poly([[74,27],[90,36],[77,40]],gold,ink,2);break;
+      case 'tower':if(detail==='tower-construction'){tower(50,69,.82);line([[76,79],[90,37]],gold,8);poly([[79,29],[96,34],[98,46],[79,40]],light);}else if(detail==='siege-challenge'){tower(71,64,.85);line([[25,39],[47,52]],gold,5);poly([[43,41],[54,57],[37,54]],pink,ink,2);disk(30,74,8,gold,ink,3);}else{tower(64,64,1.05);line([[65,36],[65,22]],ink,4);poly([[67,22],[83,26],[67,33]],pink,ink,2);}break;
+      case 'cannon':box(28,76,74,11,light,4);disk(64,64,21,main);path(c=>{c.moveTo(48,52);c.lineTo(76,32);c.lineTo(92,49);c.lineTo(61,66);c.closePath();},gold);path(c=>c.ellipse(84,40,7,12,-.7,0,Math.PI*2),ink,light,3);disk(64,64,7,light,ink,3);line([[29,38],[37,47]],pink,4);star(35,30,7);break;
+      case 'wave':tower(81,67,.62);for(const [x,y] of [[32,48],[46,60],[31,73]]){disk(x,y,8,pink,ink,3);disk(x+3,y-2,2,ink,null);}poly([[52,28],[76,28],[76,35],[89,35],[66,52],[44,35],[52,35]],main);break;
+      case 'upgrade':tower(49,71,.65);poly([[77,83],[77,52],[64,52],[84,28],[104,52],[91,52],[91,83]],gold);break;
+      case 'castle-shield':tower(47,64,.68);shield(80,65,.67);smallCheck(80,66,.85);break;
+      case 'coin':disk(48,74,20,gold);disk(77,62,20,gold);disk(57,40,20,gold);for(const [x,y] of [[48,74],[77,62],[57,40]]){arc(x,y,14,Math.PI*.8,Math.PI*1.75,light,3);text('$',x,y+1,18);}break;
+      case 'morph':gem(64,59,23,main);bolt(63,60,.5,light);for(const [x,y,fill] of [[35,34,green],[93,34,blue],[64,87,pink]])tower(x,y,.28,fill);line([[44,43],[52,50]],gold,4);line([[84,43],[76,50]],gold,4);line([[64,75],[64,79]],gold,4);break;
+      case 'recycle':tower(64,64,.63);arc(64,58,32,Math.PI*.2,Math.PI*.98,green,6);poly([[31,48],[31,66],[47,60]],green,ink,2);arc(64,58,32,Math.PI*1.22,Math.PI*1.99,gold,6);poly([[95,64],[96,47],[80,53]],gold,ink,2);break;
+      case 'roster':for(const [x,y,fill] of [[30,68,green],[46,45,gold],[64,68,main],[82,45,pink],[98,68,blue]])tower(x,y,.36,fill);line([[25,87],[102,87]],light,4);break;
+      case 'storm':cloud(64,43,.68);bolt(74,70,.7,gold);for(let i=0;i<3;i++){c.save();c.translate(37,74);c.rotate(i*Math.PI/3);line([[0,-11],[0,11]],blue,4);c.restore();}disk(37,74,3,light,ink,1);break;
+      case 'endless':tower(63,48,.62);path(c=>{c.moveTo(64,78);c.bezierCurveTo(34,48,22,96,47,91);c.bezierCurveTo(58,89,71,62,84,65);c.bezierCurveTo(108,70,91,107,64,78);},null,ink,12);path(c=>{c.moveTo(64,78);c.bezierCurveTo(34,48,22,96,47,91);c.bezierCurveTo(58,89,71,62,84,65);c.bezierCurveTo(108,70,91,107,64,78);},null,gold,7);break;
+      case 'compass':disk(64,59,31,light);disk(64,59,24,main,ink,2);poly([[69,32],[55,65],[63,60],[72,66]],pink);poly([[69,32],[55,65],[61,93],[73,61]],light,ink,3);poly([[69,32],[55,65],[64,59]],pink,ink,2);disk(64,59,4,gold,ink,1);break;
+      case 'distance':if(detail==='city-route'){box(29,37,13,30,blue,2);box(43,29,14,37,main,2);line([[49,22],[49,28]],gold,3);}else{line([[30,39],[46,39]],main,4);line([[26,51],[42,51]],main,4);}shoe(72,63,.72);poly([[30,83],[99,83],[99,94],[30,94]],light,ink,3);for(let x=35;x<100;x+=12)line([[x,84],[x,89]],ink,2);break;
+      case 'worlds':disk(63,59,30,blue);path(c=>{c.moveTo(36,48);c.lineTo(49,39);c.lineTo(58,42);c.lineTo(62,52);c.lineTo(52,60);c.lineTo(49,75);c.lineTo(42,78);c.lineTo(38,65);c.closePath();},green,ink,2);path(c=>{c.moveTo(67,36);c.lineTo(84,45);c.lineTo(91,62);c.lineTo(78,63);c.lineTo(73,78);c.lineTo(64,68);c.lineTo(70,55);c.lineTo(64,47);c.closePath();},green,ink,2);arc(63,60,39,Math.PI*.9,Math.PI*1.9,gold,3);star(97,55,8);if(tier>1)star(30,83,8);break;
+      case 'mission':box(37,30,52,59,light,6);box(50,26,26,9,main,3);gem(64,53,14);line([[48,76],[57,82],[78,69]],green,6);break;
+      case 'nyc':box(29,50,19,35,blue,2);box(49,42,20,43,light,2);box(71,54,23,31,main,2);poly([[50,42],[53,42],[53,33],[57,33],[57,23],[61,23],[61,33],[65,33],[65,42],[69,42]],light,ink,3);for(let x=34;x<94;x+=8)line([[x,61],[x,67]],ink,3);line([[29,87],[96,87]],gold,4);apple(87,34,10);break;
+      case 'turn':poly([[32,83],[48,83],[48,54],[76,54],[76,69],[99,46],[76,24],[76,39],[32,39]],main);line([[39,72],[39,47],[82,47]],light,3);break;
+      case 'subway':box(34,28,60,61,main,14);box(42,39,44,24,ink,6);box(47,44,14,14,blue,2,null);box(67,44,14,14,blue,2,null);disk(46,74,5,light,ink,2);disk(82,74,5,light,ink,2);line([[46,90],[40,96]],light,4);line([[81,90],[87,96]],light,4);line([[57,74],[71,74]],ink,3);break;
+      case 'golf':path(c=>c.ellipse(81,84,17,8,0,0,Math.PI*2),ink,main,4);flag(81,28,1.25);ball(42,78,13);line([[25,60],[35,66]],gold,4);line([[29,52],[41,60]],gold,4);break;
+      case 'golf-party':flag(74,27,.9);for(const [x,y,fill] of [[34,61,main],[54,67,blue],[75,74,pink],[96,81,gold]])disk(x,y,9,fill,ink,3);line([[28,89],[97,89]],light,3);break;
+      case 'calendar':box(32,35,64,55,light,6);box(32,35,64,17,main,4,ink,3);line([[45,27],[45,43]],gold,5);line([[82,27],[82,43]],gold,5);smallCheck(64,71,1.25);break;
+      case 'quest':poly([[28,35],[46,28],[78,38],[101,31],[101,81],[78,88],[46,78],[28,86]],light);poly([[46,28],[78,38],[78,88],[46,78]],main,ink,2);line([[37,63],[54,67],[65,54],[86,60]],ink,3);disk(37,63,4,gold,ink,2);star(85,57,10);break;
+      case 'easter':path(c=>{c.moveTo(38,68);c.bezierCurveTo(38,38,64,19,64,19);c.bezierCurveTo(64,19,90,38,90,68);c.bezierCurveTo(90,101,38,101,38,68);},main);line([[42,67],[52,59],[64,67],[76,59],[87,67]],pink,7);for(const [x,y] of [[53,45],[75,45],[52,80],[76,80]])disk(x,y,3,gold,ink,1);break;
+      case 'album':box(29,26,70,65,main,7);line([[39,27],[39,89]],gold,5);box(47,36,19,19,light,4,ink,2);star(56,45,6,gold);box(74,36,17,19,light,4,ink,2);gem(82,45,6,blue);box(47,63,19,19,light,4,ink,2);smallCheck(56,72,.45);box(74,63,17,19,light,4,ink,2);disk(82,72,4,pink,ink,1);break;
+      default:controller(64,58,.9);
+    }
+    // Numeric targets are only rendered when the catalogue requests them.
+    // Tile and combo numbers already belong to their illustrated object.
+    if(value!==undefined&&!['tile','combo','jump','levels'].includes(s.motif)){
+      const label=String(value),w=Math.max(24,Math.min(45,12+label.length*8));box(64-w/2,87,w,17,light,5,ink,2);text(label,64,96,label.length>4?10:12);
+    }
+  }
+  function draw(c,spec,done=true,size=96){
+    if(!c)return;const s=spec||{},scale=Math.max(1,Number(size)||96)/128,color=COLORS[s.game]||COLORS.hub;
+    c.save();c.scale(scale,scale);c.clearRect(0,0,128,128);c.lineCap='round';c.lineJoin='round';
+    const p=art(c,!!done,color),points=[[35,8],[93,8],[120,35],[120,91],[93,119],[35,119],[8,91],[8,35]];
+    const base=c.createLinearGradient(24,12,96,118);base.addColorStop(0,done?'#314761':'#283848');base.addColorStop(1,'#101f32');
+    p.poly(points,base,done?'#e3bd70':'#60788f',4);p.poly([[38,15],[90,15],[113,38],[113,88],[90,111],[38,111],[15,88],[15,38]],null,done?mix(color,'#13253b',.37):'#3f566c',2);
+    c.save();c.globalAlpha=done?.12:.07;p.disk(64,58,40,color,null);c.restore();
+    // All central subjects are original geometric drawings, independent of font emoji.
+    drawMotif(c,s,p);
+    const tier=Math.max(1,Math.min(4,Number(s.tier)||1)),gap=11,start=64-(tier-1)*gap/2;
+    for(let i=0;i<tier;i++)p.poly([[start+i*gap-3,108],[start+i*gap,105],[start+i*gap+3,108],[start+i*gap,112]],done?'#f7d78f':'#8fa4b8',p.ink,1);
+    if(s.status!==false){const status=done?'#8de7b5':'#e1d5b5';p.disk(104,101,16,status,p.ink,4);
+      if(done)p.line([[95,101],[102,108],[114,95]],p.ink,5);
+      else{p.path(c=>{c.moveTo(98,99);c.lineTo(98,94);c.arc(104,94,6,Math.PI,0);c.lineTo(110,99);},null,p.ink,4);p.box(95,98,18,14,p.ink,3,null);p.disk(104,104,2.2,status,null);p.line([[104,105],[104,108]],status,2);}}
+    c.restore();
+  }
+  const api=Object.freeze({draw,MOTIFS:Object.freeze(MOTIFS),COLORS:Object.freeze(COLORS)});
+  if(typeof module==='object'&&module.exports)module.exports=api;else root.HubAchievementArt=api;
+})(typeof window==='object'?window:globalThis);
+
+</script>
+<script>
 /* A compact achievement album. Filtering never changes saved progress. */
 (function(root){
   'use strict';
+  const iconCatalogue=typeof module==='object'&&module.exports?require('./achievement-icon-catalog.js'):root.HubAchievementIcons;
+  const iconArt=typeof module==='object'&&module.exports?require('./achievement-icon-art.js'):root.HubAchievementArt;
   const COLORS={newyork:'#ffd06b',minigolf:'#a6c88c',hub:'#f3c675',arena:'#72b4ff',snake:'#7be3a4',breaker:'#b9a4ff',rally:'#71ddd3',orbit:'#ffc783',prism:'#efaddf',cloud:'#9dd7ff',tower:'#a8e580',crystalrun:'#63eedb'};
   const NAMES={newyork:'New York Rush',minigolf:'Minigolf Cup',arena:'Ultimate Arena',snake:'Snake',breaker:'Neon Breaker',rally:'Neon Rally',orbit:'Orbit Dash',prism:'Prism Merge',cloud:'Cloud Hop',tower:'Tower Bastion',crystalrun:'Crystal Run 3D'};
   const COPY={
@@ -6794,39 +7070,19 @@ window.HubOnlineConfig = {
     fr:['Tous les jeux','Tout le hub','Tous','Débloqués','À débloquer','Prochains objectifs','Ordre initial','Jeu','Statut','Trier','Précédent','Suivant','Page','Aucun succès ne correspond à ces filtres.','Votre album de badges','Succès','Débloqué','Verrouillé'],
     es:['Todos los juegos','Todo el centro','Todos','Desbloqueados','Pendientes','Próximas metas','Orden original','Juego','Estado','Orden','Anterior','Siguiente','Página','No hay logros para estos filtros.','Tu álbum de insignias','Logros','Desbloqueado','Pendiente']
   };
-  function group(a){if(a.req_key==='hub_rounds')return 'hub';return Object.keys(NAMES).find(k=>a.req_key.startsWith(k+'_'))||'arena';}
+  function group(a){return iconCatalogue.resolve(a).game;}
   function progress(a,stats){const raw=Number(stats[a.req_key]);return Math.max(0,Math.min(a.req_val,Number.isFinite(raw)?raw:0));}
   function select(list,stats,{game='all',status='all',sort='near'}={}){
     const result=list.filter(a=>(game==='all'||group(a)===game)&&(status==='all'||(progress(a,stats)>=a.req_val)===(status==='done')));
     if(sort==='near')result.sort((a,b)=>{const pa=progress(a,stats)/a.req_val,pb=progress(b,stats)/b.req_val;return Number(pa>=1)-Number(pb>=1)||pb-pa;});
     return result;
   }
-  function polygon(c,x,y,r,n,fill,rotation=-Math.PI/2){c.beginPath();for(let i=0;i<n;i++){const a=rotation+i/n*Math.PI*2;c.lineTo(x+Math.cos(a)*r,y+Math.sin(a)*r);}c.closePath();c.fillStyle=fill;c.fill();}
-  function star(c,x,y,r,fill){c.beginPath();for(let i=0;i<10;i++){const a=-Math.PI/2+i*Math.PI/5,rr=i%2?r*.44:r;c.lineTo(x+Math.cos(a)*rr,y+Math.sin(a)*rr);}c.closePath();c.fillStyle=fill;c.fill();}
-  function drawBadge(c,a,done=true,size=96){
-    c.save();c.scale(size/96,size/96);c.clearRect(0,0,96,96);const color=COLORS[group(a)],ink=done?'#effbff':'#bccbdd';
-    const gradient=c.createLinearGradient(0,0,96,96);gradient.addColorStop(0,done?'#334763':'#253449');gradient.addColorStop(1,'#121e30');
-    polygon(c,48,46,43,8,gradient,Math.PI/8);c.strokeStyle=done?color:'#506077';c.lineWidth=2;c.stroke();c.fillStyle=color;c.globalAlpha=done?.15:.06;c.beginPath();c.arc(48,44,31,0,7);c.fill();c.globalAlpha=1;c.lineCap='round';c.lineJoin='round';c.strokeStyle=ink;c.lineWidth=4;
-    const k=a.req_key,g=group(a);
-    if(g==='snake'){c.beginPath();c.moveTo(27,59);c.lineTo(53,59);c.quadraticCurveTo(66,59,66,47);c.quadraticCurveTo(66,36,53,36);c.lineTo(37,36);c.lineWidth=11;c.strokeStyle=done?color:ink;c.stroke();c.fillStyle='#142438';c.beginPath();c.arc(34,33,2,0,7);c.fill();c.fillStyle='#f79ba5';c.beginPath();c.arc(30,52,5,0,7);c.fill();}
-    else if(g==='prism'){polygon(c,48,42,24,4,done?color:ink);c.beginPath();c.moveTo(24,42);c.lineTo(48,52);c.lineTo(72,42);c.moveTo(48,18);c.lineTo(48,66);c.strokeStyle='#784c83';c.lineWidth=2;c.stroke();}
-    else if(g==='cloud'){c.fillStyle=ink;for(const [x,y,r] of [[33,48,11],[45,39,16],[61,46,13]]){c.beginPath();c.arc(x,y,r,0,7);c.fill();}star(c,58,23,9,done?color:'#8399b4');}
-    else if(g==='crystalrun'){c.fillStyle=done?color:ink;c.beginPath();c.roundRect(34,39,28,24,8);c.fill();c.fillStyle='#142438';c.beginPath();c.roundRect(37,43,22,7,3);c.fill();c.fillStyle=done?'#eafff2':'#9aadc1';c.fillRect(40,45,4,2);c.fillRect(52,45,4,2);c.fillStyle=done?color:ink;c.beginPath();c.moveTo(33,58);c.lineTo(25,69);c.lineTo(42,65);c.moveTo(62,58);c.lineTo(72,68);c.lineTo(56,65);c.fill();star(c,70,27,9,done?color:'#8399b4');}
-    else if(g==='breaker'){for(let y=0;y<2;y++)for(let x=0;x<3;x++){c.fillStyle=y?ink:color;c.beginPath();c.roundRect(22+x*18,26+y*15,15,10,3);c.fill();}c.beginPath();c.moveTo(33,64);c.lineTo(63,64);c.stroke();}
-    else if(g==='rally'){c.strokeStyle=done?color:ink;for(const [x,y] of [[30,31],[59,56]]){c.beginPath();c.moveTo(x-10,y);c.lineTo(x+10,y);c.stroke();}c.fillStyle=ink;c.beginPath();c.arc(49,43,7,0,7);c.fill();}
-    else if(g==='orbit'){star(c,48,43,25,done?color:ink);c.strokeStyle='#f0edff';c.lineWidth=2;c.beginPath();c.ellipse(48,46,31,12,-.5,0,7);c.stroke();}
-    else if(/surviv|time/.test(k)){c.beginPath();c.arc(48,43,22,0,7);c.stroke();c.beginPath();c.moveTo(48,28);c.lineTo(48,43);c.lineTo(58,49);c.strokeStyle=color;c.stroke();}
-    else if(/boss/.test(k)){c.fillStyle=done?color:ink;c.beginPath();c.roundRect(26,27,44,36,14);c.fill();polygon(c,30,27,10,3,color);polygon(c,66,27,10,3,color);c.fillStyle='#152239';c.fillRect(35,39,6,7);c.fillRect(55,39,6,7);c.beginPath();c.arc(48,48,8,0,Math.PI);c.strokeStyle='#152239';c.stroke();}
-    else if(/catch|kill/.test(k)){for(const r of [24,13,3]){c.beginPath();c.arc(48,43,r,0,7);c.strokeStyle=r===13?color:ink;c.stroke();}}
-    else if(/power|weapon/.test(k)){c.beginPath();c.moveTo(53,18);c.lineTo(29,47);c.lineTo(45,47);c.lineTo(40,68);c.lineTo(67,35);c.lineTo(51,35);c.closePath();c.fillStyle=done?color:ink;c.fill();}
-    else if(/coop|reviv/.test(k)){for(const [x,y] of [[35,34],[60,34]]){c.fillStyle=ink;c.beginPath();c.arc(x,y,9,0,7);c.fill();c.beginPath();c.roundRect(x-12,y+13,24,17,8);c.fill();}}
-    else{c.beginPath();c.moveTo(33,25);c.lineTo(63,25);c.lineTo(60,44);c.quadraticCurveTo(48,59,36,44);c.closePath();c.fillStyle=done?color:ink;c.fill();c.beginPath();c.moveTo(48,51);c.lineTo(48,65);c.moveTo(37,65);c.lineTo(59,65);c.strokeStyle=color;c.stroke();c.beginPath();c.arc(32,33,10,Math.PI/2,Math.PI*1.5);c.arc(64,33,10,-Math.PI/2,Math.PI/2);c.stroke();}
-    c.fillStyle=done?'#e7cb8c':'#687b94';for(let i=0;i<Math.min(3,1+Math.floor(Math.log10(Math.max(1,a.req_val))));i++)star(c,38+i*10,79,4,c.fillStyle);
-    if(done){c.fillStyle='#6de7b5';c.beginPath();c.arc(78,72,11,0,7);c.fill();c.strokeStyle='#102d30';c.lineWidth=3;c.beginPath();c.moveTo(73,72);c.lineTo(77,76);c.lineTo(84,68);c.stroke();}c.restore();
-  }
+  function drawBadge(c,a,done=true,size=96){return iconArt.draw(c,iconCatalogue.resolve(a),done,size);}
+  function drawGameBadge(c,game,size=96){const spec=iconCatalogue.resolve({req_key:game+'_games',req_val:1});return iconArt.draw(c,{...spec,status:false},true,size);}
   let preferences={game:'all',status:'all',sort:'near',page:0};
   function render(parent,{list,stats,language='de',translate=x=>x,sound=()=>{}}){
     const words=COPY[language]||COPY.de,t=i=>words[i],doc=parent.ownerDocument||document;
+    const stateWords=({de:['Freigeschaltet','Noch offen'],en:['Unlocked','Still locked'],fr:['Débloqué','À débloquer'],es:['Desbloqueado','Pendiente']})[language]||['Unlocked','Still locked'];
     const el=(tag,label,host,cls)=>{const n=doc.createElement(tag);if(label!==undefined)n.textContent=label;if(cls)n.className=cls;host?.append(n);return n;};
     if(!doc.getElementById('achievementAlbumStyle')){const style=doc.createElement('style');style.id='achievementAlbumStyle';style.textContent=`
       #infoPanel .achievement-summary{display:flex;gap:20px;align-items:center;padding:18px 22px;background:linear-gradient(110deg,#253b54,#17253b);border:1px solid #566887;border-radius:18px;margin:0 0 20px}
@@ -6836,9 +7092,11 @@ window.HubOnlineConfig = {
       #infoPanel .achievement-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
       #infoPanel section.achievement-card{display:grid;grid-template-columns:76px minmax(0,1fr);gap:14px;padding:18px;margin:0;border-radius:18px;background:linear-gradient(145deg,#1b2b41,#152234);min-width:0;align-content:start}
       #infoPanel .achievement-card.unlocked{border-color:#988659;background:linear-gradient(145deg,#2c3542,#172b34)}#infoPanel .achievement-card canvas{position:static;width:76px;height:76px}#infoPanel .achievement-card h2{font-size:19px;line-height:1.25;margin:5px 0 8px;color:#f2f8ff;overflow-wrap:anywhere}#infoPanel .achievement-card p{font-size:14px;line-height:1.45;margin:0 0 10px}#infoPanel .achievement-card small{font-size:11px;letter-spacing:.05em;color:#aed2e6}#infoPanel .achievement-card progress{width:100%;height:9px;display:block;margin:8px 0}#infoPanel .achievement-progress{grid-column:1/-1;display:flex;flex-direction:column}#infoPanel .achievement-progress span{font-size:12px;color:#b9cdde;display:flex;justify-content:space-between;gap:10px}
+      #infoPanel .achievement-card{border-color:#486079}#infoPanel .achievement-card.unlocked{border:2px solid #b5a377;background:linear-gradient(145deg,#273e3b,#192b39)}#infoPanel .achievement-card canvas{width:76px;height:76px;max-width:100%}#infoPanel .achievement-status{display:inline-block;font:700 12px/1.4 system-ui!important;letter-spacing:0!important;color:#c9dceb!important;background:#21354c;border:1px solid #59758b;border-radius:20px;padding:4px 10px;margin:0 0 7px}#infoPanel .unlocked .achievement-status{color:#d6ffe6!important;background:#214437;border-color:#83bca0}#infoPanel .achievement-progress>span{display:flex;justify-content:space-between;gap:10px;font-variant-numeric:tabular-nums}#infoPanel .achievement-legend{font-size:14px;margin:8px 0 16px;color:#cbdcec}
       @media(max-width:680px){#infoPanel .achievement-grid{grid-template-columns:1fr}#infoPanel .achievement-filters{grid-template-columns:1fr}#infoPanel .achievement-summary{padding:16px}#infoPanel .achievement-pager button{padding:8px 12px}#infoPanel section.achievement-card{grid-template-columns:64px minmax(0,1fr);gap:12px}#infoPanel .achievement-card canvas{width:64px;height:64px}}
     `;doc.head.append(style);}
-    const done=list.filter(a=>progress(a,stats)>=a.req_val).length,summary=el('div',undefined,parent,'achievement-summary'),medal=el('canvas',undefined,summary);medal.width=96;medal.height=96;medal.style.position='static';medal.style.width='80px';medal.style.height='80px';medal.setAttribute('aria-hidden','true');drawBadge(medal.getContext('2d'),{req_key:'hub_rounds',req_val:100},true);const summaryText=el('div',undefined,summary);el('p',t(14),summaryText);el('strong',done+' / '+list.length,summaryText);el('p',t(3)+' · '+Math.round(done/list.length*100)+'%',summaryText);
+    const done=list.filter(a=>progress(a,stats)>=a.req_val).length,summary=el('div',undefined,parent,'achievement-summary'),medal=el('canvas',undefined,summary);medal.width=medal.height=160;medal.style.position='static';medal.style.width=medal.style.height='80px';medal.setAttribute('aria-hidden','true');iconArt.draw(medal.getContext('2d'),{id:'album-summary',game:'hub',motif:'album',tier:1,detail:'album',status:false},true,160);const summaryText=el('div',undefined,summary);el('p',t(14),summaryText);el('strong',done+' / '+list.length,summaryText);el('p',t(3)+' · '+(list.length?Math.round(done/list.length*100):0)+'%',summaryText);
+    el('p',({de:'Schloss: noch offen. Häkchen: freigeschaltet.',en:'Lock: still locked. Checkmark: unlocked.',fr:'Cadenas : à débloquer. Coche : débloqué.',es:'Candado: pendiente. Marca: desbloqueado.'})[language]||'Lock: still locked. Checkmark: unlocked.',parent,'achievement-legend');
     const filters=el('div',undefined,parent,'achievement-filters');
     const groups=[['all',t(0)],['hub',t(1)],...Object.entries(NAMES)];
     function choice(key,label,values){const wrap=el('label',label,filters),input=el('select',undefined,wrap);input.setAttribute('aria-label',label);for(const [value,name] of values){const o=el('option',name,input);o.value=value;}input.value=preferences[key];input.addEventListener('change',()=>{preferences={...preferences,[key]:input.value,page:0};sound('toggle');draw();});return input;}
@@ -6848,14 +7106,14 @@ window.HubOnlineConfig = {
     function draw(){const filtered=select(list,stats,preferences),pages=Math.max(1,Math.ceil(filtered.length/12));preferences.page=Math.min(pages-1,Math.max(0,preferences.page));page.textContent=`${t(12)} ${preferences.page+1} / ${pages} · ${filtered.length} ${t(15)}`;prev.disabled=preferences.page===0;next.disabled=preferences.page>=pages-1;grid.replaceChildren();
       if(!filtered.length)el('p',t(13),grid);
       for(const a of filtered.slice(preferences.page*12,(preferences.page+1)*12)){
-        const value=progress(a,stats),unlocked=value>=a.req_val,card=el('section',undefined,grid,'achievement-card'+(unlocked?' unlocked':'')),icon=el('canvas',undefined,card);icon.width=icon.height=96;icon.setAttribute('aria-hidden','true');drawBadge(icon.getContext('2d'),a,unlocked);
-        const body=el('div',undefined,card);el('small',group(a)==='hub'?t(1):NAMES[group(a)],body);el('h2',translate(a.name),body);el('p',translate(a.desc),body);
-        const progressBox=el('div',undefined,card,'achievement-progress'),labels=el('span',undefined,progressBox);el('span',unlocked?t(16):t(17),labels);el('span',`${Math.floor(value)} / ${a.req_val}`,labels);const bar=el('progress',undefined,progressBox);bar.max=a.req_val;bar.value=value;bar.setAttribute('aria-label',translate(a.name));
+        const value=progress(a,stats),unlocked=value>=a.req_val,card=el('section',undefined,grid,'achievement-card'+(unlocked?' unlocked':'')),icon=el('canvas',undefined,card);card.dataset.achievement=a.id;card.dataset.state=unlocked?'unlocked':'locked';icon.width=icon.height=192;icon.dataset.achievementIconId=a.id;icon.dataset.achievementMotif=iconCatalogue.resolve(a).motif;icon.setAttribute('aria-hidden','true');drawBadge(icon.getContext('2d'),a,unlocked,192);
+        const body=el('div',undefined,card);el('small',group(a)==='hub'?t(1):NAMES[group(a)],body);el('h2',translate(a.name),body);el('span',stateWords[unlocked?0:1],body,'achievement-status');el('p',translate(a.desc),body);
+        const progressBox=el('div',undefined,card,'achievement-progress'),labels=el('span',undefined,progressBox);el('span',`${Math.floor(value)} / ${a.req_val}`,labels);el('span',Math.floor(value/a.req_val*100)+'%',labels);const bar=el('progress',undefined,progressBox);bar.max=a.req_val;bar.value=value;bar.setAttribute('aria-label',translate(a.name));
       }
     }
     prev.addEventListener('click',()=>{if(!prev.disabled){preferences.page--;sound('click');draw();}});next.addEventListener('click',()=>{if(!next.disabled){preferences.page++;sound('click');draw();}});draw();
   }
-  const api={group,progress,select,drawBadge,render,COLORS,reset(){preferences={game:'all',status:'all',sort:'near',page:0};}};
+  const api={group,progress,select,drawBadge,drawGameBadge,render,COLORS,reset(){preferences={game:'all',status:'all',sort:'near',page:0};}};
   if(typeof module==='object'&&module.exports)module.exports=api;else root.HubAchievements=api;
 })(typeof window==='object'?window:globalThis);
 
@@ -6874,20 +7132,28 @@ window.HubOnlineConfig = {
     .hub-game-toolbar{border-radius:16px;background:#111e30ee;border:1px solid #334863;padding:8px!important;box-sizing:border-box}
     #hubToast{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:12000;max-width:min(420px,calc(100vw - 32px));box-sizing:border-box;padding:13px 20px;border:1px solid var(--hub-accent);border-radius:14px;background:#142238f5;box-shadow:0 8px 32px #0006;color:#eff8ff;font:600 16px/1.45 Arial,sans-serif;text-align:center;white-space:pre-line;overflow-wrap:anywhere;pointer-events:none}
     #hubToast[hidden]{display:none}
+    #hubToast.achievement-toast{text-align:left;padding:12px 16px;width:min(420px,calc(100vw - 32px))}#hubToast .achievement-toast-row{display:grid;grid-template-columns:48px minmax(0,1fr);align-items:center;gap:12px;padding:5px 0}#hubToast .achievement-toast-row canvas{position:static!important;width:48px;height:48px;flex-shrink:0}#hubToast .achievement-toast-row small{display:block;font-size:11px;font-weight:600;color:#bce9cc}#hubToast .achievement-toast-row strong{display:block;font-size:15px;line-height:1.3;overflow-wrap:anywhere}
     @media(prefers-reduced-motion:reduce){#infoPanel button,.hub-game-toolbar button{transition:none;transform:none!important}}
     .hub-still button{transition:none!important;transform:none!important}
   `;
   document.head.append(style);
   const toast=document.createElement('div');toast.id='hubToast';toast.hidden=true;toast.setAttribute('role','status');toast.setAttribute('aria-live','polite');document.body.append(toast);
-  let expiry=0,current='hub';
+  let expiry=0,current='hub',achievementQueue=[];
+  function showAchievementBatch(){
+    const batch=achievementQueue.splice(0,3);if(!batch.length){toast.hidden=true;return;}
+    toast.replaceChildren();toast.className='achievement-toast';toast.style.borderColor='#b6a477';
+    for(const item of batch){const row=document.createElement('div');row.className='achievement-toast-row';const icon=document.createElement('canvas');icon.width=icon.height=112;icon.setAttribute('aria-hidden','true');icon.dataset.achievementIconId=item.achievement.id;row.append(icon);HubAchievements.drawBadge(icon.getContext('2d'),item.achievement,true,112);const copy=document.createElement('div'),label=document.createElement('small'),name=document.createElement('strong');label.textContent=item.label;name.textContent=item.name;copy.append(label,name);row.append(copy);toast.append(row);}
+    toast.hidden=false;expiry=performance.now()+3600;
+  }
   function pill(c,x,y,w,h,color){c.fillStyle=color;c.beginPath();c.roundRect?c.roundRect(x,y,w,h,Math.min(h/2,12)):c.rect(x,y,w,h);c.fill();}
   function circle(c,x,y,r,color){c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fillStyle=color;c.fill();}
   window.HubPresentation={
     color:game=>colors[game]||colors.hub,
     theme(game){current=colors[game]?game:'hub';document.documentElement.style.setProperty?.('--hub-accent',colors[current]);},
     motion(enabled){document.body.classList.toggle('hub-still',!enabled);},
-    notify(text,game=current){toast.textContent=text;toast.style.borderColor=colors[game]||colors.hub;toast.hidden=false;expiry=performance.now()+3600;},
-    tick(){if(!toast.hidden&&performance.now()>expiry)toast.hidden=true;},
+    notify(text,game=current){toast.className='';toast.textContent=text;toast.style.borderColor=colors[game]||colors.hub;toast.hidden=false;expiry=performance.now()+3600;},
+    notifyAchievements(list,{label='',translate=x=>x}={}){if(!Array.isArray(list)||!list.length)return;for(const achievement of list)achievementQueue.push({achievement,label,name:translate(achievement.name)});if(achievementQueue.length>96)achievementQueue=achievementQueue.slice(-96);if(toast.hidden||toast.className!=='achievement-toast')showAchievementBatch();},
+    tick(){if(!toast.hidden&&performance.now()>expiry){if(achievementQueue.length)showAchievementBatch();else toast.hidden=true;}},
     preview(c,game,x,y,w,h,time=0){
       if(document.body.classList?.contains?.('hub-still')||window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)time=0;
       c.save();c.beginPath();c.rect(x,y,w,h);c.clip();c.fillStyle='#0b1525';c.fillRect(x,y,w,h);
@@ -7037,6 +7303,329 @@ window.HubOnlineConfig = {
 
 </script>
 <script>
+// Reloadable game links use the same document. No game state is stored in URLs.
+(function(root,factory){
+  if(typeof module==='object'&&module.exports)module.exports={createHubNavigation:factory};
+  else root.HubNavigation=factory(root);
+})(typeof window==='object'?window:globalThis,function(env){
+  'use strict';
+  const titles={arena:'Ultimate Arena v2',snake:'Snake',breaker:'Neon Breaker',rally:'Neon Rally',orbit:'Orbit Dash',prism:'Prism Merge',cloud:'Cloud Hop',tower:'Tower Bastion',crystalrun:'Crystal Run 3D',newyork:'New York Rush',minigolf:'Minigolf Cup'};
+  const valid=id=>Object.prototype.hasOwnProperty.call(titles,id);
+  const key='ua_navigation';let enabled=true,callbacks={},started=false,applying=false,current=null,index=0,currentURL='',pending=null,restoring=false;
+  try{const saved=JSON.parse(env.HubStorage?.getItem(key)||'null');if(typeof saved?.directLinks==='boolean')enabled=saved.directLinks;}catch{}
+  function url(){try{return new URL(env.location.href);}catch{return new URL('file:///index.html');}}
+  function parse(value=url()){
+    const path=value.pathname.match(/^\/spiele\/([a-z]+)\/?$/)?.[1];
+    const id=path||value.searchParams.get('game');return valid(id)?id:null;
+  }
+  function href(id){
+    const target=url();target.hash='';target.search='';
+    // Standalone downloads retain their filename; the online server has clean paths.
+    if(target.protocol==='file:'||(!/^\/(?:index\.html|spiele\/[a-z]+\/?|room\/[A-Z0-9]+\/?)?$/.test(target.pathname))){
+      if(valid(id))target.searchParams.set('game',id);
+    }else target.pathname=valid(id)?'/spiele/'+id:'/';
+    return target.href;
+  }
+  function persist(){try{env.HubStorage?.setItem(key,JSON.stringify({directLinks:enabled}));}catch{}}
+  function setTitle(){if(env.document)env.document.title=valid(current)?titles[current]+' · Manuels Arcade':'Manuels Arcade · Spiele-Hub';}
+  function write(replace=false){
+    const target=href(enabled?current:null),value={hubRoute:{v:1,index,game:current}};
+    try{env.history?.[replace?'replaceState':'pushState'](value,'',target);currentURL=target;}catch{currentURL=url().href;}
+    setTitle();
+  }
+  function observe(game){
+    if(game!==null&&!valid(game))return;
+    if(game===current)return;
+    current=game;setTitle();if(!started||applying)return;
+    if(enabled){index++;write();}else write(true);
+  }
+  function apply(game){
+    applying=true;
+    try{callbacks.leave?.();if(valid(game))callbacks.open?.(game);else callbacks.hub?.();current=valid(game)?game:null;}
+    finally{applying=false;setTitle();}
+  }
+  function pop(event){
+    if(restoring){restoring=false;return;}
+    const target=parse(),destination=url().href,targetIndex=event?.state?.hubRoute?.index;
+    if(target===current)return;
+    if(pending){pending.target=target;pending.destination=destination;pending.index=targetIndex;return;}
+    const accept=()=>{currentURL=destination;if(Number.isInteger(targetIndex))index=targetIndex;apply(target);if(!enabled)write(true);};
+    if(!callbacks.active?.()){accept();return;}
+    callbacks.pause?.();pending={target,destination,index:targetIndex};
+    callbacks.confirm?.(approved=>{
+      const choice=pending;pending=null;if(!choice)return;
+      if(approved){currentURL=choice.destination;if(Number.isInteger(choice.index))index=choice.index;apply(choice.target);if(!enabled)write(true);}
+      else if(Number.isInteger(choice.index)&&choice.index!==index&&env.history?.go){restoring=true;env.history.go(index-choice.index);}
+      else{try{env.history?.replaceState({hubRoute:{v:1,index,game:current}},'',currentURL);}catch{}setTitle();}
+    });
+  }
+  const api={titles,valid,parse,href,observe,persist,
+    configure(value){callbacks=value||{};},
+    start(){if(started)return;started=true;const initial=parse();currentURL=url().href;const restored=env.history?.state?.hubRoute;if(restored?.v===1&&Number.isSafeInteger(restored.index)&&restored.index>=0)index=restored.index;try{env.history?.replaceState({hubRoute:{v:1,index,game:initial}},'',currentURL);}catch{}
+      if(initial){apply(initial);if(!enabled)write(true);}else setTitle();},
+    get enabled(){return enabled;},get current(){return current;},get pending(){return !!pending;},
+    setEnabled(value){enabled=!!value;persist();if(started)write(true);env.dispatchEvent?.(new env.Event('hub-navigation-change'));return enabled;},
+    reset(){enabled=true;persist();if(started)write(true);env.dispatchEvent?.(new env.Event('hub-navigation-change'));},
+    follow(event,id,action){if(event?.button>0||event?.ctrlKey||event?.metaKey||event?.shiftKey||event?.altKey)return false;event?.preventDefault?.();action();return true;}
+  };
+  env.addEventListener?.('popstate',pop);return api;
+});
+
+</script>
+<script>
+/* Optional visual guides. Scenes are illustrations, never live games or recorded scores. */
+(function(root,factory){
+  if(typeof module==='object'&&module.exports)module.exports={create:factory};
+  else root.HubTutorials=factory(root);
+})(typeof window==='object'?window:globalThis,function(root){
+  'use strict';
+  const doc=root.document,langs=['de','en','fr','es'];
+  const L=(de,en,fr,es)=>({de,en,fr,es});
+  const S=(title,text,control)=>({title,text,control});
+  const words={
+    guide:L('So geht’s','How to play','Comment jouer','Cómo jugar'),
+    close:L('Anleitung schließen','Close guide','Fermer le guide','Cerrar guía'),
+    back:L('Zurück','Previous','Précédent','Anterior'),next:L('Weiter','Next','Suivant','Siguiente'),
+    skip:L('Überspringen','Skip guide','Passer le guide','Saltar guía'),
+    play:L('Zum Spiel','Back to game','Vers le jeu','Ir al juego'),
+    pause:L('Animation pausieren','Pause animation','Pause de l’animation','Pausar animación'),
+    resume:L('Animation fortsetzen','Resume animation','Reprendre l’animation','Reanudar animación'),
+    still:L('Ruhige Ansicht','Still view','Vue fixe','Vista estática'),
+    step:L('Schritt','Step','Étape','Paso'),
+    isolated:L('Drei kurze Schritte. In deinem Tempo.','Three quick steps. At your own pace.','Trois petites étapes. À ton rythme.','Tres pasos breves. A tu ritmo.'),
+    controls:L('So steuerst du','Controls','Commandes','Controles'),
+    demo:L('Illustration zur Anleitung','Guide illustration','Illustration du guide','Ilustración de la guía')
+  };
+  const catalogue={
+    arena:{name:'Ultimate Arena',color:'#69d4ff',steps:[
+      S(L('Bewege deinen Spieler','Move your player','Déplace ton joueur','Mueve a tu jugador'),L('Lenke die blaue Figur. Im Einzelspiel kannst du auch die Pfeiltasten verwenden.','Steer the blue player. In solo play, arrow keys work too.','Dirige le joueur bleu. En solo, les flèches fonctionnent aussi.','Dirige al jugador azul. En solitario también sirven las flechas.'),L('P1: WASD · P2: Pfeile · Touch-Sticks / Controller','P1: WASD · P2: arrows · touch sticks / controller','J1 : WASD · J2 : flèches · sticks tactiles / manette','J1: WASD · J2: flechas · palancas táctiles / mando')),
+      S(L('Sammle als Läufer','Collect as the runner','Ramasse en tant que coureur','Recoge como corredor'),L('Im Fangen-Modus sammelt nur der Läufer die goldenen Punkte. Der rote Fänger sammelt keine.','In Tag mode, only the runner collects gold points. The red chaser cannot collect them.','En mode poursuite, seul le coureur ramasse les points dorés, pas le poursuivant rouge.','En el modo de persecución, solo el corredor recoge puntos dorados, no el perseguidor rojo.'),L('Zum goldenen Punkt bewegen','Move to the gold point','Va vers le point doré','Muévete hacia el punto dorado')),
+      S(L('Berührung tauscht die Rollen','Tagging swaps the roles','Le contact échange les rôles','El contacto cambia los papeles'),L('Berührt der Fänger den Läufer, wechseln die Rollen. Die anderen Arena-Modi haben eigene Ziele.','When the chaser touches the runner, they swap roles. Other Arena modes have different goals.','Quand le poursuivant touche le coureur, les rôles changent. Les autres modes ont leurs propres objectifs.','Cuando el perseguidor toca al corredor, cambian los papeles. Otros modos tienen objetivos distintos.'),L('Fangen: ausweichen oder berühren · Esc: Pause','Tag: dodge or touch · Esc: pause','Poursuite : évite ou touche · Échap : pause','Persecución: esquiva o toca · Esc: pausa'))
+    ]},
+    snake:{name:'Snake',color:'#7aef98',steps:[
+      S(L('Lenke vor der Ecke','Turn before the corner','Tourne avant le coin','Gira antes de la esquina'),L('Die Schlange läuft von selbst. Ändere ihre Richtung, bevor sie auf ein Hindernis trifft.','The snake moves on its own. Change direction before it hits an obstacle.','Le serpent avance tout seul. Change sa direction avant un obstacle.','La serpiente avanza sola. Cambia su dirección antes de un obstáculo.'),L('Solo: Pfeile / eingestellte Tasten · Touch-Richtungstasten','Solo: arrows / chosen keys · touch directions','Solo : flèches / touches choisies · directions tactiles','Solo: flechas / teclas elegidas · direcciones táctiles')),
+      S(L('Ein Apfel lässt dich wachsen','An apple makes you grow','Une pomme te fait grandir','Una manzana te hace crecer'),L('Erreiche den Apfel. Deine Schlange wird länger, und du erhältst Punkte.','Reach the apple. Your snake grows longer and you earn points.','Atteins la pomme. Le serpent grandit et tu gagnes des points.','Llega a la manzana. La serpiente crece y ganas puntos.'),L('In Richtung Apfel lenken','Steer towards the apple','Dirige-toi vers la pomme','Dirígete hacia la manzana')),
+      S(L('Lass dir Platz','Leave room to move','Garde de la place','Deja espacio'),L('Meide deinen Körper und Hindernisse. Der Rand ist je nach Einstellung tödlich oder führt zur anderen Seite.','Avoid your body and obstacles. The edge is either deadly or wraps around, depending on settings.','Évite ton corps et les obstacles. Selon le réglage, le bord est mortel ou mène de l’autre côté.','Evita tu cuerpo y obstáculos. Según el ajuste, el borde es mortal o lleva al otro lado.'),L('Zwei Spieler: P2 nutzt Pfeile · Esc / P: Pause','Two players: P2 uses arrows · Esc / P: pause','Deux joueurs : J2 utilise les flèches · Échap / P : pause','Dos jugadores: J2 usa flechas · Esc / P: pausa'))
+    ]},
+    breaker:{name:'Neon Breaker',color:'#5ee5dc',steps:[
+      S(L('Starte den Ball','Launch the ball','Lance la balle','Lanza la pelota'),L('Zu Beginn liegt der Ball auf deinem Schläger. Starte ihn, sobald du bereit bist.','The ball starts on your paddle. Launch it when you are ready.','La balle commence sur ta raquette. Lance-la quand tu es prêt.','La pelota empieza en tu pala. Lánzala cuando estés listo.'),L('Klick / Leertaste','Click / Space','Clic / Espace','Clic / Espacio')),
+      S(L('Fange ihn mit dem Schläger','Catch it with the paddle','Renvoie-la avec la raquette','Devuélvela con la pala'),L('Bewege den Schläger unter den Ball. Er prallt nach oben zurück.','Move the paddle under the ball. It bounces back upwards.','Place la raquette sous la balle. Elle rebondit vers le haut.','Coloca la pala bajo la pelota. Rebota hacia arriba.'),L('Maus / Touch ziehen · A D / ← →','Mouse / touch drag · A D / ← →','Souris / glisser · A D / ← →','Ratón / arrastrar · A D / ← →')),
+      S(L('Räume die Blöcke ab','Clear the bricks','Détruis les briques','Rompe los bloques'),L('Triff die Blöcke mit dem Ball. Boni können den Schläger verbreitern, den Ball bremsen oder ein Leben geben.','Hit bricks with the ball. Bonuses can widen the paddle, slow the ball or add a life.','Frappe les briques. Des bonus élargissent la raquette, ralentissent la balle ou donnent une vie.','Golpea los bloques. Los bonos amplían la pala, frenan la pelota o dan una vida.'),L('Fünf Level · Esc / P: Pause','Five levels · Esc / P: pause','Cinq niveaux · Échap / P : pause','Cinco niveles · Esc / P: pausa'))
+    ]},
+    rally:{name:'Neon Rally',color:'#57e7dc',steps:[
+      S(L('Bewege deinen Schläger','Move your paddle','Déplace ta raquette','Mueve tu pala'),L('Dein Schläger ist unten. Bleibe auf der Höhe, an der der Ball ankommt.','Your paddle is at the bottom. Line up with the incoming ball.','Ta raquette est en bas. Aligne-la avec la balle qui arrive.','Tu pala está abajo. Alinéala con la pelota que llega.'),L('Unten: A / D · oben: ← / → · Touch: eigene Hälfte','Bottom: A / D · top: ← / → · touch: your half','Bas : A / D · haut : ← / → · tactile : ta moitié','Abajo: A / D · arriba: ← / → · táctil: tu mitad')),
+      S(L('Der Treffpunkt zählt','The contact point matters','Le point de contact compte','Importa dónde golpeas'),L('Triff den Ball mit einer Schlägerseite, um ihn schräg zurückzuschicken.','Hit with the side of the paddle to send the ball back at an angle.','Frappe avec le côté de la raquette pour renvoyer la balle en biais.','Golpea con un lado de la pala para devolver la pelota en ángulo.'),L('Schläger passend verschieben','Position the paddle','Place la raquette','Coloca la pala')),
+      S(L('Spiele bis sieben','Play to seven','Joue jusqu’à sept','Juega hasta siete'),L('Lässt die andere Seite den Ball vorbei, gewinnst du einen Punkt. Wer zuerst sieben hat, gewinnt.','If the other side misses, you score a point. First to seven wins.','Si l’autre côté manque la balle, tu marques un point. Le premier à sept gagne.','Si el otro lado falla, ganas un punto. Gana quien llegue primero a siete.'),L('Gegen Computer oder zu zweit · Controller: linker Stick','Computer or two players · controller: left stick','Ordinateur ou deux joueurs · manette : stick gauche','Ordenador o dos jugadores · mando: palanca izquierda'))
+    ]},
+    orbit:{name:'Orbit Dash',color:'#9fc0ff',steps:[
+      S(L('Weiche den Meteoriten aus','Dodge the meteors','Évite les météores','Esquiva los meteoritos'),L('Steuere dein Schiff in den freien Bereich. Meteoriten kosten ein Leben.','Steer your ship into a clear area. Meteors cost a life.','Dirige le vaisseau vers une zone libre. Un météore coûte une vie.','Dirige la nave a una zona libre. Los meteoritos cuestan una vida.'),L('WASD / Pfeile · ziehen · linker Stick','WASD / arrows · drag · left stick','WASD / flèches · glisser · stick gauche','WASD / flechas · arrastrar · palanca izquierda')),
+      S(L('Sammle die Sterne','Collect the stars','Ramasse les étoiles','Recoge las estrellas'),L('Berühre einen Stern mit deinem Schiff. Das bringt dir Punkte.','Touch a star with your ship to earn points.','Touche une étoile avec le vaisseau pour gagner des points.','Toca una estrella con la nave para ganar puntos.'),L('Zum Stern bewegen','Move to the star','Va vers l’étoile','Muévete hacia la estrella')),
+      S(L('Nutze kurz den Schild','Use the brief shield','Utilise le bouclier bref','Usa el escudo breve'),L('Der Schild schützt nur kurz. Danach musst du warten, bis er wieder bereit ist.','The shield lasts briefly. Then wait until it is ready again.','Le bouclier dure peu. Attends ensuite qu’il soit prêt de nouveau.','El escudo dura poco. Después espera a que vuelva a estar listo.'),L('Leertaste / Schildknopf · Controller: A','Space / shield button · controller: A','Espace / bouton bouclier · manette : A','Espacio / botón de escudo · mando: A'))
+    ]},
+    prism:{name:'Prism Merge',color:'#c0a1ff',steps:[
+      S(L('Verschiebe die ganze Reihe','Slide the whole row','Déplace toute la rangée','Desliza toda la fila'),L('Eine Richtung bewegt alle Kacheln. Überlege, wo sie danach liegen.','One direction moves every tile. Think about where they will end up.','Une direction déplace toutes les tuiles. Prévois leur position.','Una dirección mueve todas las fichas. Piensa dónde quedarán.'),L('Pfeile / WASD · wischen · Steuerkreuz','Arrows / WASD · swipe · D-pad','Flèches / WASD · glisser · croix directionnelle','Flechas / WASD · deslizar · cruceta')),
+      S(L('Gleiche Zahlen verbinden','Merge matching numbers','Fusionne les nombres égaux','Combina números iguales'),L('Zwei gleiche Kacheln verschmelzen. Aus 2 und 2 wird 4. Arbeite dich bis 2048 vor.','Two matching tiles merge. Two 2s make 4. Work towards 2048.','Deux tuiles identiques fusionnent. Deux 2 font 4. Vise 2048.','Dos fichas iguales se combinan. Dos 2 forman 4. Avanza hasta 2048.'),L('Gleiche Zahlen zusammenschieben','Slide equal numbers together','Rapproche les nombres égaux','Junta números iguales')),
+      S(L('Halte Felder frei','Keep spaces free','Garde des cases libres','Deja casillas libres'),L('Nach einem Zug kommt eine neue Kachel. Ohne freie Felder oder mögliche Kombination endet die Runde.','A new tile appears after a move. With no room or matching pairs, the round ends.','Une nouvelle tuile apparaît après un coup. Sans place ni fusion possible, la partie finit.','Aparece una ficha tras cada movimiento. Sin espacio ni combinaciones, termina la ronda.'),L('Rückgängig: Z / Knopf / Controller X · höchstens dreimal','Undo: Z / button / controller X · up to three times','Annuler : Z / bouton / X manette · trois fois maximum','Deshacer: Z / botón / X del mando · hasta tres veces'))
+    ]},
+    cloud:{name:'Cloud Hop',color:'#ace4ff',steps:[
+      S(L('Der Fuchs springt selbst','The fox jumps on its own','Le renard saute tout seul','El zorro salta solo'),L('Du lenkst nach links und rechts. Ziele auf die nächste Plattform.','You steer left and right. Aim for the next platform.','Dirige-le à gauche ou à droite. Vise la plateforme suivante.','Dirígelo a izquierda y derecha. Apunta a la siguiente plataforma.'),L('A / D oder ← / → · ziehen · linker Stick','A / D or ← / → · drag · left stick','A / D ou ← / → · glisser · stick gauche','A / D o ← / → · arrastrar · palanca izquierda')),
+      S(L('Lande und steige höher','Land and climb higher','Atterris et monte','Aterriza y sube'),L('Landest du auf einer Plattform, geht es wieder nach oben. Sammle unterwegs Sterne.','Landing on a platform sends you upwards again. Collect stars along the way.','Atterrir sur une plateforme te renvoie en haut. Ramasse des étoiles en chemin.','Aterrizar en una plataforma te impulsa otra vez. Recoge estrellas por el camino.'),L('Im Sprung auf die Plattform lenken','Steer towards the platform while jumping','Vise la plateforme pendant le saut','Dirígete a la plataforma durante el salto')),
+      S(L('Boost für den großen Sprung','Boost for a bigger jump','Boost pour un grand saut','Impulso para saltar más'),L('Der Boost hilft dir weiter nach oben. Danach braucht er acht Sekunden, bis er wieder bereit ist.','The boost helps you jump higher. It needs eight seconds to recharge.','Le boost aide à monter plus haut. Il se recharge en huit secondes.','El impulso ayuda a subir más. Tarda ocho segundos en recargarse.'),L('Leertaste / Boostknopf · Controller: A','Space / boost button · controller: A','Espace / bouton boost · manette : A','Espacio / botón de impulso · mando: A'))
+    ]},
+    tower:{name:'Tower Bastion',color:'#f5cf83',steps:[
+      S(L('Baue neben dem Weg','Build beside the path','Construis près du chemin','Construye junto al camino'),L('Wähle einen Turmtyp und eine freie Basis. Der Turm kostet Gold und greift Gegner in Reichweite an.','Choose a tower type and an empty base. It costs gold and attacks enemies within range.','Choisis un type de tour et une base libre. Elle coûte de l’or et attaque à portée.','Elige un tipo de torre y una base libre. Cuesta oro y ataca enemigos a su alcance.'),L('Turmtyp wählen → Bauplatz antippen','Choose tower type → tap a base','Choisis la tour → touche une base','Elige la torre → toca una base')),
+      S(L('Starte die Welle','Start the wave','Lance la vague','Inicia la oleada'),L('Die Monster folgen dem Weg zur Burg. Platziere deine Türme so, dass sie rechtzeitig getroffen werden.','Monsters follow the path to the castle. Place towers where they can hit them in time.','Les monstres suivent le chemin vers le château. Place les tours pour les toucher à temps.','Los monstruos siguen el camino al castillo. Coloca torres para alcanzarlos a tiempo.'),L('Leertaste / Wellenknopf · Controller: A','Space / wave button · controller: A','Espace / bouton vague · manette : A','Espacio / botón de oleada · mando: A')),
+      S(L('Verbessere mit deinem Gold','Upgrade with your gold','Améliore avec ton or','Mejora con tu oro'),L('Wähle einen gebauten Turm, um ihn zu verbessern. Behalte die Kosten und die verbliebenen Burgleben im Blick.','Select a built tower to upgrade it. Watch the cost and remaining castle lives.','Choisis une tour construite pour l’améliorer. Surveille le coût et les vies du château.','Selecciona una torre construida para mejorarla. Vigila el coste y las vidas del castillo.'),L('Turm antippen → verbessern · Verkaufen gibt 70 % zurück','Tap tower → upgrade · selling returns 70%','Touche la tour → améliore · vente : remboursement de 70 %','Toca la torre → mejora · vender devuelve el 70%'))
+    ]},
+    crystalrun:{name:'Crystal Run 3D',color:'#78e5e4',steps:[
+      S(L('Lenke zur freien Seite','Steer to the clear side','Dirige-toi vers le côté libre','Dirígete al lado libre'),L('Der Läufer bewegt sich vorwärts. Du lenkst nach links und rechts; hier gibt es keinen Sprung.','The runner moves forward. Steer left and right; this game has no jump.','Le coureur avance. Dirige-le à gauche ou à droite ; ici, il ne saute pas.','El corredor avanza. Dirige a izquierda y derecha; aquí no se salta.'),L('A / D oder ← / → · Touchflächen · linker Stick','A / D or ← / → · touch controls · left stick','A / D ou ← / → · commandes tactiles · stick gauche','A / D o ← / → · controles táctiles · palanca izquierda')),
+      S(L('Kristalle sind sicher','Crystals are safe','Les cristaux sont sûrs','Los cristales son seguros'),L('Laufe durch Kristalle, um sie zu sammeln. Damit kannst du neue Läufer-Skins freischalten.','Run through crystals to collect them. They can unlock new runner skins.','Traverse les cristaux pour les ramasser. Ils débloquent des apparences.','Atraviesa cristales para recogerlos. Sirven para desbloquear aspectos.'),L('In Richtung Kristall lenken','Steer towards the crystal','Dirige-toi vers le cristal','Dirígete hacia el cristal')),
+      S(L('Felsen und Dornen meiden','Avoid rocks and spikes','Évite les rochers et les pointes','Evita rocas y pinchos'),L('Ein Treffer kostet einen Schild. Du startest mit drei Schilden.','A hit costs one shield. You start with three.','Un choc coûte un bouclier. Tu commences avec trois.','Un golpe cuesta un escudo. Empiezas con tres.'),L('Seitlich ausweichen · Leertaste: Pause','Dodge sideways · Space: pause','Évite sur le côté · Espace : pause','Esquiva de lado · Espacio: pausa'))
+    ]},
+    newyork:{name:'New York Rush',color:'#ffa06d',steps:[
+      S(L('Wechsle die Spur','Switch lanes','Change de voie','Cambia de carril'),L('Weiche Taxis und Hindernissen seitlich aus. Laufe durch Sterne, um sie zu sammeln.','Dodge taxis and obstacles sideways. Run through stars to collect them.','Évite les taxis et obstacles sur le côté. Traverse les étoiles pour les ramasser.','Esquiva taxis y obstáculos de lado. Atraviesa estrellas para recogerlas.'),L('A / D oder ← / → · links/rechts wischen','A / D or ← / → · swipe left/right','A / D ou ← / → · glisser à gauche/droite','A / D o ← / → · desliza a izquierda/derecha')),
+      S(L('Springen oder rutschen','Jump or slide','Saute ou glisse','Salta o deslízate'),L('Springe über niedrige Barrieren. Rutsche unter hohen Schildern durch.','Jump over low barriers. Slide under high signs.','Saute par-dessus les barrières basses. Glisse sous les panneaux hauts.','Salta barreras bajas. Deslízate bajo señales altas.'),L('W / ↑ / Leertaste: Sprung · S / ↓: Rutschen · Touch: wischen','W / ↑ / Space: jump · S / ↓: slide · touch: swipe','W / ↑ / Espace : saut · S / ↓ : glisser · tactile : glisser','W / ↑ / Espacio: salto · S / ↓: deslizar · táctil: deslizar')),
+      S(L('An der Kreuzung wählst du','Choose at the junction','Choisis au carrefour','Elige en el cruce'),L('Bei offener Richtungswahl wählen die Pfeile deinen Weg. Sie bewegen dann nicht die Figur.','While route choices are open, arrows choose your path rather than moving the runner.','Quand le choix est ouvert, les flèches choisissent le chemin, pas le déplacement.','Con la elección abierta, las flechas eligen la ruta en vez de mover al corredor.'),L('← links · ↑ gerade · → rechts · ↓ U-Bahn, wenn verfügbar · oder Auswahl antippen','← left · ↑ straight · → right · ↓ subway if available · or tap a choice','← gauche · ↑ tout droit · → droite · ↓ métro si disponible · ou touche le choix','← izquierda · ↑ recto · → derecha · ↓ metro si hay · o toca la opción'))
+    ]},
+    minigolf:{name:'Minigolf Cup',color:'#98dd91',steps:[
+      S(L('Ziele vom Ball zum Loch','Aim from the ball to the hole','Vise du ballon vers le trou','Apunta de la bola al hoyo'),L('Ziehe vom Ball weg. Der Schlag geht in die entgegengesetzte Richtung.','Pull away from the ball. The shot goes in the opposite direction.','Tire à l’opposé de la balle. Le coup part dans le sens inverse.','Arrastra alejándote de la bola. El golpe va en sentido contrario.'),L('Maus / Touch: vom Ball wegziehen','Mouse / touch: pull away from the ball','Souris / tactile : tire à l’opposé de la balle','Ratón / táctil: arrastra alejándote de la bola')),
+      S(L('Dosieren, dann loslassen','Set power, then release','Dose, puis relâche','Ajusta la fuerza y suelta'),L('Je weiter du ziehst, desto stärker der Schlag. Mit Tastatur zielst du und hältst die Leertaste für die Stärke.','Pull further for more power. On keyboard, aim and hold Space to set the power.','Tire plus loin pour plus de force. Au clavier, vise puis maintiens Espace pour doser.','Arrastra más para más fuerza. Con teclado, apunta y mantén Espacio para ajustar la fuerza.'),L('WASD / Pfeile: zielen · Leertaste halten und loslassen · Controller: Stick + A','WASD / arrows: aim · hold and release Space · controller: stick + A','WASD / flèches : viser · maintiens puis relâche Espace · manette : stick + A','WASD / flechas: apuntar · mantén y suelta Espacio · mando: palanca + A')),
+      S(L('Mit wenig Schlägen einlochen','Sink it in fewer shots','Entre avec peu de coups','Emboca en pocos golpes'),L('Der Ball muss ganz im Loch landen. Spiele über Bande; Wasser kostet einen zusätzlichen Schlag.','The ball must land fully in the hole. Bounce off walls; water adds a penalty stroke.','La balle doit entrer entièrement. Utilise les rebonds ; l’eau ajoute un coup.','La bola debe entrar del todo. Usa los rebotes; el agua añade un golpe.'),L('Bei mehreren Personen wechselt der Zug nach jedem Schlag','With several players, the turn changes after every shot','À plusieurs, le tour change après chaque coup','Con varios jugadores, el turno cambia después de cada golpe'))
+    ]}
+  };
+  if(!doc)throw new Error('Tutorials need a document');
+  const normalize=id=>String(id).startsWith('arena')?'arena':id==='ny'?'newyork':id==='golf'?'minigolf':String(id);
+  const tr=(value,lang)=>value?.[lang]||value?.de||'';
+  const clock=()=>root.performance?.now?.()||0;
+  const reduced=root.matchMedia?.('(prefers-reduced-motion: reduce)');
+  let current=null,raf=0,serial=0;
+  const style=doc.createElement('style');
+  style.textContent=`
+    .hub-tutorial{position:fixed;inset:0;z-index:10030;box-sizing:border-box;display:flex;align-items:center;justify-content:center;padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));background:#071220df;overflow:auto;overscroll-behavior:contain;font:16px/1.5 system-ui,sans-serif;color:#edf7ff}
+    .hub-tutorial *{box-sizing:border-box}.hub-tutorial-card{width:min(740px,100%);max-height:100%;overflow:auto;background:#11233a;border:1px solid #54758e;border-radius:22px;padding:22px;box-shadow:0 22px 80px #0009}
+    .hub-tutorial-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.hub-tutorial-label{margin:0;color:var(--tutorial-accent);font-size:.78em;font-weight:750;letter-spacing:.08em}.hub-tutorial h2{margin:3px 0 0;font-size:clamp(24px,4vw,34px);line-height:1.25;color:#fff}.hub-tutorial h3{margin:16px 0 7px;font-size:1.35em;line-height:1.3;color:#fff}.hub-tutorial p{margin:6px 0 12px;overflow-wrap:anywhere}.hub-tutorial-note{font-size:.78em;color:#bfd0df}
+    .hub-tutorial button{position:static;display:inline-flex;align-items:center;justify-content:center;width:auto;min-height:44px;margin:0;border:1px solid #6b8ca4;background:#223c54;color:#edf7ff;border-radius:11px;padding:10px 14px;font:650 .93em/1.25 system-ui;cursor:pointer;white-space:normal;text-align:center;max-width:100%}.hub-tutorial button:hover{background:#2c506a}.hub-tutorial button:focus-visible{outline:3px solid #fff;outline-offset:3px}.hub-tutorial button:disabled{opacity:.65;cursor:default}.hub-tutorial-close{min-width:44px;flex-shrink:0}.hub-tutorial .hub-tutorial-play{background:var(--tutorial-accent);color:#0b1e2b;border-color:transparent;font-weight:800}
+    .hub-tutorial-steps{display:flex;gap:8px;align-items:center;margin:14px 0}.hub-tutorial-steps button{flex:1;padding:7px;font-size:.87em}.hub-tutorial-steps [aria-current=step]{border-color:var(--tutorial-accent);background:#31576b;color:#fff}.hub-tutorial-progress{font-size:.85em;color:#c4d9e8;margin:0!important}
+    .hub-tutorial-canvas{position:static!important;inset:auto!important;display:block!important;width:100%!important;height:auto!important;max-height:none!important;aspect-ratio:2/1;border:1px solid #47617a;border-radius:14px;background:#0d1d2e;transform:none!important;touch-action:pan-y}.hub-tutorial-controls{padding:12px 14px;background:#0b1b2e;border:1px solid #456279;border-radius:12px;color:#dfeefa;margin:12px 0}.hub-tutorial-controls strong{display:block;font-size:.75em;text-transform:uppercase;letter-spacing:.04em;color:var(--tutorial-accent);margin-bottom:5px}.hub-tutorial-controls p{margin:0}
+    .hub-tutorial-nav{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px;align-items:center}.hub-tutorial-nav .hub-tutorial-play{margin-left:auto}.hub-tutorial-motion{font-size:.78em!important}.hub-tutorial h2:focus,.hub-tutorial h3:focus{outline:none}
+    html.hub-large-text .hub-tutorial{font-size:20px}html.hub-high-contrast .hub-tutorial-card{border:2px solid #fff;background:#081624}html.hub-high-contrast .hub-tutorial-controls{border-color:#fff}
+    @media(max-width:560px){.hub-tutorial{padding:10px;align-items:center}.hub-tutorial-card{padding:16px;border-radius:17px}.hub-tutorial h2{font-size:25px}.hub-tutorial-nav{display:grid;grid-template-columns:1fr 1fr}.hub-tutorial-nav button{width:100%}.hub-tutorial-nav .hub-tutorial-play{margin-left:0}.hub-tutorial-note{font-size:.75em}.hub-tutorial h3{font-size:1.2em}.hub-tutorial-controls{padding:10px}.hub-tutorial-steps{gap:6px}.hub-tutorial-steps button{font-size:.78em;padding:7px 4px}}
+    .hub-tutorial-card{padding:18px}.hub-tutorial h3{margin:10px 0 5px;font-size:1.25em}.hub-tutorial p{margin:5px 0 8px}.hub-tutorial-steps{margin:10px 0}.hub-tutorial-controls{margin:8px 0;padding:10px 12px}.hub-tutorial-motion{min-height:36px!important;padding:8px 12px!important}.hub-tutorial-canvas{height:min(27dvh,210px)!important;aspect-ratio:auto;object-fit:contain!important}.hub-tutorial-nav{position:sticky;bottom:0;background:#11233a;padding-top:10px;margin-top:10px;box-shadow:0 -8px 12px #11233a}.hub-tutorial-nav button{min-height:44px}
+    @media(max-width:560px){.hub-tutorial-card{padding:14px}.hub-tutorial-canvas{height:min(25dvh,190px)!important}.hub-tutorial-nav{padding-bottom:2px}.hub-tutorial-head{gap:8px}.hub-tutorial h2{font-size:24px}}
+    @media(max-height:550px){.hub-tutorial{align-items:flex-start}.hub-tutorial-card{max-height:100%;padding:12px}.hub-tutorial-canvas{height:min(26dvh,140px)!important}.hub-tutorial-note{display:none}.hub-tutorial-steps{margin:7px 0}.hub-tutorial h3{font-size:1.15em}.hub-tutorial-head h2{font-size:22px}}
+    @media(prefers-reduced-motion:reduce){.hub-tutorial *{animation:none!important;transition:none!important}}
+  `;
+  doc.head.append(style);
+  const el=(tag,cls,parent,text)=>{const n=doc.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;if(parent)parent.append(n);return n;};
+  const motionAllowed=()=>!reduced?.matches&&!doc.body.classList?.contains?.('hub-still')&&root.HubFeedback?.getSettings?.()?.motion!==false;
+  const canAnimate=()=>current&&!current.paused&&!doc.hidden&&motionAllowed()&&!!current.ctx;
+  function cancel(){if(raf)root.cancelAnimationFrame(raf);raf=0;}
+  function time(){return current?current.elapsed+(current.started===null?0:Math.max(0,(clock()-current.started)/1000)):0;}
+  function park(){if(current&&current.started!==null){current.elapsed=time();current.started=null;}cancel();}
+  function paint(seconds){if(!current?.ctx)return;drawScene(current.ctx,current.id,current.step,seconds);}
+  function tick(now){raf=0;if(!canAnimate()){park();if(current&&!motionAllowed())paint(3.2);return;}if(now-current.lastPaint>=1000/30){current.lastPaint=now;paint(time());}raf=root.requestAnimationFrame(tick);}
+  function refreshPreferences(){
+    if(!current)return;
+    const allowed=motionAllowed()&&!!current.ctx;
+    current.motion.textContent=tr(!allowed?words.still:current.paused?words.resume:words.pause,current.lang);
+    current.motion.disabled=!allowed;current.motion.setAttribute('aria-pressed',String(current.paused));
+    if(!canAnimate()){park();if(!allowed)paint(3.2);}
+    else if(!raf){current.started=clock();current.lastPaint=-Infinity;raf=root.requestAnimationFrame(tick);}
+  }
+  function setStep(index,{focus=false}={}){
+    if(!current)return false;
+    current.step=Math.max(0,Math.min(2,Number(index)||0));current.elapsed=0;current.started=null;
+    const item=catalogue[current.id].steps[current.step];
+    current.title.textContent=tr(item.title,current.lang);current.text.textContent=tr(item.text,current.lang);current.control.textContent=tr(item.control,current.lang);
+    current.progress.textContent=`${tr(words.step,current.lang)} ${current.step+1} / 3`;
+    current.prev.disabled=current.step===0;current.next.disabled=current.step===2;
+    current.overlay.dataset.tutorialStep=String(current.step);current.overlay.dataset.tutorialGame=current.id;
+    current.tabs.forEach((n,i)=>{if(i===current.step)n.setAttribute('aria-current','step');else n.removeAttribute('aria-current');});
+    cancel();paint(motionAllowed()?0:3.2);refreshPreferences();if(focus)current.title.focus();return true;
+  }
+  function pause(){if(!current)return false;current.paused=!current.paused;refreshPreferences();return current.paused;}
+  function close(reason='close'){
+    if(!current)return false;
+    park();const old=current;current=null;old.overlay.remove();old.inert.forEach(([node,value])=>{if(node.isConnected)node.inert=value;});
+    if(old.focus?.isConnected)old.focus.focus({preventScroll:true});
+    old.options.onClose?.({id:old.id,reason});return true;
+  }
+  function play(){if(!current)return false;const fn=current.options.onPlay;close('play');fn?.();return true;}
+  const padEdges=new Map();
+  function connectedPads(){try{return Array.from(root.navigator?.getGamepads?.()||[]).filter(p=>p&&p.connected!==false);}catch{return [];}}
+  function pollController(seed=false){
+    if(!current)return;if(doc.hidden)seed=true;const pads=connectedPads(),present=new Set();
+    for(const pad of pads){
+      const id=pad.index??pad;present.add(id);const buttons=Array.from(pad.buttons||[],b=>!!b?.pressed),axis=Number(pad.axes?.[0])||0;
+      const direction=buttons[14]||axis<-.65?-1:buttons[15]||axis>.65?1:0,previous=padEdges.get(id),press=i=>!seed&&previous&&buttons[i]&&!previous.buttons[i];
+      padEdges.set(id,{buttons,direction});if(seed||!previous)continue;
+      if(press(1)){close('controller');return;}
+      if(direction&&direction!==previous.direction){setStep(current.step+direction,{focus:true});}
+      else if(press(12)||press(13)){
+        const bs=Array.from(current.card.querySelectorAll('button')).filter(b=>!b.disabled&&!b.hidden),at=bs.indexOf(doc.activeElement);if(bs.length)bs[(at+(press(12)?-1:1)+bs.length)%bs.length].focus();
+      }
+      if(press(9)&&motionAllowed())pause();
+      if(press(0)){const target=doc.activeElement;if(target?.tagName==='BUTTON'&&current.card.contains(target)&&!target.disabled)target.click();else if(current.step<2)setStep(current.step+1,{focus:true});else play();if(!current)return;}
+    }
+    for(const id of padEdges.keys())if(!present.has(id))padEdges.delete(id);
+  }
+  function open(id,options={}){
+    id=normalize(id);if(!catalogue[id])return false;close('replace');
+    root.HubGamePreviews?.stop?.();
+    const lang=langs.includes(options.language||root.HubI18n?.language)?(options.language||root.HubI18n.language):'de';
+    const focus=doc.activeElement,overlay=el('div','hub-tutorial',doc.body);overlay.style.setProperty('--tutorial-accent',catalogue[id].color);
+    const card=el('section','hub-tutorial-card',overlay);card.setAttribute('role','dialog');card.setAttribute('aria-modal','true');card.setAttribute('lang',lang);
+    const unique=++serial,header=el('div','hub-tutorial-head',card),brand=el('div','',header);el('p','hub-tutorial-label',brand,tr(words.guide,lang));
+    const h=el('h2','',brand,catalogue[id].name);h.id=`hub-tutorial-heading-${unique}`;h.tabIndex=-1;card.setAttribute('aria-labelledby',h.id);
+    const button=(label,fn,parent=card,cls='')=>{const b=el('button',cls,parent,label);b.type='button';b.addEventListener('click',fn);return b;};
+    const x=button('×',()=>close(),header,'hub-tutorial-close');x.setAttribute('aria-label',tr(words.close,lang));
+    el('p','hub-tutorial-note',card,tr(words.isolated,lang));
+    const tabsHost=el('nav','hub-tutorial-steps',card);tabsHost.setAttribute('aria-label',tr(words.guide,lang));
+    const tabs=[0,1,2].map(i=>button(`${tr(words.step,lang)} ${i+1}`,()=>setStep(i,{focus:true}),tabsHost));
+    const progress=el('p','hub-tutorial-progress',card);const title=el('h3','',card);title.tabIndex=-1;title.id=`hub-tutorial-step-${unique}`;
+    const text=el('p','',card);const canvas=el('canvas','hub-tutorial-canvas',card);canvas.width=640;canvas.height=320;canvas.setAttribute('aria-hidden','true');
+    const controlHost=el('div','hub-tutorial-controls',card);el('strong','',controlHost,tr(words.controls,lang));const control=el('p','',controlHost);
+    const motion=button(tr(words.pause,lang),pause,card,'hub-tutorial-motion');
+    const nav=el('div','hub-tutorial-nav',card);const prev=button(tr(words.back,lang),()=>setStep(current.step-1,{focus:true}),nav);const next=button(tr(words.next,lang),()=>setStep(current.step+1,{focus:true}),nav);
+    button(tr(words.skip,lang),()=>close('skip'),nav);button(tr(words.play,lang),play,nav,'hub-tutorial-play');
+    if(connectedPads().length)el('p','hub-tutorial-note',card,({de:'Controller: ← / → Schritte · ↑ / ↓ Knöpfe · A wählen · B schließen · Start Animation pausieren',en:'Controller: ← / → steps · ↑ / ↓ buttons · A select · B close · Start pause animation',fr:'Manette : ← / → étapes · ↑ / ↓ boutons · A choisir · B fermer · Start pause animation',es:'Mando: ← / → pasos · ↑ / ↓ botones · A elegir · B cerrar · Start pausar animación'})[lang]);
+    const inert=[];for(const node of Array.from(doc.body.children)){if(node!==overlay&&!['SCRIPT','STYLE'].includes(node.tagName)){inert.push([node,Boolean(node.inert)]);node.inert=true;}}
+    current={id,lang,options,overlay,card,focus,inert,tabs,title,text,control,progress,motion,prev,next,ctx:canvas.getContext('2d'),step:0,paused:false,elapsed:0,started:null,lastPaint:-Infinity};
+    for(const type of ['pointerdown','pointerup','pointermove','click','wheel'])overlay.addEventListener(type,e=>e.stopPropagation());
+    overlay.addEventListener('click',e=>{if(e.target===overlay)close();});
+    padEdges.clear();pollController(true);setStep(0);h.focus();return true;
+  }
+  function capture(event){
+    if(!current)return;
+    event.stopImmediatePropagation();
+    if(event.type==='keyup'){if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Space','Enter'].includes(event.code))event.preventDefault();return;}
+    if(event.code==='Escape'){event.preventDefault();close();return;}
+    if(event.code==='Tab'){
+      event.preventDefault();const bs=Array.from(current.card.querySelectorAll('button')).filter(b=>!b.disabled&&!b.hidden),idx=bs.indexOf(doc.activeElement);
+      if(bs.length)bs[event.shiftKey?(idx<=0?bs.length-1:idx-1):(idx<0||idx===bs.length-1?0:idx+1)].focus();return;
+    }
+    if(event.ctrlKey||event.metaKey||event.altKey)return;
+    if(event.repeat){if(['Space','Enter','ArrowLeft','ArrowRight'].includes(event.code))event.preventDefault();return;}
+    if(event.code==='ArrowLeft'||event.code==='ArrowRight'){event.preventDefault();setStep(current.step+(event.code==='ArrowRight'?1:-1),{focus:true});return;}
+    if(event.code==='Space'||event.code==='Enter'){event.preventDefault();const target=event.target?.closest?.('button');if(target&&current.card.contains(target)&&!target.disabled)target.click();return;}
+    if(['ArrowUp','ArrowDown','KeyW','KeyA','KeyS','KeyD'].includes(event.code))event.preventDefault();
+  }
+  // Register before the game's capture listeners; an open guide owns keyboard input.
+  root.addEventListener?.('keydown',capture,true);root.addEventListener?.('keyup',capture,true);
+  doc.addEventListener('visibilitychange',()=>{pollController(true);refreshPreferences();});root.addEventListener?.('pagehide',()=>close('pagehide'));
+  reduced?.addEventListener?.('change',refreshPreferences);
+  const observer=typeof root.MutationObserver==='function'?new root.MutationObserver(refreshPreferences):null;
+  observer?.observe(doc.documentElement,{attributes:true,subtree:true,attributeFilter:['class']});
+
+  const clamp=n=>Math.max(0,Math.min(1,n));
+  const mix=(a,b,p)=>a+(b-a)*p;
+  const smooth=p=>{p=clamp(p);return p*p*(3-2*p);};
+  function rr(c,x,y,w,h,r,fill,stroke){c.beginPath();if(c.roundRect)c.roundRect(x,y,w,h,r);else c.rect(x,y,w,h);if(fill){c.fillStyle=fill;c.fill();}if(stroke){c.strokeStyle=stroke;c.lineWidth=2;c.stroke();}}
+  function dot(c,x,y,r,color){c.fillStyle=color;c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fill();}
+  function line(c,points,color='#b9d9ee',width=3){c.strokeStyle=color;c.lineWidth=width;c.lineCap='round';c.lineJoin='round';c.beginPath();points.forEach(([x,y],i)=>i?c.lineTo(x,y):c.moveTo(x,y));c.stroke();}
+  function arrow(c,x,y,endX,endY,color='#f7e39d'){line(c,[[x,y],[endX,endY]],color,4);const a=Math.atan2(endY-y,endX-x);line(c,[[endX-Math.cos(a-.55)*12,endY-Math.sin(a-.55)*12],[endX,endY],[endX-Math.cos(a+.55)*12,endY-Math.sin(a+.55)*12]],color,4);}
+  function ring(c,x,y,r,color){c.strokeStyle=color;c.lineWidth=3;c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.stroke();}
+  function label(c,text,x,y,color='#eef6ff',size=22){c.font=`700 ${size}px system-ui,sans-serif`;c.fillStyle=color;c.textAlign='center';c.textBaseline='middle';c.fillText(text,x,y);}
+  function star(c,x,y,r=13){c.fillStyle='#ffe39a';c.beginPath();for(let i=0;i<10;i++){const a=i*Math.PI/5-Math.PI/2,R=i%2?r*.45:r;i?c.lineTo(x+Math.cos(a)*R,y+Math.sin(a)*R):c.moveTo(x+Math.cos(a)*R,y+Math.sin(a)*R);}c.closePath();c.fill();}
+  function apple(c,x,y){dot(c,x-6,y,12,'#ff7a83');dot(c,x+6,y,12,'#ff7a83');line(c,[[x,y-8],[x+2,y-21]],'#e7b785',4);rr(c,x+3,y-23,15,7,4,'#76d296');}
+  function player(c,x,y,color='#65d0fb',size=15){dot(c,x,y,size,color);dot(c,x-4,y-3,2.5,'#143046');dot(c,x+4,y-3,2.5,'#143046');}
+  function cursor(c,x,y,on){ring(c,x,y,11,on?'#fff5b6':'#9ab5ca');dot(c,x,y,3,on?'#fff5b6':'#9ab5ca');}
+  function board(c){rr(c,48,35,544,250,18,'#142c42','#49687d');for(let x=80;x<590;x+=40)line(c,[[x,36],[x,284]],'#233e54',1);for(let y=75;y<284;y+=40)line(c,[[49,y],[591,y]],'#233e54',1);}
+  function sceneArena(c,s,p){board(c);rr(c,250,55,75,52,10,'#58748a');rr(c,300,218,75,46,10,'#58748a');const x=mix(175,s===0?430:350,p),y=s===0?mix(205,145,p):160;player(c,x,y);if(s===0)arrow(c,190,195,390,145);if(s===1){if(p<.9)dot(c,350,160,12,'#ffe296');else ring(c,350,160,26,'#ffe296');arrow(c,185,195,310,170);}if(s===2){player(c,mix(490,370,p),160,p>.86?'#65d0fb':'#ff7385');if(p>.86)player(c,x,y,'#ff7385');arrow(c,475,215,375,190);}}
+  function sceneSnake(c,s,p){
+    board(c);
+    if(s===0){rr(c,438,65,65,155,9,'#718494');const points=[[120,225],[200,225],[280,225],[280,mix(215,115,p)]];line(c,points,'#75d987',25);player(c,280,mix(215,115,p),'#8cef9a',16);arrow(c,335,220,335,122);}
+    else if(s===1){const x=mix(250,405,p);line(c,[[mix(110,125,p),160],[x,160]],'#75d987',26);player(c,x,160,'#8cef9a',17);if(p<.92)apple(c,405,160);else ring(c,x,160,29,'#f9dd8c');arrow(c,230,215,402,215);}
+    else{const x=mix(220,325,p);line(c,[[145,105],[410,105],[410,220],[220,220],[220,165],[x,165]],'#75d987',25);player(c,x,165,'#8cef9a',17);arrow(c,265,169,350,169);rr(c,490,105,48,110,8,'#6d8297');}
+  }
+  function sceneBreaker(c,s,p){rr(c,76,28,488,270,15,'#152b40','#476479');for(let i=0;i<6;i++)rr(c,100+i*75,55,62,22,5,s===2&&i===3&&p>.65?'#233a50':['#bfa7fa','#f599af','#67dacd'][i%3]);let x=320,y=250;if(s===0){y=mix(250,110,p);arrow(c,365,245,365,124);}else if(s===1){x=mix(185,390,p);y=mix(120,250,p);arrow(c,230,282,415,282);}else{x=mix(215,350,p);y=p<.65?mix(230,68,p/.65):mix(68,175,(p-.65)/.35);arrow(c,425,232,425,99);}rr(c,(s===1?mix(210,390,p):320)-62,268,124,14,7,'#62dfd1');dot(c,x,y,10,'#fff1c1');}
+  function sceneRally(c,s,p){rr(c,100,25,440,270,16,'#162b43','#456981');line(c,[[120,160],[520,160]],'#385671',2);ring(c,320,160,31,'#385671');const x=s===0?mix(220,395,p):330;rr(c,x-55,263,110,12,6,'#60ded0');rr(c,265,47,110,12,6,'#c1a3f5');if(s===0){dot(c,395,180,10,'#fff2c8');arrow(c,200,228,390,228);}else if(s===1){const f=p<.5?p*2:(p-.5)*2;dot(c,p<.5?mix(260,365,f):mix(365,475,f),p<.5?mix(80,252,f):mix(252,75,f),10,'#fff2c8');arrow(c,390,238,450,115);}else{dot(c,mix(450,465,p),mix(210,15,p),10,'#fff2c8');label(c,p>.95?'1 : 0':'0 : 0',320,175);arrow(c,480,170,480,73);}}
+  function ship(c,x,y){c.fillStyle='#b6eaff';c.beginPath();c.moveTo(x,y-20);c.lineTo(x+18,y+17);c.lineTo(x,y+8);c.lineTo(x-18,y+17);c.closePath();c.fill();}
+  function sceneOrbit(c,s,p){for(let i=0;i<16;i++)dot(c,35+(i*109)%570,20+(i*63)%275,2,'#60839b');const x=s===0?mix(250,410,p):mix(220,350,p);ship(c,x,225);if(s===0){dot(c,250,mix(65,225,p),25,'#a996ac');arrow(c,300,266,408,266);}else if(s===1){if(p<.9)star(c,350,225,18);else ring(c,350,225,30,'#ffe39a');arrow(c,245,275,355,275);}else{dot(c,mix(430,350,p),mix(80,225,p),24,p>.82?'#75678a':'#a996ac');ring(c,x,225,36,'#79e5ef');label(c,'A / ␣',130,165,'#e5f8ff',28);arrow(c,173,190,255,211);}}
+  function tile(c,x,y,value){rr(c,x,y,82,82,13,value===4?'#8edcfa':'#b7efe0','#e4fbff');label(c,String(value),x+41,y+41,'#123044',32);}
+  function scenePrism(c,s,p){rr(c,65,60,510,200,18,'#183650','#42647e');for(let i=0;i<5;i++)rr(c,81+i*99,79,83,82,13,'#253f59');if(s===0){tile(c,mix(377,81,p),79,2);tile(c,mix(476,180,p),79,4);arrow(c,470,218,170,218);}else if(s===1){if(p<.75){tile(c,mix(180,81,p/.75),79,2);tile(c,mix(377,81,p/.75),79,2);}else tile(c,81,79,4);label(c,'2 + 2 = 4',365,213,'#daf8f2',27);arrow(c,460,177,182,177);}else{tile(c,81,79,4);tile(c,180,79,8);tile(c,279,79,16);if(p>.65)tile(c,476,79,2);arrow(c,430,212,515,175);}}
+  function fox(c,x,y){rr(c,x-14,y-10,28,25,7,'#f1ad6e');c.fillStyle='#f1ad6e';c.beginPath();c.moveTo(x-14,y-8);c.lineTo(x-12,y-22);c.lineTo(x-2,y-9);c.moveTo(x+14,y-8);c.lineTo(x+12,y-22);c.lineTo(x+2,y-9);c.fill();dot(c,x-5,y,2,'#303649');dot(c,x+5,y,2,'#303649');}
+  function sceneCloud(c,s,p){rr(c,0,0,640,320,0,'#193852');rr(c,100,245,130,17,8,'#d1edf6');rr(c,330,170,140,17,8,'#d1edf6');rr(c,180,80,120,17,8,'#d1edf6');const x=mix(170,400,p),y=s===2?mix(230,63,p):mix(230,155,p)-Math.sin(p*Math.PI)*78;fox(c,x,y);if(s===0)arrow(c,195,280,388,280);if(s===1){if(p<.92)star(c,395,120,13);else ring(c,395,120,18,'#ffe39a');arrow(c,260,209,347,168);}if(s===2){arrow(c,460,246,460,90);line(c,[[x-14,y+22],[x-14,y+49]],'#f6d0a6',3);line(c,[[x+14,y+22],[x+14,y+49]],'#f6d0a6',3);label(c,'A / ␣',120,160);}}
+  function castle(c){rr(c,536,104,49,88,3,'#e5c692');rr(c,526,94,19,106,3,'#b89c71');rr(c,578,94,19,106,3,'#b89c71');rr(c,551,166,23,34,10,'#465968');}
+  function turret(c,x,y,level=1){dot(c,x,y,26,'#8b9c83');rr(c,x-15,y-24,30,29,7,level>1?'#e2b25e':'#c7a66d');line(c,[[x,y-14],[x+30,y-14]],'#c9b482',12);if(level>1)star(c,x,y-40,10);}
+  function sceneTower(c,s,p){rr(c,0,0,640,320,0,'#193b39');line(c,[[42,235],[155,235],[220,153],[535,153]],'#bba477',38);castle(c);const x=290,y=220;if(s===0){ring(c,x,y,31,'#c4d3af');if(p>.48)turret(c,x,y);cursor(c,mix(136,x,p),mix(270,y,p),p>.45);arrow(c,130,267,250,230);if(p>.48){c.save();c.setLineDash([5,5]);ring(c,x,y,78,'#98bd9b');c.restore();}}else if(s===1){turret(c,x,y);const e=mix(140,420,p);player(c,e,153,'#f18d83',13);const shot=clamp((p-.35)/.5);dot(c,mix(x+18,e,shot),mix(y-14,153,shot),5,'#ffe3a0');arrow(c,92,198,180,182);}else{turret(c,x,y,p>.48?2:1);cursor(c,x,y+34,p>.45);label(c,p>.5?'↑':'1',410,222,'#ffe3a0',40);arrow(c,370,230,370,178);}}
+  function crystal(c,x,y){c.fillStyle='#72e8ea';c.beginPath();c.moveTo(x,y-22);c.lineTo(x+14,y-8);c.lineTo(x+9,y+18);c.lineTo(x-9,y+18);c.lineTo(x-14,y-8);c.closePath();c.fill();}
+  function road(c){rr(c,122,20,396,280,0,'#254254');line(c,[[254,30],[254,290]],'#9fbcc0',2);line(c,[[386,30],[386,290]],'#9fbcc0',2);}
+  function runner(c,x,y){dot(c,x,y-14,9,'#e5c19a');rr(c,x-12,y-4,24,26,6,'#77d7d2');line(c,[[x-6,y+21],[x-10,y+36]],'#bedfe9',6);line(c,[[x+6,y+21],[x+10,y+36]],'#bedfe9',6);}
+  function sceneCrystal(c,s,p){road(c);const x=s===0?mix(320,445,p):s===1?mix(188,320,p):mix(320,188,p);runner(c,x,232);if(s!==1){rr(c,296,mix(60,231,p),48,40,8,'#99849d');if(s===2){c.fillStyle='#d68188';c.beginPath();c.moveTo(430,140);c.lineTo(445,110);c.lineTo(460,140);c.fill();label(c,'3',563,80,'#b9e8f0',30);}arrow(c,310,290,s===0?440:192,290);}else{if(p<.9)crystal(c,320,226);else ring(c,320,229,33,'#87eef1');arrow(c,195,290,320,290);}}
+  function sceneNewYork(c,s,p){road(c);rr(c,26,15,79,280,5,'#695b53');rr(c,535,15,79,280,5,'#695b53');for(let y=45;y<260;y+=46){rr(c,41,y,18,24,2,'#b9d5dc');rr(c,76,y,17,24,2,'#b9d5dc');rr(c,550,y,18,24,2,'#b9d5dc');rr(c,584,y,16,24,2,'#b9d5dc');}if(s===0){rr(c,291,mix(52,221,p),59,61,8,'#ecbb65');runner(c,mix(320,445,p),235);star(c,445,123);arrow(c,320,290,444,290);}else if(s===1){rr(c,164,194,74,20,4,'#f0ae6f');rr(c,412,141,74,25,4,'#a6ccdc');runner(c,201,230-Math.sin(p*Math.PI)*68);c.save();c.translate(446,238);c.scale(1,p>.4&&p<.8?.5:1);runner(c,0,0);c.restore();arrow(c,268,240,268,170);arrow(c,518,210,518,258);}else{rr(c,122,71,396,85,0,'#39596a');runner(c,320,242);arrow(c,320,145,195,145);arrow(c,320,139,320,72);arrow(c,320,145,445,145);arrow(c,320,160,320,204,'#c8a9ee');label(c,'←  ↑  →  ↓',320,39,'#f5e3b8',30);label(c,'M',563,159,'#d3b7ff',32);}}
+  function sceneGolf(c,s,p){rr(c,52,40,536,248,13,'#49734c','#add3a1');rr(c,62,51,515,228,9,'#629959');dot(c,490,116,20,'#173a31');ring(c,490,116,21,'#bed7a7');line(c,[[490,116],[490,58]],'#edf3e4',4);c.fillStyle='#f8878c';c.beginPath();c.moveTo(493,58);c.lineTo(532,72);c.lineTo(493,82);c.closePath();c.fill();if(s===0){dot(c,195,224,13,'#f4f7e9');arrow(c,217,215,401,150);line(c,[[195,224],[mix(195,112,p),mix(224,264,p)]],'#ecdeb1',3);cursor(c,mix(195,112,p),mix(224,264,p),p>.25);}else if(s===1){const f=p<.55?0:smooth((p-.55)/.45);dot(c,mix(195,430,f),mix(224,139,f),13,'#f4f7e9');rr(c,95,74,128,15,7,'#274a34');rr(c,97,76,Math.max(5,124*clamp(p/.55)),11,5,'#f0d280');arrow(c,217,215,401,150);}else{rr(c,291,162,18,91,4,'#d5b57b');const q=p<.5?p*2:(p-.5)*2,x=p<.5?mix(191,340,q):mix(340,490,q),y=p<.5?mix(138,64,q):mix(64,116,q);if(p<.98)dot(c,x,y,12*(p>.9?mix(1,.3,(p-.9)/.1):1),'#f4f7e9');line(c,[[191,138],[340,64],[477,111]],'#d5e5b3',2);}}
+  const drawers={arena:sceneArena,snake:sceneSnake,breaker:sceneBreaker,rally:sceneRally,orbit:sceneOrbit,prism:scenePrism,cloud:sceneCloud,tower:sceneTower,crystalrun:sceneCrystal,newyork:sceneNewYork,minigolf:sceneGolf};
+  function drawScene(c,id,step,seconds=0){
+    id=normalize(id);if(!drawers[id])return false;
+    const phase=smooth((Math.max(0,Number(seconds)||0)%4-.45)/2.65);
+    c.save();c.clearRect(0,0,640,320);c.fillStyle='#0d1d2e';c.fillRect(0,0,640,320);drawers[id](c,Math.max(0,Math.min(2,Number(step)||0)),phase);c.restore();return true;
+  }
+  return {open,close,pause,play,setStep,pollController,refreshPreferences,drawScene,catalogue,get active(){return!!current;},get id(){return current?.id||null;},get step(){return current?.step??null;},get animationRunning(){return!!raf;}};
+});
+
+</script>
+<script>
 // Hub presentation and navigation. Arena gameplay remains in the supplied engine.
 (() => {
     const tr = text => window.HubI18n ? HubI18n.translate(String(text)) : String(text);
@@ -7173,7 +7762,7 @@ window.HubOnlineConfig = {
         const challenge=weeklyChallengeIndex(key),progress=challenge===0?Number(value.weekly_rounds)||0:challenge===1?Object.keys(value.weekly_games||{}).length:challenge===2?Number(value.weekly_stars)||0:challenge===3?Number(value.weekly_cups)||0:Number(value.weekly_rounds)||0,target=[5,3,12,2,8][challenge];if(progress>=target&&!value.weekly_completed){value.weekly_completed=true;value.weekly_challenges=(Number(value.weekly_challenges)||0)+1;value.weekly_bonus=(Number(value.weekly_bonus)||0)+1;}}
     function weeklyChallengeIndex(key){let hash=0;for(const c of String(key))hash=(hash*31+c.charCodeAt(0))>>>0;return hash%5;}
     const saveOriginal=save_stats;let knownAchievements=new Set(ACHIEVEMENTS.filter(a=>(Number(stats[a.req_key])||0)>=a.req_val).map(a=>a.id));
-    save_stats=function(value){countHubRounds(value);trackArcade(value);saveOriginal(value);window.HubSocial?.queuePublish();const done=ACHIEVEMENTS.filter(a=>(Number(value[a.req_key])||0)>=a.req_val),fresh=done.filter(a=>!knownAchievements.has(a.id));knownAchievements=new Set(done.map(a=>a.id));if(fresh.length){HubPresentation.notify(ft(13)+' · '+fresh.map(a=>tr(a.name)).join(' / '));sound('achievement');}};
+    save_stats=function(value){countHubRounds(value);trackArcade(value);saveOriginal(value);window.HubSocial?.queuePublish();const done=ACHIEVEMENTS.filter(a=>(Number(value[a.req_key])||0)>=a.req_val),fresh=done.filter(a=>!knownAchievements.has(a.id));knownAchievements=new Set(done.map(a=>a.id));if(fresh.length){HubPresentation.notifyAchievements(fresh,{label:ft(13),translate:tr});sound('achievement');}};
 
     let demoTime = 0, demoPaused = false, lastDemoStamp = 0;
     let snakeView = null, breakerView = null, arcadeView = null, bonusView = null, onlineView = null, crystalRunView = null;
@@ -7274,7 +7863,7 @@ window.HubOnlineConfig = {
         renderedButtons.push({rect,label:tr(labels[name]||name)+(dir==='left'?' −':' +'),source:name});
     };
     function resetInput() { keys={};mouseButtons.left=false;clickTriggered=false;vjoys={fid1:null,fid2:null,p1:null,p2:null,base1:[0,0],base2:[0,0]}; }
-    function go(next) { friendsNotice?.dispose();friendsNotice=null;resetInput();clearMini();hiddenSequence.clear();if(next!=='PLAYING'&&next!=='PAUSED')eggTime=-1;HubFeedback.stop();state=next;panelState='';scroll_y=0;if(!panelPages.includes(next))panelHistory=[];if(next==='TUTORIAL'){demoTime=0;demoPaused=false;lastDemoStamp=performance.now();} }
+    function go(next) { friendsNotice?.dispose();friendsNotice=null;resetInput();clearMini();hiddenSequence.clear();if(next!=='PLAYING'&&next!=='PAUSED')eggTime=-1;HubFeedback.stop();state=next;panelState='';scroll_y=0;if(!panelPages.includes(next))panelHistory=[];if(next==='TUTORIAL'){demoTime=0;demoPaused=false;lastDemoStamp=performance.now();}syncGameNavigation(); }
     function info(next,from=state) { if(!panelPages.includes(from))panelHistory=[];if(from!==next)panelHistory.push(from);returnState=from;go(next); }
     function quit() { quitFrom=state;go('QUIT_CONFIRM'); }
     function back() { sound('back');if(state==='QUIT_CONFIRM')go(quitFrom);else if(state==='CLOSED')go('HUB');else if(state==='TUTORIAL')go('MENU');else go(panelHistory.pop() || (returnState===state?'MENU':returnState)); }
@@ -7294,7 +7883,7 @@ window.HubOnlineConfig = {
         for(const mode of MODES){const a=saved[mode],b=sessionHighscores[mode];if(a.best_score===null||(b.best_score!==null&&b.best_score>a.best_score))saved[mode]=b;saved[mode].attempts=Math.max(a.attempts,b.attempts);}
         highscores=saved;save_stats(stats);save_highscores(highscores);HubI18n.setLanguage(HubI18n.language);
         const savedSnakeBest=Math.max(0,parseInt(HubStorage.getItem('snake17_highscore'),10)||0);HubStorage.setItem('snake17_highscore',String(Math.max(sessionSnakeBest,savedSnakeBest)));
-        HubAudio.setSettings({});HubFeedback.setSettings({});panelState='';
+        HubAudio.setSettings({});HubFeedback.setSettings({});window.HubNavigation?.persist();panelState='';
     }
     function snakePad(player){try{const raw=Array.from(navigator.getGamepads?.()||[]),slot=snakeView?.padSlots?.[player];return slot===undefined?HubFeedback.pads()[player]:raw[slot];}catch{return null;}}
     function openSnake() {
@@ -7378,6 +7967,50 @@ window.HubOnlineConfig = {
         const drawGame=view.draw.bind(view);view.draw=function(...args){drawGame(...args);drawMini(view.ctx,game,view.canvas.width,view.canvas.height);};
         HubPresentation.theme(game);view.resize();
     }
+    const routeStates={MENU:'arena',TUTORIAL:'arena',PLAYING:'arena',PAUSED:'arena',GAME_OVER:'arena',SNAKE:'snake',BREAKER:'breaker',RALLY:'rally',ORBIT:'orbit',PRISM:'prism',CLOUD:'cloud',TOWER:'tower',CRYSTALRUN:'crystalrun',NYRUN:'newyork',MINIGOLF:'minigolf'};
+    const navigationCopy={
+        de:{heading:'Spiel-Links & Navigation',description:'Direktlinks sind standardmäßig an: Jedes Spiel erhält eine eigene Adresse zum Teilen. Spielwechsel laden den Hub nicht erneut. Aus: Beim Wechsel bleibt die Hub-Adresse gleich. Die Einstellung wird mit deiner Speicherwahl gespeichert.',toggle:'Direkte Spiel-Links',guide:'Animierte Anleitung',copy:'Link kopieren',copied:'Spiel-Link kopiert',copyFailed:'Link markieren und kopieren',leave:'Spiel verlassen?',leaveText:'Die Runde wird pausiert. Wenn du die Seite innerhalb des Hubs wechselst, wird diese Runde beendet.',stay:'Hier bleiben',confirm:'Runde verlassen'},
+        en:{heading:'Game links & navigation',description:'Direct links are on by default: each game gets its own shareable address. Switching games never reloads the hub. Off: the hub address stays the same. This follows your saving preference.',toggle:'Direct game links',guide:'Animated guide',copy:'Copy link',copied:'Game link copied',copyFailed:'Select and copy the link',leave:'Leave game?',leaveText:'The round is paused. Switching to another hub page ends this round.',stay:'Stay here',confirm:'Leave round'},
+        fr:{heading:'Liens et navigation',description:'Les liens directs sont activés par défaut : chaque jeu a une adresse à partager. Le hub ne se recharge pas entre les jeux. Désactivés : l’adresse du hub reste identique. Le choix suit vos réglages de sauvegarde.',toggle:'Liens directs des jeux',guide:'Guide animé',copy:'Copier le lien',copied:'Lien du jeu copié',copyFailed:'Sélectionnez et copiez le lien',leave:'Quitter le jeu ?',leaveText:'La partie est en pause. Changer de page dans le hub termine cette partie.',stay:'Rester ici',confirm:'Quitter la partie'},
+        es:{heading:'Enlaces y navegación',description:'Los enlaces directos están activados por defecto: cada juego tiene una dirección para compartir. Cambiar de juego no recarga el hub. Desactivados: la dirección del hub no cambia. Se respeta tu elección de guardado.',toggle:'Enlaces directos de juegos',guide:'Guía animada',copy:'Copiar enlace',copied:'Enlace del juego copiado',copyFailed:'Selecciona y copia el enlace',leave:'¿Salir del juego?',leaveText:'La partida está en pausa. Cambiar de página en el hub termina esta partida.',stay:'Quedarme aquí',confirm:'Salir de la partida'}
+    };
+    function navigationText(key){return (navigationCopy[HubI18n.language]||navigationCopy.de)[key];}
+    function syncGameNavigation(){const game=routeStates[state];if(game)window.HubNavigation?.observe(game);else if(state==='HUB'||state==='ONLINE')window.HubNavigation?.observe(null);}
+    function currentGameView(){return ({SNAKE:snakeView,BREAKER:breakerView,RALLY:arcadeView,ORBIT:arcadeView,PRISM:bonusView,CLOUD:bonusView,TOWER:bonusView,CRYSTALRUN:crystalRunView,NYRUN:expansionView,MINIGOLF:expansionView,ONLINE:onlineView})[state];}
+    function openLinkedGame(id){if(id==='arena')go('MENU');else if(id==='snake')openSnake();else if(id==='breaker')openBreaker();else if(['rally','orbit'].includes(id))openArcade(id);else if(['prism','cloud','tower'].includes(id))openBonus(id);else if(id==='crystalrun')openCrystalRun();else if(id==='newyork')openExpansion('ny');else if(id==='minigolf')openExpansion('golf');}
+    function runningRound(){const v=currentGameView();if(state==='ONLINE')return !!v?.client?.joined;if(['PLAYING','PAUSED'].includes(state))return true;const phase=v?.model?.phase||v?.model?.state;return phase&&!['menu','over','won','gameover'].includes(phase);}
+    function pauseLinkedGame(){resetInput();const v=currentGameView();if(state==='PLAYING'){state='PAUSED';pause_start_tick=Date.now();}else if(state==='SNAKE'){if(['playing','countdown'].includes(v?.page))v.setPage('pause');}else if(v?.pause)v.pause();else if(state==='BREAKER')v?.model?.pause();else if(v?.model?.phase==='playing')v?.togglePause?.();HubFeedback.stop();}
+    function disposeLinkedGames(){window.HubTutorials?.close();for(const v of [snakeView,breakerView,arcadeView,bonusView,crystalRunView,expansionView,onlineView]){if(v&&!v.closed){if(v.exit)v.exit();else v.close?.();}}snakeView=breakerView=arcadeView=bonusView=crystalRunView=expansionView=onlineView=null;resetInput();}
+    const guideStyle=document.createElement('style');guideStyle.textContent=`
+      .hub-game-guide{position:fixed;right:14px;top:14px;z-index:10020;display:flex;gap:8px;max-width:calc(100vw - 28px);flex-wrap:wrap}.hub-game-guide button{font:600 13px/1.3 system-ui;color:#eafff7;background:#183a39;border:1px solid #6faaa0;border-radius:12px;min-height:44px;padding:10px 14px;cursor:pointer}.hub-game-guide button:focus-visible,.hub-route-confirm button:focus-visible,.hub-game-guide input:focus-visible{outline:3px solid #f9da91;outline-offset:3px}.hub-game-guide input{box-sizing:border-box;width:min(350px,calc(100vw - 28px));padding:10px;font:14px system-ui}.hub-route-confirm{position:fixed;inset:0;z-index:10040;background:#07121dd9;display:grid;place-items:center;padding:20px;color:#effaff;font:17px/1.5 system-ui}.hub-route-confirm section{background:#162b3e;border:1px solid #659c99;border-radius:20px;max-width:450px;padding:24px}.hub-route-confirm h2{margin-top:0}.hub-route-confirm button{font:600 16px system-ui;border:1px solid #669a96;border-radius:12px;min-height:46px;padding:12px;background:#244740;color:white;margin:6px;cursor:pointer}.hub-route-confirm button:last-child{background:#603b41}
+      @media(max-width:650px){.hub-game-guide{top:auto;bottom:max(12px,env(safe-area-inset-bottom));right:12px}.hub-game-guide button{font-size:12px;padding:10px}}`;
+    document.head.appendChild(guideStyle);
+    const gameGuide=document.createElement('nav');gameGuide.className='hub-game-guide';gameGuide.hidden=true;document.body.appendChild(gameGuide);
+    let guideSignature='',routeDialog=null,guideReleaseGate=false;
+    function guideBlocksInput(){if(HubTutorials.active||routeDialog)return true;if(guideReleaseGate){try{const held=Array.from(navigator.getGamepads?.()||[]).some(p=>p&&(Array.from(p.buttons||[]).some(b=>b?.pressed)||Array.from(p.axes||[]).some(a=>Math.abs(a)>.4)));if(held)return true;}catch{}guideReleaseGate=false;}return false;}
+    function showGameGuide(id){if(runningRound())return;resetInput();HubFeedback.stop();window.HubGamePreviews?.stopWithin(window.DeviceUI?.screen);HubTutorials.open(id,{onClose:()=>{guideReleaseGate=true;resetInput();},onPlay:()=>{if(state==='HUB')openLinkedGame(id);}});}
+    function syncGameGuide(){
+        const id=routeStates[state],v=currentGameView(),phase=v?.model?.phase||v?.model?.state;
+        // Tutorials can be opened from the collection or a start/result menu only.
+        const available=id&&(state==='MENU'||!['PLAYING','PAUSED','TUTORIAL','GAME_OVER'].includes(state)&&['menu','over','won','gameover'].includes(phase));
+        gameGuide.hidden=!available||HubTutorials.active;
+        for(const view of [snakeView,breakerView,arcadeView,bonusView,crystalRunView,expansionView]){
+            if(!view||view.hubGuideGate)continue;view.hubGuideGate=true;
+            for(const method of ['update','pollPad','pollGamepad'])if(typeof view[method]==='function'){const original=view[method];view[method]=function(...args){if(guideBlocksInput())return;return original.apply(this,args);};}
+        }
+        if(!available)return;const sig=id+'|'+HubI18n.language+'|'+HubNavigation.enabled;if(sig===guideSignature)return;guideSignature=sig;gameGuide.replaceChildren();
+        htmlButton(navigationText('guide'),()=>showGameGuide(id),gameGuide);
+        if(HubNavigation.enabled)htmlButton(navigationText('copy'),async()=>{const link=HubNavigation.href(id);try{await navigator.clipboard.writeText(link);HubPresentation.notify(navigationText('copied'));}catch{let field=gameGuide.querySelector('input');if(!field){field=element('input',undefined,gameGuide);field.readOnly=true;field.setAttribute('aria-label',navigationText('copyFailed'));}field.value=link;field.focus();field.select?.();}},gameGuide);
+    }
+    function confirmRouteChange(done){
+        const previous=document.activeElement;routeDialog=element('div',undefined,document.body,'hub-route-confirm');routeDialog.setAttribute('role','dialog');routeDialog.setAttribute('aria-modal','true');routeDialog.setAttribute('aria-labelledby','hub-route-title');
+        const box=element('section',undefined,routeDialog);const title=element('h2',navigationText('leave'),box);title.id='hub-route-title';element('p',navigationText('leaveText'),box);
+        const finish=value=>{routeDialog.remove();routeDialog=null;done(value);if(!value)previous?.focus?.();};
+        const stay=htmlButton(navigationText('stay'),()=>finish(false),box);htmlButton(navigationText('confirm'),()=>finish(true),box);stay.focus();
+    }
+    window.addEventListener('keydown',e=>{if(!routeDialog)return;e.stopImmediatePropagation();if(e.code==='Escape'){e.preventDefault();routeDialog.querySelector('button').click();}else if(e.code==='Tab'){const controls=Array.from(routeDialog.querySelectorAll('button')),at=controls.indexOf(document.activeElement);e.preventDefault();controls[(at+(e.shiftKey?-1:1)+controls.length)%controls.length].focus();}else if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();},true);
+    window.addEventListener('keyup',e=>{if(routeDialog)e.stopImmediatePropagation();},true);
+    const pollPadsWithoutGuide=pollGamepads;pollGamepads=function(...args){if(HubTutorials.active){HubTutorials.pollController();return;}if(guideBlocksInput())return;return pollPadsWithoutGuide(...args);};
     // Keep player assignments stable even when browser gamepad indices have gaps.
     const padSlots=[null,null], padHistory=new Map();
     let padSelection=0,padPage='';
@@ -7503,12 +8136,12 @@ window.HubOnlineConfig = {
     function profileStats(){const copy=profileCopy[HubI18n.language]||profileCopy.en,detail=profileDetail[HubI18n.language]||profileDetail.en,rounds=Object.values(gameCounters).reduce((n,key)=>n+profileNumber(stats[key]),0),long=Math.max(profileNumber(stats.crystalrun_distance),profileNumber(stats.newyork_distance)),unlocked=ACHIEVEMENTS.filter(a=>HubAchievements.progress(a,stats)>=a.req_val).length,tried=Object.values(gameCounters).filter(key=>profileNumber(stats[key])>0).length,statGrid=element('div',undefined,panel.querySelector('.inner'),'profile-grid profile-summary');
         for(const [icon,label,value] of [['🎮',copy.rounds,rounds.toLocaleString(HubI18n.language)],['🏅',copy.ach,`${unlocked} / ${ACHIEVEMENTS.length}`],['🏙️',copy.long,`${Math.floor(long).toLocaleString(HubI18n.language)} m`],['🕹️',detail.tried,`${tried} / 11`]]){const card=element('div',undefined,statGrid,'profile-card');element('span',icon,card).setAttribute('aria-hidden','true');element('small',label,card);element('strong',String(value),card);}
         const gameSection=section(panel.querySelector('.inner'),HubI18n.language==='de'?'Deine Spiele':HubI18n.language==='fr'?'Vos jeux':HubI18n.language==='es'?'Tus juegos':'Your games'),gameGrid=element('div',undefined,gameSection,'profile-grid'),gameNames={arena:'Ultimate Arena',snake:'Snake',breaker:'Neon Breaker',rally:'Neon Rally',orbit:'Orbit Dash',prism:'Prism Merge',cloud:'Cloud Hop',tower:'Tower Bastion',crystalrun:'Crystal Run 3D',newyork:'New York Rush',minigolf:'Minigolf Cup'},records={arena:['max_survived',detail.survival,' s'],prism:['prism_tile',detail.tile,''],cloud:['cloud_height',detail.height,' m'],tower:['tower_waves',detail.wave,''],crystalrun:['crystalrun_distance',detail.distance,' m'],newyork:['newyork_distance',detail.distance,' m']};
-        for(const [game,counter] of Object.entries(gameCounters)){const card=element('div',undefined,gameGrid,'profile-card profile-game-card');card.dataset.game=game;card.style.setProperty?.('--game-color',HubPresentation.color(game));const played=profileNumber(stats[counter]),list=ACHIEVEMENTS.filter(a=>HubAchievements.group(a)===game),done=list.filter(a=>HubAchievements.progress(a,stats)>=a.req_val).length,head=element('div',undefined,card,'profile-game-head'),badge=element('canvas',undefined,head);badge.width=48;badge.height=48;badge.setAttribute('aria-hidden','true');HubAchievements.drawBadge(badge.getContext('2d'),list[0]||{req_key:counter,req_val:1},played>0||done>0,48);element('h3',gameNames[game],head);element('strong',played.toLocaleString(HubI18n.language),card);element('small',detail.rounds,card);const [key,label,unit]=records[game]||[game+'_best',detail.record,''],record=profileNumber(stats[key]);element('p',played||record?`${label}: ${Math.floor(record).toLocaleString(HubI18n.language)}${unit}`:detail.fresh,card);if(list.length){const bar=element('progress',undefined,card);bar.max=list.length;bar.value=done;bar.setAttribute('aria-label',`${gameNames[game]} · ${copy.ach}: ${done} / ${list.length}`);element('small',`${copy.ach} · ${done} / ${list.length}`,card);}}
+        for(const [game,counter] of Object.entries(gameCounters)){const card=element('div',undefined,gameGrid,'profile-card profile-game-card');card.dataset.game=game;card.style.setProperty?.('--game-color',HubPresentation.color(game));const played=profileNumber(stats[counter]),list=ACHIEVEMENTS.filter(a=>HubAchievements.group(a)===game),done=list.filter(a=>HubAchievements.progress(a,stats)>=a.req_val).length,head=element('div',undefined,card,'profile-game-head'),badge=element('canvas',undefined,head);badge.width=96;badge.height=96;badge.setAttribute('aria-hidden','true');HubAchievements.drawGameBadge(badge.getContext('2d'),game,96);element('h3',gameNames[game],head);element('strong',played.toLocaleString(HubI18n.language),card);element('small',detail.rounds,card);const [key,label,unit]=records[game]||[game+'_best',detail.record,''],record=profileNumber(stats[key]);element('p',played||record?`${label}: ${Math.floor(record).toLocaleString(HubI18n.language)}${unit}`:detail.fresh,card);if(list.length){const bar=element('progress',undefined,card);bar.max=list.length;bar.value=done;bar.setAttribute('aria-label',`${gameNames[game]} · ${copy.ach}: ${done} / ${list.length}`);element('small',`${copy.ach} · ${done} / ${list.length}`,card);}}
         const challenge=section(panel.querySelector('.inner'),copy.weekly),weekly=currentWeekly(),ci=weekly.index,langs={de:['Spiele 5 Runden','Spiele 3 verschiedene Spiele','Sammle 12 Sterne in New York Rush','Beende 2 Minigolf-Cups','Beende 8 beliebige Runden'],en:['Play 5 rounds','Play 3 different games','Collect 12 New York Rush stars','Finish 2 Minigolf Cups','Finish 8 rounds'],fr:['Jouez 5 parties','Jouez à 3 jeux différents','Ramassez 12 étoiles à New York','Terminez 2 coupes de mini-golf','Terminez 8 parties'],es:['Juega 5 partidas','Juega a 3 juegos distintos','Recoge 12 estrellas en Nueva York','Termina 2 copas de minigolf','Termina 8 partidas']}[HubI18n.language]||['Play 5 rounds','Play 3 different games','Collect 12 New York Rush stars','Finish 2 Minigolf Cups','Finish 8 rounds'],value=weekly.value,target=weekly.target;element('p',`${langs[ci]} · ${Math.min(value,target)} / ${target}${weekly.done?' · ✓':''}`,challenge);const progress=element('progress',undefined,challenge);progress.max=target;progress.value=Math.min(value,target);element('p',detail.weeklyNote,challenge);
         const quest=section(panel.querySelector('.inner'),copy.quest,copy.steps),step=Number(stats.quest_step)||0,questGrid=element('div',undefined,quest,'profile-grid');['Snake','Prism Merge','Crystal Run 3D'].forEach((name,i)=>{const card=element('div',undefined,questGrid,'profile-card');element('strong',(i<step?'✓ ':'○ ')+name,card);});if(stats.quest_completions)element('p',`${stats.quest_completions} ${detail.completed} · ✦ ${stats.quest_completions}`,quest);
         const coll=section(panel.querySelector('.inner'),copy.collection),skins=new Set(['classic',...(Array.isArray(stats.crystalrun_skins)?stats.crystalrun_skins:[])]);element('h3',detail.skinTitle,coll);const skinGrid=element('div',undefined,coll,'collection-grid');for(const skin of CrystalRun.SKINS){const owned=skins.has(skin.id),item=element('div',undefined,skinGrid,'collection-item'+(owned?' owned':'')),swatch=element('span','',item,'collection-swatch');swatch.style.background=skin.swatch;swatch.setAttribute('aria-hidden','true');element('strong',skin.name[HubI18n.language]||skin.name.en,item);element('small',owned?'✓ '+detail.owned:'○ '+detail.locked,item);}element('h3',detail.worlds,coll);const worlds=element('div',undefined,coll,'collection-grid');for(const world of CrystalRun.WORLDS){const progress=CrystalRun.worldProgress(world,stats),item=element('div',undefined,worlds,'collection-item'+(progress>=1?' owned':'')),swatch=element('span','',item,'collection-swatch');swatch.style.background=world.swatch;swatch.setAttribute('aria-hidden','true');element('strong',world.name[HubI18n.language]||world.name.en,item);element('small',progress>=1?'✓ '+detail.owned:detail.locked+' · '+Math.floor(progress*100)+'%',item);const bar=element('progress',undefined,item);bar.max=1;bar.value=progress;bar.setAttribute('aria-label',world.name[HubI18n.language]||world.name.en);}const maps=new Set((Array.isArray(stats.played_maps)?stats.played_maps:[]).filter(id=>Number.isInteger(id)&&id>=0&&id<MAPS.length));element('p',`${detail.arenaMaps}: ${maps.size} / ${MAPS.length}`,coll);
         const eggs=section(panel.querySelector('.inner'),copy.eggs),grid=element('div',undefined,eggs,'egg-grid'),known=['star','moo','wow','ducks'],names={de:['Sternenbesuch','MOO','Neon-WOW','Entenparade'],en:['Star visitor','MOO','Neon WOW','Duck parade'],fr:['Visiteur étoilé','MOO','Néon WOW','Parade des canards'],es:['Visitante estelar','MOO','Neón WOW','Desfile de patos']}[HubI18n.language]||['Star visitor','MOO','Neon WOW','Duck parade'],found=Array.isArray(stats.easter_egg_ids)?stats.easter_egg_ids:[];known.forEach((id,i)=>{const card=element('div',undefined,grid,'egg-card'+(found.includes(id)?' found':''));element('span',found.includes(id)?['✦','🐮','⚡','🦆'][i]:'?',card,'egg-icon');element('strong',found.includes(id)?names[i]:copy.unknown,card);});
-        const earned=ACHIEVEMENTS.filter(a=>HubAchievements.progress(a,stats)>=a.req_val),ach=section(panel.querySelector('.inner'),copy.ach,`${earned.length} / ${ACHIEVEMENTS.length}`),cards=element('div',undefined,ach,'profile-achievements');earned.slice(-6).reverse().forEach((a,i)=>{const card=element('div',undefined,cards,'profile-achievement');element('strong',['🏅','🌟','🎯','✨','🎖','🏆'][i]+' '+tr(a.name),card);element('small',tr(a.desc),card);});if(!earned.length)element('p',detail.emptyAchievements,ach,'profile-empty');htmlButton(copy.view,()=>info('ACHIEVEMENTS','PROFILE'),panel.querySelector('.inner'));htmlButton(copy.challenge,()=>info('QUESTS','PROFILE'),panel.querySelector('.inner'));
+        const earned=ACHIEVEMENTS.filter(a=>HubAchievements.progress(a,stats)>=a.req_val),ach=section(panel.querySelector('.inner'),copy.ach,`${earned.length} / ${ACHIEVEMENTS.length}`),cards=element('div',undefined,ach,'profile-achievements');earned.slice(-6).reverse().forEach(a=>{const card=element('div',undefined,cards,'profile-achievement'),icon=element('canvas',undefined,card);icon.width=icon.height=128;icon.dataset.achievementIconId=a.id;icon.setAttribute('aria-hidden','true');Object.assign(icon.style,{position:'static',width:'52px',height:'52px',display:'block',marginBottom:'7px'});HubAchievements.drawBadge(icon.getContext('2d'),a,true,128);element('strong',tr(a.name),card);element('small',tr(a.desc),card);});if(!earned.length)element('p',detail.emptyAchievements,ach,'profile-empty');htmlButton(copy.view,()=>info('ACHIEVEMENTS','PROFILE'),panel.querySelector('.inner'));htmlButton(copy.challenge,()=>info('QUESTS','PROFILE'),panel.querySelector('.inner'));
     }
     function questsPanel(){const copy=profileCopy[HubI18n.language]||profileCopy.en,inner=panel.querySelector('.inner'),weekly=currentWeekly(),ci=weekly.index,names={de:['Spiele 5 Runden','Spiele 3 verschiedene Spiele','Sammle 12 Sterne in New York Rush','Beende 2 Minigolf-Cups','Beende 8 beliebige Runden'],en:['Play 5 rounds','Play 3 different games','Collect 12 New York Rush stars','Finish 2 Minigolf Cups','Finish 8 rounds'],fr:['Jouez 5 parties','Jouez à 3 jeux différents','Ramassez 12 étoiles à New York','Terminez 2 coupes','Terminez 8 parties'],es:['Juega 5 partidas','Juega 3 juegos distintos','Recoge 12 estrellas en Nueva York','Termina 2 copas','Termina 8 partidas']}[HubI18n.language]||['Play 5 rounds','Play 3 different games','Collect 12 New York Rush stars','Finish 2 Minigolf Cups','Finish 8 rounds'],target=weekly.target,value=weekly.value,s=section(inner,copy.weekly,names[ci]);element('p',`${copy.progress}: ${Math.min(value,target)} / ${target}${weekly.done?' · ✓':''}`,s);const bar=element('progress',undefined,s);bar.max=target;bar.value=Math.min(value,target);element('p',(profileDetail[HubI18n.language]||profileDetail.en).weeklyNote,s);const quest=section(inner,copy.quest,copy.steps),grid=element('div',undefined,quest,'profile-grid'),step=Number(stats.quest_step)||0;['Snake','Prism Merge','Crystal Run 3D'].forEach((name,i)=>{const card=element('div',undefined,grid,'profile-card');element('strong',(i<step?'✓ ':'○ ')+name,card);});}
     function applyAppearance(){document.documentElement.classList.toggle('hub-high-contrast',!!stats.high_contrast);document.documentElement.classList.toggle('hub-large-text',!!stats.large_text);}
@@ -7539,6 +8172,8 @@ window.HubOnlineConfig = {
             for(const item of (window.HubLegalSources||[])){const p=element('p',undefined,sources);const a=element('a',item.label,p);a.href=item.url;a.target='_blank';a.rel='noopener noreferrer';}
             htmlButton(tr('Einstellungen'),()=>info('SETTINGS','LEGAL'),inner);
         }else if(state==='CREDITS'){
+            const creation={de:['Entstehung · Gestaltung & KI','Gestaltung und Projektentscheidungen: Manuel. Bei Programmierung, Fehlersuche und Überarbeitung wurden KI-Werkzeuge als Unterstützung verwendet. Die Spiel-Cover wurden mit KI erstellt und nachbearbeitet; sie zeigen illustrative Spielszenen. Hover-Vorschauen und animierte Anleitungen werden durch Programmcode im Browser dargestellt. Quellen und Lizenzen fremder Modelle stehen unten.'],en:['Creation · design & AI','Design and project decisions: Manuel. AI tools assisted with programming, debugging and revisions. The game covers were created with AI and edited; they depict illustrative game scenes. Hover previews and animated guides are rendered by code in the browser. Sources and licenses for third-party models are listed below.'],fr:['Création · graphisme et IA','Conception et décisions du projet : Manuel. Des outils d’IA ont aidé à la programmation, au débogage et aux révisions. Les couvertures ont été créées avec l’IA puis retouchées ; elles illustrent les jeux. Les aperçus et guides animés sont dessinés par du code dans le navigateur. Les sources et licences des modèles tiers figurent ci-dessous.'],es:['Creación · diseño e IA','Diseño y decisiones del proyecto: Manuel. Se usaron herramientas de IA para apoyar la programación, depuración y revisión. Las portadas se crearon con IA y se editaron; ilustran escenas de juego. Las vistas previas y guías animadas se dibujan mediante código en el navegador. Las fuentes y licencias de modelos externos aparecen abajo.']}[HubI18n.language]||[];
+            section(inner,creation[0],creation[1]);
             const shareCopy={de:['Website teilen','Dieser QR-Code öffnet die Website auf einem anderen Gerät. Über „Online spielen“ kannst du mit einem Raumcode gegeneinander spielen, sobald der Spielserver eingerichtet ist.','Website öffnen'],en:['Share website','This QR code opens the website on another device. Use “Play online” for room-code matches once the game server is configured.','Open website'],fr:['Partager le site','Ce QR code ouvre le site sur un autre appareil. Le mode en ligne avec code de salon fonctionne une fois le serveur configuré.','Ouvrir le site'],es:['Compartir sitio','Este QR abre el sitio en otro dispositivo. El modo en línea con código de sala funciona cuando se configura el servidor.','Abrir sitio']}[HubI18n.language]||[];
             const share=section(inner,shareCopy[0],shareCopy[1]);const qr=element('img',undefined,share);qr.src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQgAAAEICAYAAACj9mr/AAAAAklEQVR4AewaftIAAAbhSURBVO3BgW1kgZUDweaD8k+ZpwDMAe5DGo/WXZV+Q5L+g0OShkOShkOShkOShkOShkOShkOShkOShkOShkOShkOShkOShkOShkOShkOShkOShkOShkOShkOShkOShkOShkOShkOShkOShkOShkOShkOShkOShi/+C5LwL2jLE0lY2vJKEpa2/LQk/BVtWZLwL2jLOx2SNBySNBySNBySNBySNBySNHzxYdrySZLwTkn4JG15IglLWz5JWz5JEj7FIUnDIUnDIUnDIUnDIUnDIUnDF39IEn5DW35aEpa2PJWEJQlLW5YkLG1ZkrC05akkPNGWn5aE39CWv+CQpOGQpOGQpOGQpOGQpOGQpOELfZQkPNWWJ9ryRFuWJCxteaotep9DkoZDkoZDkoZDkoZDkoZDkoZDkoYv9M9Iwju15Ykk6G84JGk4JGk4JGk4JGk4JGk4JGn44g9py78gCUtbnkrCOyXhibY8lYSlLT+tLf/LDkkaDkkaDkkaDkkaDkkaDkkavvgwSfjXtWVJwitteaItSxKWtixJWNqyJOGVtrxTEvSfHZI0HJI0HJI0HJI0HJI0HJI0fPFf0BY9k4SlLUsSlrZ8kiQsbXmiLfr/OyRpOCRpOCRpOCRpOCRpOCRpSL/xZklY2rIk4ZO05V+QhKUtTyRhactTSVjasiThk7TlLzgkaTgkaTgkaTgkaTgkaTgkaUi/8Q9IwittWZKwtGVJwhNtWZLwG9ryVyThibYsSfhpbfkNSVja8k6HJA2HJA2HJA2HJA2HJA2HJA3pN94sCUtb3i0JT7RlScITbfkkSXi3tixJeKItSxKeaMu/7pCk4ZCk4ZCk4ZCk4ZCk4ZCk4ZCk4YsPk4SlLUsSXmnLE21ZkvBEW5YkvNKWn5aEn9aWJQmfpC1PJOGVtixJWNryKQ5JGg5JGg5JGg5JGg5JGg5JGtJv/BFJ+A1tWZLwTm15JQlPtOWdkrC05ZMkYWnLkoSn2vIXHJI0HJI0HJI0HJI0HJI0HJI0fPFhkvBJ2vJOSXilLU8k4Ym2LElY2rIk4Te0ZUnCE0lY2vIbkrC05Z0OSRoOSRoOSRoOSRoOSRoOSRrSb7xZEp5oy5KEV9ryRBKWtvy0JPwL2vIbkvBEW55Iwm9oy19wSNJwSNJwSNJwSNJwSNJwSNLwxYdpy5KEd2vLX9GWJQlLW55Iwidpy5KEJ9ryG5KwtOVTHJI0HJI0HJI0HJI0HJI0HJI0pN94syT8tLa8koSlLUsSlrYsSfgNbVmSsLRlScLSlieSsLTllSQsbfkUSXiqLX/BIUnDIUnDIUnDIUnDIUnDIUnDFx+mLU8k4ZW2LElY2rIk4ZO05Ym2PJGEJ5LwVBI+RVteScITSVja8k6HJA2HJA2HJA2HJA2HJA2HJA1f/CFJeCoJS1uWJDzRliUJS1teScLSlp+WhJ/WlqeSsLRlScJf0ZZPcUjScEjScEjScEjScEjScEjScEjS8MX/iLYsSVjasiRhScLSliUJr7TlpyVhactPS8IrbVna8tPasiThqbYsSVja8ikOSRoOSRoOSRoOSRoOSRoOSRrSb7xZEpa2PJGEd2vLuyXhibY8kYSlLUsSlrY8lYRP0ZZXkvDT2vJOhyQNhyQNhyQNhyQNhyQNhyQN6Tf045LwRFueSsJPa8uShKUtSxJeacuShKUtPy0Jn6Qt73RI0nBI0nBI0nBI0nBI0nBI0pB+482S8C9oyxNJ+A1tWZLw09ryG5LwRFuWJCxtWZLwG9ryFxySNBySNBySNBySNBySNBySNHzxYdrySZLwRBKWtjyVhCUJT7TliSQsbVmS8G5t+Wlt+Q1JWNryTockDYckDYckDYckDYckDYckDV/8IUn4DW15pyQsbXmlLT8tCUtblrYsSVja8lQSliR8kiQ80ZZPcUjScEjScEjScEjScEjScEjS8IU+ShJeacuShKUtS1t+WluWJLxbW35aEn5DEpa2vNMhScMhScMhScMhScMhScMhScMhScMXeru2vFsSlrYsSVja8kRbXknC0pYlCUsS/oq2fIpDkoZDkoZDkoZDkoZDkoZDkoYv/pC2/BVteSIJr7RlacuShCUJS1verS1LEpa2LEl4oi1LEl5py5KEv+CQpOGQpOGQpOGQpOGQpOGQpCH9xpsl4V/QliUJS1ueSsITbVmS8E5teSUJS1veKQlLW15JwtKWv+CQpOGQpOGQpOGQpOGQpOGQpCH9hiT9B4ckDYckDYckDYckDYckDYckDYckDYckDYckDYckDYckDYckDYckDYckDYckDYckDYckDYckDYckDYckDYckDYckDYckDYckDYckDYckDYckDf8HVM9f+xs+EswAAAAASUVORK5CYII=';qr.alt='QR · https://calypso-games.onrender.com/';qr.width=264;qr.height=264;Object.assign(qr.style,{display:'block',maxWidth:'100%',height:'auto',margin:'16px 0',borderRadius:'8px'});const link=element('a',shareCopy[2]+' · calypso-games.onrender.com',share);link.href='https://calypso-games.onrender.com/';link.target='_blank';link.rel='noopener noreferrer';
             section(inner,'Ultimate Arena v2',u(10));section(inner,'Snake',u(11));section(inner,'Neon Breaker',tr('Eigenständiges Arcade-Spiel für diesen Hub: fünf Level, Bonusgegenstände und lokale Klänge.'));section(inner,'Neon Rally & Orbit Dash',window.DeviceUI?.credits()||'Original arcade games');section(inner,'Prism Merge',BonusGames.COPY[HubI18n.language].prism);section(inner,'Cloud Hop',BonusGames.COPY[HubI18n.language].cloud);section(inner,'Tower Bastion',BonusGames.COPY[HubI18n.language].towerHelpMenu);section(inner,'Crystal Run 3D',CrystalRun.COPY[HubI18n.language].desc);section(inner,'New York Rush',ArcadeExpansions.COPY[HubI18n.language].nydesc+'\n'+({de:'Eigene 3D-Geometrie und Animationen: sieben Architekturtypen, Cafés, Diners und Pizzerien mit Schaufenstern und Terrassen, bewegte Fußgänger und Tauben sowie Stadtmöbel, Straßen, Taxis und U-Bahn-Stationen entstehen direkt im Spiel. Times Square besitzt eigene Leuchtfassaden und gemalte stumme Spielmotive; diese sind keine bezahlten Fremdanzeigen.',en:'Original 3D geometry and animation: seven architectural styles, cafés, diners and pizzerias with shop displays and terraces, animated pedestrians and pigeons, street furniture, streets, taxis and subway stations are generated inside the game. Times Square has original illuminated facades and silent game posters; these are not paid third-party advertisements.',fr:'Géométrie et animations originales : sept styles architecturaux, cafés, diners et pizzerias avec vitrines et terrasses, piétons et pigeons animés, mobilier urbain, rues, taxis et stations sont créés dans le jeu. Times Square présente des façades lumineuses et des affiches de jeux silencieuses originales, sans annonces tierces payantes.',es:'Geometría y animación originales: siete estilos arquitectónicos, cafeterías, diners y pizzerías con escaparates y terrazas, peatones y palomas animados, mobiliario urbano, calles, taxis y estaciones se crean dentro del juego. Times Square incluye fachadas iluminadas y carteles originales y silenciosos de los juegos, sin anuncios pagados de terceros.'})[HubI18n.language]);section(inner,'Minigolf Cup',ArcadeExpansions.COPY[HubI18n.language].golfdesc);section(inner,u(8),u(9));section(inner,tr('Technik'),u(12)+' · WebGL: New York Rush / Crystal Run 3D');section(inner,at(0),at(5));element('p',u(13),inner);
@@ -7560,6 +8195,10 @@ window.HubOnlineConfig = {
         }else if(state==='QUESTS'){
             questsPanel();
         }else if(state==='SETTINGS'){
+            const navigation=section(inner,navigationText('heading'),navigationText('description'));
+            const navigationRow=element('div',undefined,navigation,'row');element('span',navigationText('toggle'),navigationRow);
+            const directToggle=htmlButton(tr(HubNavigation.enabled?'AN':'AUS'),()=>{HubNavigation.setEnabled(!HubNavigation.enabled);directToggle.textContent=tr(HubNavigation.enabled?'AN':'AUS');directToggle.setAttribute('aria-pressed',String(HubNavigation.enabled));},navigationRow);
+            directToggle.setAttribute('aria-label',navigationText('toggle'));directToggle.setAttribute('aria-pressed',String(HubNavigation.enabled));
             const s=section(inner,tr('Einstellungen'));
             const options=[['show_fps','FPS-Anzeige'],['touch_ctrl','Touch-Steuerung'],['mouse_ctrl','Maussteuerung P1'],['high_contrast','Hoher Kontrast'],['large_text','Größere Schrift']];
             for(const [key,label] of options){const row=element('div',undefined,s,'row');element('label',tr(label),row);const b=htmlButton(tr(stats[key]?'AN':'AUS'),()=>{stats[key]=!stats[key];save_stats(stats);panelState='';},row);b.setAttribute('aria-pressed',String(!!stats[key]));}
@@ -7592,7 +8231,7 @@ window.HubOnlineConfig = {
         }else if(state==='DELETE_CONFIRM'){
             section(inner,tr('Daten wirklich löschen?'),u(16));
             htmlButton(tr('Abbrechen'),back,inner);
-            htmlButton(tr('Löschen'),()=>{window.HubSocial?.clearLocalSession();const ok=HubStorage.clear();HubAudio.reset();HubFeedback.reset();HubAchievements.reset();HubPresentation.motion(true);stats={mouse_ctrl:true};applyAppearance();highscores={};MODES.forEach(m=>highscores[m]=empty_highscore());bot_level=1;p2_is_bot=false;back();renderPanel();element('p',ok?tr('Daten gelöscht'):u(25),panel.querySelector('.inner'),'notice');},inner);
+            htmlButton(tr('Löschen'),()=>{window.HubSocial?.clearLocalSession();const ok=HubStorage.clear();HubAudio.reset();HubFeedback.reset();HubAchievements.reset();HubNavigation.reset();HubPresentation.motion(true);stats={mouse_ctrl:true};applyAppearance();highscores={};MODES.forEach(m=>highscores[m]=empty_highscore());bot_level=1;p2_is_bot=false;back();renderPanel();element('p',ok?tr('Daten gelöscht'):u(25),panel.querySelector('.inner'),'notice');},inner);
         }
         const focus=focusIndex>=0?panel.querySelectorAll('button,select,input')[focusIndex]:panel.querySelector('button');focus?.focus({preventScroll:true});panel.scrollTop=scroll;
     }
@@ -7669,6 +8308,7 @@ window.HubOnlineConfig = {
     }
     const drawOriginal=draw;
     draw=function(){
+        syncGameNavigation();syncGameGuide();
         syncAudio();
         customButtons=[];renderedButtons=[];
         if(state==='HUB'&&window.DeviceUI?.active){panel.hidden=true;controls.hidden=true;drawMini(ctx,'hub',WIDTH,HEIGHT);return;}
@@ -7723,7 +8363,7 @@ window.HubOnlineConfig = {
         if(['SNAKE','BREAKER','RALLY','ORBIT','PRISM','CLOUD','CRYSTALRUN','ONLINE','NYRUN','MINIGOLF'].includes(state))return;
         if(e.code==='Tab')return;
         if(state==='PLAYING'&&mode_idx===0&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&!['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)&&!e.target.isContentEditable){if(hiddenSequence.feed(e.code,performance.now(),e.repeat)){eggTime=0;eggStamp=performance.now();recordEgg('ducks');sound('secret');}}else hiddenSequence.clear();
-        if(e.target.closest?.('#deviceScreen')){if(e.code==='Escape'){e.preventDefault();e.stopImmediatePropagation();if(state==='HUB')window.DeviceUI?.clearSearch();else if(state==='MENU')go('HUB');else back();}else if(state==='HUB'&&e.target.tagName==='BUTTON'&&window.DeviceUI?.navigate(e.code)){e.preventDefault();e.stopImmediatePropagation();}else if(e.code!=='Tab')e.stopImmediatePropagation();return;}
+        if(e.target.closest?.('#deviceScreen')){if(e.code==='Escape'){e.preventDefault();e.stopImmediatePropagation();if(state==='HUB')window.DeviceUI?.clearSearch();else if(state==='MENU')go('HUB');else back();}else if(state==='HUB'&&['BUTTON','A'].includes(e.target.tagName)&&window.DeviceUI?.navigate(e.code)){e.preventDefault();e.stopImmediatePropagation();}else if(e.code!=='Tab')e.stopImmediatePropagation();return;}
         if(e.target.closest?.('#infoPanel')){if(e.code==='Escape'){e.preventDefault();back();}return;}
         if(e.target.closest?.('#canvasControls')&&['Space','Enter'].includes(e.code)){e.stopImmediatePropagation();return;}
         if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
@@ -7742,7 +8382,8 @@ window.HubOnlineConfig = {
     document.addEventListener('visibilitychange',()=>{resetInput();if(document.hidden&&state==='PLAYING'){state='PAUSED';pause_start_tick=Date.now();}syncAudio();});
     window.addEventListener('pagehide',()=>{save_stats(stats);HubAudio.stop();});
     window.HubSocial?.configure({stats:()=>stats,achievements:()=>ACHIEVEMENTS,translate:tr,onlineView:()=>onlineView,onPlay:(game,room,options)=>openOnline(game,room,options)});
-    window.HubActions={go,info,quit,back,resetInput,openSnake,openBreaker,openArcade,openBonus,openOnline,openCrystalRun,openExpansion,cycleLanguage,languageLabel,get views(){return {snake:snakeView,breaker:breakerView,arcade:arcadeView,bonus:bonusView,online:onlineView,crystalrun:crystalRunView,expansion:expansionView};}};
+    window.HubActions={go,info,quit,back,resetInput,openSnake,openBreaker,openArcade,openBonus,openOnline,openCrystalRun,openExpansion,openGuide:showGameGuide,cycleLanguage,languageLabel,get views(){return {snake:snakeView,breaker:breakerView,arcade:arcadeView,bonus:bonusView,online:onlineView,crystalrun:crystalRunView,expansion:expansionView};}};
+    HubNavigation.configure({open:openLinkedGame,hub:()=>go('HUB'),leave:disposeLinkedGames,active:runningRound,pause:pauseLinkedGame,confirm:confirmRouteChange});
     window.HubAdmin?.configure({language:()=>HubI18n.language,profile:()=>window.HubSocial?.identity(),onPolicyChanged:()=>window.HubAdPolicy?.refresh(),onNoticeChanged:()=>window.HubOnlineNotice?.invalidate()});
     const adminLink=()=>{if(window.location.hash==='#admin'&&['HUB','CREDITS','SETTINGS','PROFILE','FRIENDS','LEGAL'].includes(state))window.HubAdmin?.open();};
     window.addEventListener('hashchange',adminLink);adminLink();
@@ -13082,6 +13723,7 @@ window.HubOnlineConfig = {
 .tower-roster-title{display:block;margin:8px 0;color:#fff0bc;font-size:16px}.tower-roster-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:230px;overflow-y:auto;overscroll-behavior:contain;margin:8px 0}.tower-roster-tile{min-width:0;padding:8px;border:1px solid #496454;border-radius:12px;background:linear-gradient(145deg,#193444,#14263a)}.tower-roster-tile.chosen{border-color:#b5d487;background:linear-gradient(145deg,#304a3a,#192f3d)}.arcade-sheet .tower-roster-choice{width:100%;min-height:42px;margin:0;padding:8px 6px;font-size:13px;line-height:1.2;white-space:normal;overflow-wrap:anywhere}.tower-roster-choice.selected{background:linear-gradient(135deg,#536d3e,#3e664a)!important;border-color:#d8ed9a!important;color:#fff8d8!important}.tower-roster-tile small{display:block;margin-top:6px;font-size:11px;line-height:1.3;letter-spacing:0;color:#bdd0d4}.tower-roster-tile .tower-roster-lock{color:#e4c48f}.bonus-tower .arcade-toolbar{max-width:calc(100vw - 12px);gap:6px;padding:5px}.bonus-tower .arcade-toolbar .tower-type-button{flex:1 1 130px;max-width:180px;min-width:0}.bonus-tower .arcade-toolbar .tower-sell-button{background:linear-gradient(135deg,#7d403c,#9a5940)!important;border-color:#efaa86!important;color:#fff0dd!important}.bonus-tower .arcade-toolbar .tower-sell-button:hover{background:linear-gradient(135deg,#a65042,#b86b43)!important}.bonus-landscape.bonus-tower .arcade-toolbar{max-height:calc(100dvh - 12px);overflow-y:auto;align-content:flex-start}.bonus-tower .arcade-overlay{overflow-y:auto;overscroll-behavior:contain}.bonus-tower .arcade-sheet{background:radial-gradient(ellipse at 50% 0,#315846,#192f40 56%,#14213a);border-color:#83b68a;box-shadow:0 24px 85px #0009,0 0 34px #b6dd9140}.bonus-tower .arcade-sheet h1{color:#fff1c2;text-shadow:0 2px 0 #704c36,0 0 22px #ffe59a66}.bonus-tower .bonus-demo{border:1px solid #c8dbad;box-shadow:0 10px 26px #07172088,0 0 20px #edda9050}
     .online-landscape .arcade-toolbar{width:min(170px,30vw)}
     [hidden]{display:none!important}
+    .device-screen a.game-open{display:block;text-decoration:none;text-align:center;font:600 15px/1.35 system-ui;min-height:46px;padding:11px 17px;border:1px solid #48607d;border-radius:13px;color:#edf7ff;background:#1c3049;cursor:pointer;white-space:normal;overflow-wrap:anywhere;box-sizing:border-box;touch-action:manipulation}.device-screen a.game-open:hover{background:#28415c;border-color:#78ece3}.device-screen a.game-open:focus-visible{outline:3px solid #f9da91;outline-offset:3px}.device-screen button.game-guide{background:transparent;border-color:#39546a;color:#bcdedb;margin-top:8px;width:100%;font-size:13px}
     .arcade-view,.device-screen,.device-game-menu{color:#edf7ff;font:16px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif;box-sizing:border-box}
     .arcade-view button,.device-screen button,.device-game-menu button,.device-play button{font:600 15px/1.35 system-ui,sans-serif;min-height:46px;padding:11px 17px;border:1px solid #48607d;border-radius:13px;color:#edf7ff;background:#1c3049;cursor:pointer;white-space:normal;overflow-wrap:anywhere;max-width:100%;box-sizing:border-box;touch-action:manipulation}
     .arcade-view button:hover,.device-screen button:hover,.device-game-menu button:hover{background:#28415c;border-color:#78ece3}
@@ -13141,6 +13783,7 @@ window.HubOnlineConfig = {
   };const t=i=>(copy[HubI18n.language]||copy.de)[i];
   const el=(tag,label,parent,cls)=>{const n=document.createElement(tag);if(label!==undefined)n.textContent=label;if(cls)n.className=cls;parent?.append(n);return n;};
   const button=(label,action,parent)=>{const n=el('button',label,parent);n.type='button';n.addEventListener('click',()=>{if(state==='HUB'&&n.closest?.('#deviceScreen')){savedScroll=screen.scrollTop||0;if(n.dataset.hubFocus)returnFocus=n.dataset.hubFocus;}HubAudio.unlock();HubAudio.play('click');action();});return n;};
+  const gameLink=(id,label,action,parent)=>{if(!HubNavigation.enabled)return button(label,action,parent);const n=el('a',label,parent);n.href=HubNavigation.href(id);n.addEventListener('click',e=>HubNavigation.follow(e,id,()=>{savedScroll=screen.scrollTop||0;if(n.dataset.hubFocus)returnFocus=n.dataset.hubFocus;HubAudio.unlock();HubAudio.play('click');action();}));return n;};
   const screen=el('main',undefined,document.body,'device-screen');screen.id='deviceScreen';screen.hidden=true;
   const play=el('div',undefined,document.body,'device-play');play.hidden=true;
   const hud=el('span','',play,'device-hud');button(tr('Pause'),()=>{state='PAUSED';pause_start_tick=Date.now();HubActions.resetInput();},play).className='device-pause';
@@ -13219,7 +13862,8 @@ window.HubOnlineConfig = {
       const favorite=button('☆',()=>{const selected=new Set(favorites());if(selected.has(kind))selected.delete(kind);else selected.add(kind);stats.hub_favorites=[...selected];saveLibrary();applyFilters();if(!tile.hidden&&HubFeedback.getSettings().motion&&!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)favorite.animate?.([{transform:'scale(.9)'},{transform:'scale(1.13)'},{transform:'scale(1)'}],{duration:210,easing:'ease-out'});},title);favorite.className='hub-favorite';favorite.dataset.hubFocus='favorite-'+kind;
       if(kind===recommended)el('span',recommendLabel,body,'game-recommend');
       const badges=el('div',undefined,body,'game-mode-badges');el('span',text.solo,badges,'game-mode-badge');if(localGames.has(kind))el('span',kind==='minigolf'?text.golfLocal:text.localBadge,badges,'game-mode-badge');if(onlineGames.has(kind))el('span',kind==='minigolf'?text.golfOnline:kind==='tower'?text.coop:text.onlineBadge,badges,'game-mode-badge online');
-      el('p',descriptions[kind],body);const start=button(name,()=>launch(kind,open,'play-'+kind),body);start.className='game-open';start.dataset.hubFocus='play-'+kind;
+      el('p',descriptions[kind],body);const start=gameLink(kind,name,()=>launch(kind,open,'play-'+kind),body);start.className='game-open';start.dataset.hubFocus='play-'+kind;
+      const help=button(({de:'Anleitung ansehen',en:'View guide',fr:'Voir le guide',es:'Ver la guía'})[HubI18n.language],()=>HubActions.openGuide(kind),body);help.className='game-guide';help.dataset.hubFocus='guide-'+kind;help.setAttribute('aria-label',help.textContent+' · '+name);
       if(onlineGames.has(kind)){const online=button(text.online,()=>launch(kind,()=>HubActions.openOnline(kind),'online-'+kind,true),body);online.className='game-online';online.dataset.hubFocus='online-'+kind;online.setAttribute('aria-label',name+' · '+text.online);}
       tiles.push({kind,name,tile,favorite,preview,searchText:normalize(name+' '+descriptions[kind])});
     });
@@ -13229,7 +13873,7 @@ window.HubOnlineConfig = {
     button(({de:'Hub teilen · QR',en:'Share hub · QR',fr:'Partager le hub · QR',es:'Compartir hub · QR'})[HubI18n.language],()=>HubActions.info('CREDITS','HUB'),foot).dataset.hubFocus='share';
     button(t(HubStorage.enabled?17:15),()=>HubActions.info('SETTINGS','HUB'),foot).dataset.hubFocus='storage';button(tr('Beenden'),()=>HubActions.quit(),foot).dataset.hubFocus='quit';
     el('p',t(1)+' · '+t(HubStorage.enabled?17:16),inner,'device-meta');el('p',({de:'Im Menü: Pfeiltasten zum Navigieren · Enter zum Öffnen · Escape / Controller B löscht die Suche',en:'Menus: arrows to navigate · Enter to open · Escape / controller B clears search',fr:'Menus : flèches pour naviguer · Entrée pour ouvrir · Échap / bouton B pour effacer la recherche',es:'Menús: flechas para navegar · Intro para abrir · Escape / botón B borra la búsqueda'})[HubI18n.language],inner,'device-meta');
-    const focusKey=focused||returnFocus;requestAnimationFrame(()=>{if(state!=='HUB'||generation!==renderGeneration)return;const target=Array.from(screen.querySelectorAll('button,input')).find(node=>node.dataset.hubFocus===focusKey&&!node.closest?.('[hidden]'));target?.focus({preventScroll:true});screen.scrollTop=scroll;if(target){const bounds=target.getBoundingClientRect();if(bounds.top<0||bounds.bottom>window.innerHeight)target.scrollIntoView?.({block:'nearest'});}});
+    const focusKey=focused||returnFocus;requestAnimationFrame(()=>{if(state!=='HUB'||generation!==renderGeneration)return;const target=Array.from(screen.querySelectorAll('button,input,a')).find(node=>node.dataset.hubFocus===focusKey&&!node.closest?.('[hidden]'));target?.focus({preventScroll:true});screen.scrollTop=scroll;if(target){const bounds=target.getBoundingClientRect();if(bounds.top<0||bounds.bottom>window.innerHeight)target.scrollIntoView?.({block:'nearest'});}});
   }
   function drawRallyPreview(c,time){
     c.fillStyle='#0c2634';c.fillRect(0,0,600,230);
@@ -13257,7 +13901,7 @@ window.HubOnlineConfig = {
   function fitArena(){const vv=window.visualViewport,vw=Math.max(1,Number(vv?.width)||Number(document.documentElement?.clientWidth)||window.innerWidth),vh=Math.max(1,Number(vv?.height)||Number(document.documentElement?.clientHeight)||window.innerHeight),size=state+'|'+Math.round(vw)+'|'+Math.round(vh);if(size===lastSize)return;lastSize=size;resize();if(state!=='PLAYING'||!(vw<920||vh<500))return;const reserve=vh<500?112:162,top=60,scale=Math.min(vw/WIDTH,Math.max(120,vh-reserve-top)/HEIGHT);Object.assign(canvas.style,{width:WIDTH*scale+'px',height:HEIGHT*scale+'px',left:(vw-WIDTH*scale)/2+'px',top:top+(vh-reserve-top-HEIGHT*scale)/2+'px'});}
   function sync(){
     const s=state,show=s==='HUB';if(lastState==='HUB'&&!show){savedScroll=screen.scrollTop||0;const focus=document.activeElement;if(screen.contains(focus)&&focus?.dataset?.hubFocus)returnFocus=focus.dataset.hubFocus;window.HubGamePreviews?.stopWithin(screen);window.NYRushUI?.releasePreview?.();window.CrystalRun?.releasePreview?.();}if(screen.hidden!==!show)screen.hidden=!show;
-    if(show){const sig=HubI18n.language+'|'+HubStorage.enabled;if(sig!==signature){signature=sig;renderHub();}drawPreviews();document.getElementById('canvasControls').hidden=true;}
+    if(show){const sig=HubI18n.language+'|'+HubStorage.enabled+'|'+HubNavigation.enabled;if(sig!==signature){signature=sig;renderHub();}drawPreviews();document.getElementById('canvasControls').hidden=true;}
     else signature='';
     const hidePlay=s!=='PLAYING'||!small();if(play.hidden!==hidePlay)play.hidden=hidePlay;if(!play.hidden){const hideSecond=![0,2,4].includes(mode_idx)||player2.is_bot;if(sticks[1].b.hidden!==hideSecond)sticks[1].b.hidden=hideSecond;const text=`P1: ${player1.score} · ${[0,2,4].includes(mode_idx)?'P2: '+player2.score+' · ':''}${survived_time} s`;if(hud.textContent!==text)hud.textContent=text;}
     if(s!==lastState){sticks.forEach(j=>j.release());lastState=s;}fitArena();
@@ -13266,8 +13910,8 @@ window.HubOnlineConfig = {
   const viewportChanged=()=>{lastSize='';sync();};window.addEventListener('resize',viewportChanged);window.addEventListener('orientationchange',viewportChanged);if(window.visualViewport){window.visualViewport.addEventListener('resize',viewportChanged);window.visualViewport.addEventListener('scroll',viewportChanged);}
   // Native controls handle Space/Enter themselves; game shortcuts must not leak through.
   const invitation=(()=>{const path=String(window.location?.pathname||'').match(/^\/room\/([ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6})\/?$/i);if(path)return path[1].toUpperCase();const hash=String(window.location?.hash||'').match(/^#room=([ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6})$/i);if(hash)return hash[1].toUpperCase();const query=String(window.location?.search||'').match(/[?&]room=([ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6})(?:&|$)/i)?.[1]?.toUpperCase();return /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(query||'')?query:'';})();if(invitation)setTimeout(()=>{if(state==='HUB')HubActions.openOnline('rally',invitation);},0);
-  window.DeviceUI={sync,clearSearch,navigate,get screen(){return screen;},get active(){return !screen.hidden;},get buttons(){const all=Array.from(screen.querySelectorAll('button')).filter(b=>!b.disabled&&!b.closest?.('[hidden]'));if(state==='HUB'){const starts=all.filter(b=>b.className==='game-open');return [...starts,...all.filter(b=>!starts.includes(b))];}return all;},credits:()=>t(21)};
-  sync();
+  window.DeviceUI={sync,clearSearch,navigate,get screen(){return screen;},get active(){return !screen.hidden;},get buttons(){const all=Array.from(screen.querySelectorAll('button,a')).filter(b=>!b.disabled&&!b.closest?.('[hidden]'));if(state==='HUB'){const starts=all.filter(b=>b.className==='game-open');return [...starts,...all.filter(b=>!starts.includes(b))];}return all;},credits:()=>t(21)};
+  sync();HubNavigation.start();
 })();
 
 </script>
