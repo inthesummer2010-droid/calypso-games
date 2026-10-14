@@ -178,7 +178,7 @@ function createServer(options={}){
     if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405);res.end();return;}
     if(url.pathname==='/health'){json(res,200,{ok:true,protocol:1});return;}
     if(url.pathname==='/online-config.json'){json(res,200,{serverUrl:wsUrl(),siteUrl:site.href});return;}
-    if(url.pathname==='/'||url.pathname==='/index.html'||/^\/room\/[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}\/?$/i.test(url.pathname)||/^\/spiele\/(?:arena|snake|breaker|rally|orbit|prism|cloud|tower|crystalrun|newyork|minigolf)\/?$/.test(url.pathname)){
+    if(url.pathname==='/'||url.pathname==='/index.html'||/^\/room\/[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}\/?$/i.test(url.pathname)||/^\/spiele\/(?:arena|snake|breaker|rally|orbit|prism|cloud|tower|crystalrun|newyork|minigolf)\/?$/.test(url.pathname)||/^\/online(?:\/(?:rally|snake|tower|minigolf|arena-catch|arena-zombie|arena-boss))?\/?$/.test(url.pathname)){
       // Explicit allowlist: neither source, configuration secrets nor user paths are served.
       const file=path.join(__dirname,'index.html');if(!fs.existsSync(file)){json(res,503,{error:'Build index.html first.'});return;}
       res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-cache','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'});if(req.method==='HEAD')res.end();else fs.createReadStream(file).pipe(res);return;
