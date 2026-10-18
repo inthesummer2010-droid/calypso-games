@@ -74,6 +74,17 @@ CREATE TABLE IF NOT EXISTS social_notice (
  expires_at BIGINT, updated_at BIGINT NOT NULL DEFAULT 0
 );
 INSERT INTO social_notice(key) VALUES ('global') ON CONFLICT DO NOTHING;
+CREATE TABLE IF NOT EXISTS salvage_ranked_runs (
+ id UUID PRIMARY KEY, rules_version SMALLINT NOT NULL CHECK(rules_version=2),
+ mode TEXT NOT NULL CHECK(mode IN ('arcade','challenge')), challenge_id TEXT NOT NULL DEFAULT '',
+ players SMALLINT NOT NULL CHECK(players IN (1,2)), names JSONB NOT NULL,
+ score BIGINT NOT NULL CHECK(score BETWEEN 0 AND 1000000000),
+ elapsed_ms INTEGER NOT NULL CHECK(elapsed_ms BETWEEN 0 AND 1800000),
+ kills INTEGER NOT NULL CHECK(kills BETWEEN 0 AND 1000000), wave INTEGER NOT NULL CHECK(wave BETWEEN 0 AND 1000000),
+ completed BOOLEAN NOT NULL, created_at BIGINT NOT NULL,
+ CHECK((mode='arcade' AND challenge_id='') OR (mode='challenge' AND challenge_id ~ '^c(0[1-9]|[12][0-9]|30)$'))
+);
+CREATE INDEX IF NOT EXISTS salvage_ranked_board ON salvage_ranked_runs(rules_version,mode,players,challenge_id,score DESC,elapsed_ms);
 `;
 
 class SocialStore{
@@ -87,6 +98,27 @@ class SocialStore{
   finally{client.release();}
  }
  async init(){await this.transaction(async db=>{await db.query('SELECT pg_advisory_xact_lock($1)',[751015450]);for(const sql of SCHEMA.split(';').map(s=>s.trim()).filter(Boolean))await db.query(sql);});await this.cleanup();}
+ // These rows are accepted only from the authoritative room simulation. There
+ // is deliberately no HTTP score-submission endpoint and no browser import.
+ async saveSalvageRun(run){return this.transaction(async db=>{
+  const {id,mode,challengeId,players,names,score,elapsedMs,kills,wave,completed}=run;
+  if(!/^[0-9a-f-]{36}$/i.test(id)||!['arcade','challenge'].includes(mode)||![1,2].includes(players)||!Array.isArray(names)||names.length!==players||names.some(name=>typeof name!=='string'||!name||Array.from(name).length>18||/[\u0000-\u001f\u007f-\u009f]/.test(name)))fail('invalid_input');
+  if(mode==='challenge'?!/^c(0[1-9]|[12][0-9]|30)$/.test(challengeId||'')||completed!==true:challengeId!==null)fail('invalid_input');
+  for(const [n,max]of [[score,1e9],[elapsedMs,1800000],[kills,1e6],[wave,1e6]])if(!Number.isSafeInteger(n)||n<0||n>max)fail('invalid_input');
+  // Serialize the small board update; at most 100 rows per board are retained.
+  await this.query('SELECT pg_advisory_xact_lock($1)',[751015451],db);
+  const key=challengeId||'',params=[2,mode,players,key];
+  await this.query('INSERT INTO salvage_ranked_runs(id,rules_version,mode,challenge_id,players,names,score,elapsed_ms,kills,wave,completed,created_at) VALUES($1,2,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11) ON CONFLICT(id) DO NOTHING',[id,mode,key,players,JSON.stringify(names),score,elapsedMs,kills,wave,completed===true,this.now()],db);
+  const order=mode==='challenge'?'elapsed_ms ASC,score DESC,created_at ASC,id':'score DESC,elapsed_ms DESC,created_at ASC,id';
+  await this.query('DELETE FROM salvage_ranked_runs WHERE id IN (SELECT id FROM salvage_ranked_runs WHERE rules_version=$1 AND mode=$2 AND players=$3 AND challenge_id=$4 ORDER BY '+order+' OFFSET 100)',params,db);
+  return {ok:true};
+ });}
+ async salvageLeaderboard({mode,players,challengeId=null}){
+  if(!['arcade','challenge'].includes(mode)||![1,2].includes(players)|| (mode==='challenge'?!/^c(0[1-9]|[12][0-9]|30)$/.test(challengeId||''):challengeId!==null))fail('invalid_input');
+  const order=mode==='challenge'?'elapsed_ms ASC,score DESC,created_at ASC,id':'score DESC,elapsed_ms DESC,created_at ASC,id';
+  const rows=await this.query('SELECT names,score,elapsed_ms,kills,wave,completed,created_at FROM salvage_ranked_runs WHERE rules_version=2 AND mode=$1 AND players=$2 AND challenge_id=$3 ORDER BY '+order+' LIMIT 20',[mode,players,challengeId||'']);
+  return {enabled:true,rulesVersion:2,mode,players,challengeId,entries:rows.map((row,index)=>({rank:index+1,names:row.names,score:Number(row.score),elapsedMs:Number(row.elapsed_ms),kills:Number(row.kills),wave:Number(row.wave),completed:!!row.completed,createdAt:Number(row.created_at)}))};
+ }
  async cleanup(){const now=this.now();await this.query('DELETE FROM social_sessions WHERE expires_at<=$1',[now]);await this.query('DELETE FROM social_invites WHERE expires_at<=$1',[now]);}
  async account(code,db=this.db){return (await this.query('SELECT '+ACCOUNT_COLUMNS+' FROM social_accounts WHERE code=$1',[code],db))[0]||null;}
  async lockAccounts(a,b,db){

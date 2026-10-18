@@ -5,7 +5,7 @@ const derive=promisify(crypto.scrypt),CODE=/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{
 const ALPHABET='ABCDEFGHJKLMNPQRSTUVWXYZ23456789',SESSION_MS=30*24*60*60e3,PRESENCE_MS=60e3,MAX_BODY=32*1024;
 const ADMIN_SESSION_MS=30*60e3,ADMIN_SESSION_LIMIT=20,MAX_EXEMPTION_MS=5*366*24*60*60e3;
 const NOTICE_LANGS=Object.freeze(['de','en','fr','es']),MAX_NOTICE_MS=30*24*60*60e3;
-const STAT_KEYS=Object.freeze(['arena_event_games','bosses_killed','bot_wins','breaker_best','breaker_bricks','breaker_games','breaker_wins','catches','cloud_bounces','cloud_games','cloud_height','cloud_stars','coop_played','crystalrun_best','crystalrun_clean_runs','crystalrun_distance','crystalrun_games','crystalrun_gems','crystalrun_missions','crystalrun_worlds_visited','easter_eggs_found','freeze_pu','games_played','ghost_pu','hub_rounds','maps_explored','max_survived','minigolf_best','minigolf_four_player_cups','minigolf_games','modes_explored','newyork_best','newyork_distance','newyork_games','newyork_stars','newyork_subway_visits','newyork_turns','orbit_best','orbit_games','orbit_stars','orbit_time','powerups','prism_games','prism_merges','prism_tile','prism_time_best','quest_completions','rally_best','rally_games','rally_hits','rally_longest','rally_wins','revives','shield_pu','shrink_pu','snake_apples','snake_best','snake_combo','snake_games','snake_variant_count','speed_pu','tower_best','tower_bosses','tower_built','tower_challenge_games','tower_diverse','tower_endless_wave','tower_games','tower_gold_peak','tower_kills','tower_morphs','tower_perfect','tower_sold','tower_special_hits','tower_upgrades','tower_waves','weapons','weekly_challenges']);
+const STAT_KEYS=Object.freeze(['arena_event_games','bosses_killed','bot_wins','breaker_best','breaker_bricks','breaker_games','breaker_wins','catches','cloud_bounces','cloud_games','cloud_height','cloud_stars','coop_played','crystalrun_best','crystalrun_clean_runs','crystalrun_distance','crystalrun_games','crystalrun_gems','crystalrun_missions','crystalrun_worlds_visited','easter_eggs_found','freeze_pu','games_played','ghost_pu','hub_rounds','maps_explored','max_survived','minigolf_best','minigolf_four_player_cups','minigolf_games','modes_explored','newyork_best','newyork_distance','newyork_games','newyork_stars','newyork_subway_visits','newyork_turns','orbit_best','orbit_games','orbit_stars','orbit_time','powerups','prism_games','prism_merges','prism_tile','prism_time_best','quest_completions','rally_best','rally_games','rally_hits','rally_longest','rally_wins','revives','salvage_best','salvage_deliveries','salvage_games','salvage_kills','shield_pu','shrink_pu','snake_apples','snake_best','snake_combo','snake_games','snake_variant_count','speed_pu','tower_best','tower_bosses','tower_built','tower_challenge_games','tower_diverse','tower_endless_wave','tower_games','tower_gold_peak','tower_kills','tower_morphs','tower_perfect','tower_sold','tower_special_hits','tower_upgrades','tower_waves','weapons','weekly_challenges']);
 const STAT_SET=new Set(STAT_KEYS),SKINS=new Set(['classic','aurora','ember','nebula','coral','void']),WORLDS=new Set(['canyon','ember','aurora']);
 const fail=(code,status=400)=>{throw new SocialError(code,status);};
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
@@ -146,6 +146,13 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
    if(req.method!=='GET'&&!allowed)fail('forbidden',403);
    const ip=String(clientAddress(req)||'unknown');rate('all:'+ip,600,60e3);
    if(url.pathname==='/social/config'&&req.method==='GET'){const enabled=await ensureReady();json(res,200,{enabled,adminConfigured,...(!enabled?{reason:configured?'unavailable':'database_required'}:{})});return true;}
+   if(url.pathname==='/social/salvage/leaderboard'&&req.method==='GET'){
+    if([...url.searchParams.keys()].some(key=>!['mode','players','challengeId'].includes(key))||[...url.searchParams.keys()].some(key=>url.searchParams.getAll(key).length!==1))fail('invalid_input');
+    const mode=url.searchParams.get('mode'),players=Number(url.searchParams.get('players')),challengeId=url.searchParams.get('challengeId');
+    if(!['arcade','challenge'].includes(mode)||![1,2].includes(players)||(mode==='challenge'?!/^c(0[1-9]|[12][0-9]|30)$/.test(challengeId||''):challengeId!==null))fail('invalid_input');
+    if(!await ensureReady())fail(configured?'unavailable':'database_required',503);
+    json(res,200,await store.salvageLeaderboard({mode,players,challengeId}));return true;
+   }
    if(!await ensureReady())fail(configured?'unavailable':'database_required',503);
    if(url.pathname.startsWith('/social/admin/')){json(res,200,await adminRequest(req,url,ip));return true;}
    if(url.pathname==='/social/notice'&&req.method==='GET'){json(res,200,await store.publicNotice());return true;}
@@ -194,10 +201,11 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
     }else fail('not_found',404);
    }
    json(res,status,value);
-  }catch(error){const fallback=url.pathname==='/social/ad-policy'?{adsDisabled:true,exempt:false}:url.pathname==='/social/notice'?{active:false,messages:{de:'',en:'',fr:'',es:''},until:null,updatedAt:0}:{};if(error instanceof SocialError)json(res,error.status,{error:error.code,...fallback});else{available=false;json(res,503,{error:'unavailable',...fallback});}}
+  }catch(error){const fallback=url.pathname==='/social/ad-policy'?{adsDisabled:true,exempt:false}:url.pathname==='/social/notice'?{active:false,messages:{de:'',en:'',fr:'',es:''},until:null,updatedAt:0}:url.pathname==='/social/salvage/leaderboard'?{enabled:false}:{};if(error instanceof SocialError)json(res,error.status,{error:error.code,...fallback});else{available=false;json(res,503,{error:'unavailable',...fallback});}}
   return true;
  }
  async function close(){closed=true;clearInterval(timer);rates.clear();presence.clear();adminSessions.clear();await initializing?.catch(()=>{});if(pool)await pool.end();}
- return {ready,handle,authenticate,close};
+ async function saveSalvageRun(run){if(!await ensureReady())return {ok:false,reason:configured?'unavailable':'database_required'};try{return await store.saveSalvageRun(run);}catch(error){if(!(error instanceof SocialError))available=false;return {ok:false,reason:'unavailable'};}}
+ return {ready,handle,authenticate,close,saveSalvageRun,get rankingsAvailable(){return available&&!closed;}};
 }
 module.exports={createSocial,STAT_KEYS,cleanProgress,postgresConfig};

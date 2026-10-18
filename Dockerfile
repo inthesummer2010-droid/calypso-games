@@ -3,7 +3,7 @@ WORKDIR /app
 RUN npm install --global pnpm@11.25.0 --ignore-scripts
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts
-COPY server.cjs social-server.cjs social-store.cjs arcade.js snake.js bonus-games.js minigolf.js index.html ./
+COPY server.cjs social-server.cjs social-store.cjs arcade.js snake.js bonus-games.js minigolf.js neon-salvage-challenges.js neon-salvage-model.js index.html ./
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=8080
 USER node
 EXPOSE 8080
