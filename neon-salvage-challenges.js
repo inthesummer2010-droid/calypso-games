@@ -439,6 +439,14 @@
     }
     return { completed, stars, total: catalogue.length };
   }
+  function isUnlocked(progress,id,players=1){
+    const index=catalogue.findIndex(entry=>entry.id===id);
+    if(index<0||![1,2].includes(players))return false;
+    // Preserve earlier achievements when migrating from the old open selection.
+    if(index===0||record(progress,id,players)?.completions>0)return true;
+    return record(progress,catalogue[index-1].id,players)?.completions>0;
+  }
+  function nextId(id){const i=catalogue.findIndex(entry=>entry.id===id);return i>=0?catalogue[i+1]?.id||null:null;}
   function deepFreeze(value) {
     if (!value || typeof value !== 'object' || Object.isFrozen(value)) return value;
     Object.freeze(value);
@@ -446,5 +454,5 @@
     return value;
   }
   deepFreeze(catalogue); deepFreeze(labels);
-  return { catalogue, labels, get, text, start, beforeStep, afterStep, snapshot, mergeProgress, normalizeProgress, record, totals };
+  return { catalogue, labels, get, text, start, beforeStep, afterStep, snapshot, mergeProgress, normalizeProgress, record, totals, isUnlocked, nextId };
 });

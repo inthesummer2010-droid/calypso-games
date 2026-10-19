@@ -79,10 +79,11 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
  function person(account,viewer,isFriend=false,includeRoom=false){const result={code:account.code,name:account.name,avatar:Number(account.avatar),online:online(account,viewer,isFriend)};if(isFriend&&includeRoom){const room=friendRoom(account);if(room)result.room=room;}return result;}
  async function profile(viewer,target,known){
   const account=known||await store.account(target);if(!account)fail('not_found',404);const relationship=await store.relation(viewer,target);if(relationship.blocked)fail('blocked',403);
+  if(viewer!==target&&!account.public_profile&&!relationship.friend)fail('not_found',404);
   const own=viewer===target,details=own||account.visibility==='public'||account.visibility==='friends'&&relationship.friend,progress=own||account.share_progress&&details?account.progress:null;
-  const result={...person(account,viewer,relationship.friend,relationship.friend),visibility:account.visibility,shareProgress:!!account.share_progress,showOnline:!!account.show_online,progress:progress||null,relationship,counts:details?await store.counts(target):{friends:0,followers:0,following:0},mutualFriends:details&&!own?(await store.mutual(viewer,target)).map(a=>person(a,viewer,true)):[]};return result;
+  const result={...person(account,viewer,relationship.friend,relationship.friend),publicProfile:!!account.public_profile,visibility:account.visibility,shareProgress:!!account.share_progress,showOnline:!!account.show_online,progress:progress||null,relationship,counts:details?await store.counts(target):{friends:0,followers:0,following:0},mutualFriends:details&&!own?(await store.mutual(viewer,target)).map(a=>person(a,viewer,true)):[]};return result;
  }
- async function authenticate(token){if(!TOKEN.test(token||'')||!await ensureReady())return null;try{const hash=sessionHash(token);for(let attempt=0;attempt<3;attempt++){const generation=authGeneration,account=await store.session(hash);if(generation!==authGeneration)continue;return account?{code:account.code,name:account.name,avatar:Number(account.avatar),expiresAt:Number(account.expires_at)}:null;}return null;}catch{available=false;return null;}}
+ async function authenticate(token){if(!TOKEN.test(token||'')||!await ensureReady())return null;try{const hash=sessionHash(token);for(let attempt=0;attempt<3;attempt++){const generation=authGeneration,account=await store.session(hash);if(generation!==authGeneration)continue;return account?{code:account.code,name:account.name,avatar:Number(account.avatar),publicProfile:!!account.public_profile,expiresAt:Number(account.expires_at)}:null;}return null;}catch{available=false;return null;}}
  async function authenticateRequest(req){const token=bearer(req);if(!token)fail('unauthorized',401);const account=await store.session(sessionHash(token));if(!account)fail('unauthorized',401);presence.set(account.code,now()+PRESENCE_MS);return {account,token};}
  function authenticateAdmin(req){const token=bearer(req),hash=token&&sessionHash(token),expiresAt=hash&&adminSessions.get(hash);if(!expiresAt||expiresAt<=now()){if(hash)adminSessions.delete(hash);fail('unauthorized',401);}return hash;}
  async function adminOverview(){
@@ -146,12 +147,21 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
    if(req.method!=='GET'&&!allowed)fail('forbidden',403);
    const ip=String(clientAddress(req)||'unknown');rate('all:'+ip,600,60e3);
    if(url.pathname==='/social/config'&&req.method==='GET'){const enabled=await ensureReady();json(res,200,{enabled,adminConfigured,...(!enabled?{reason:configured?'unavailable':'database_required'}:{})});return true;}
+   if(req.method==='GET'&&(url.pathname.startsWith('/social/rankings/')||url.pathname.startsWith('/social/public/'))){
+    if(!await ensureReady())fail(configured?'unavailable':'database_required',503);
+    let viewer=null;if(req.headers.authorization)viewer=(await authenticateRequest(req)).account.code;
+    if(url.pathname==='/social/rankings/categories'){json(res,200,await store.rankingCategories(url.searchParams.get('game')));return true;}
+    if(url.pathname==='/social/rankings/board'){json(res,200,await store.leaderboard(url.searchParams.get('category'),viewer));return true;}
+    if(url.pathname.startsWith('/social/public/')){json(res,200,{profile:await store.publicProfile(cleanCode(url.pathname.slice('/social/public/'.length)))});return true;}
+    fail('not_found',404);
+   }
    if(url.pathname==='/social/salvage/leaderboard'&&req.method==='GET'){
     if([...url.searchParams.keys()].some(key=>!['mode','players','challengeId'].includes(key))||[...url.searchParams.keys()].some(key=>url.searchParams.getAll(key).length!==1))fail('invalid_input');
     const mode=url.searchParams.get('mode'),players=Number(url.searchParams.get('players')),challengeId=url.searchParams.get('challengeId');
     if(!['arcade','challenge'].includes(mode)||![1,2].includes(players)||(mode==='challenge'?!/^c(0[1-9]|[12][0-9]|30)$/.test(challengeId||''):challengeId!==null))fail('invalid_input');
     if(!await ensureReady())fail(configured?'unavailable':'database_required',503);
-    json(res,200,await store.salvageLeaderboard({mode,players,challengeId}));return true;
+    // Anonymous legacy scores have no authenticated owner and are never imported.
+    json(res,200,{enabled:true,rulesVersion:3,mode,players,challengeId,entries:[],profileRankings:true});return true;
    }
    if(!await ensureReady())fail(configured?'unavailable':'database_required',503);
    if(url.pathname.startsWith('/social/admin/')){json(res,200,await adminRequest(req,url,ip));return true;}
@@ -161,23 +171,29 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
    if(publicAuth)rate(url.pathname+':'+ip,url.pathname==='/social/register'?5:30,url.pathname==='/social/register'?60*60e3:60e3);
    const body=req.method==='GET'?{}:await readBody(req);let value;
    if(url.pathname==='/social/register'&&req.method==='POST'){
+    if('publicProfile'in body&&typeof body.publicProfile!=='boolean')fail('invalid_input');
     const name=cleanName(body.name),pass=password(body.password),icon=avatar(body.avatar??0),hash=await passwordJob(()=>hashPassword(pass));
-    const session=freshSession();let account=null;for(let i=0;i<8&&!account;i++){const code=Array.from({length:8},()=>ALPHABET[crypto.randomInt(ALPHABET.length)]).join('');account=await store.register({code,name,avatar:icon,passwordHash:hash},session);}if(!account)fail('conflict',409);value=await sessionResult(account,session);status=201;
+    const session=freshSession();let account=null;for(let i=0;i<8&&!account;i++){const code=Array.from({length:8},()=>ALPHABET[crypto.randomInt(ALPHABET.length)]).join('');account=await store.register({code,name,avatar:icon,passwordHash:hash,publicProfile:body.publicProfile!==false},session);}if(!account)fail('conflict',409);value=await sessionResult(account,session);status=201;
    }else if(url.pathname==='/social/login'&&req.method==='POST'){
     const code=cleanCode(body.code),pass=password(body.password),account=await store.account(code),valid=await passwordJob(()=>verifyPassword(pass,account?.password_hash));if(!account||!valid)fail('wrong_password',401);const session=freshSession(),previous=await store.sessionHashes(code);await store.newSession(code,account.password_hash,session);const active=new Set(await store.sessionHashes(code));revokeSockets(code,{hashes:previous.filter(hash=>!active.has(hash))});value=await sessionResult(account,session);
    }else{
     const {account,token}=await authenticateRequest(req),code=account.code;
-    if(req.method==='GET'&&url.pathname==='/social/me'){
+    if(req.method==='POST'&&url.pathname==='/social/rankings/start'){
+     rate('runs:'+code,20,60e3);if(Object.keys(body).some(k=>!['game','config'].includes(k)))fail('invalid_input');value=await store.beginRun(code,sessionHash(token),body.game,body.config);
+    }else if(req.method==='POST'&&url.pathname==='/social/rankings/finish'){
+     if(Object.keys(body).some(k=>!['id','result'].includes(k)))fail('invalid_input');value=await store.finishRun(code,sessionHash(token),body.id,body.result);
+    }else if(req.method==='GET'&&url.pathname==='/social/challenges')value={progress:await store.challengeProgress(code)};
+    else if(req.method==='GET'&&url.pathname==='/social/me'){
      const lists=await store.lists(code),friends=new Set(lists.friends.map(a=>a.code));value={me:await profile(code,code,account)};
      for(const [key,rows]of Object.entries(lists))value[key]=rows.map(a=>person(a,code,friends.has(a.code),key==='friends'));
      value.invites=[];for(const invite of await store.invites(code)){if(!friends.has(invite.sender)||await store.blocked(code,invite.sender))continue;value.invites.push({id:invite.id,from:person({code:invite.sender,name:invite.name,avatar:invite.avatar,show_online:invite.show_online},code,true),room:invite.room,game:invite.game,expiresAt:Number(invite.expires_at)});}
     }else if(req.method==='GET'&&url.pathname.startsWith('/social/profile/'))value={profile:await profile(code,cleanCode(url.pathname.slice('/social/profile/'.length)))};
     else if(req.method==='PATCH'&&url.pathname==='/social/me'){
-     const fields={};if(!Object.keys(body).length||Object.keys(body).some(k=>!['name','avatar','visibility','shareProgress','showOnline'].includes(k)))fail('invalid_input');
+     const fields={};if(!Object.keys(body).length||Object.keys(body).some(k=>!['name','avatar','visibility','shareProgress','showOnline','publicProfile'].includes(k)))fail('invalid_input');
      if('name'in body)fields.name=cleanName(body.name);if('avatar'in body)fields.avatar=avatar(body.avatar);
      if('visibility'in body){if(!['friends','public','private'].includes(body.visibility))fail('invalid_input');fields.visibility=body.visibility;}
-     for(const key of ['shareProgress','showOnline'])if(key in body){if(typeof body[key]!=='boolean')fail('invalid_input');fields[key]=body[key];}
-     const updated=await store.update(code,fields);if(!updated)fail('unauthorized',401);if(fields.showOnline===false)presence.delete(code);value={me:await profile(code,code,updated)};
+     for(const key of ['shareProgress','showOnline','publicProfile'])if(key in body){if(typeof body[key]!=='boolean')fail('invalid_input');fields[key]=body[key];}
+     const updated=await store.update(code,fields);if(!updated)fail('unauthorized',401);if(fields.showOnline===false)presence.delete(code);if('publicProfile'in fields||'name'in fields)rooms?.profilePrivacy?.(code,!!updated.public_profile,updated.name);value={me:await profile(code,code,updated)};
     }else if(req.method==='POST'&&url.pathname==='/social/logout'){const hash=sessionHash(token);await store.logout(hash);revokeSockets(code,{hashes:[hash]});presence.delete(code);value={ok:true};}
     else if(req.method==='DELETE'&&url.pathname==='/social/me'){
      const pass=password(body.password);if(!await passwordJob(()=>verifyPassword(pass,account.password_hash)))fail('wrong_password',401);const hashes=await store.sessionHashes(code);await store.deleteAccount(code,account.password_hash);revokeSockets(code,{hashes,all:true});presence.delete(code);value={ok:true};
@@ -206,6 +222,8 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
  }
  async function close(){closed=true;clearInterval(timer);rates.clear();presence.clear();adminSessions.clear();await initializing?.catch(()=>{});if(pool)await pool.end();}
  async function saveSalvageRun(run){if(!await ensureReady())return {ok:false,reason:configured?'unavailable':'database_required'};try{return await store.saveSalvageRun(run);}catch(error){if(!(error instanceof SocialError))available=false;return {ok:false,reason:'unavailable'};}}
- return {ready,handle,authenticate,close,saveSalvageRun,get rankingsAvailable(){return available&&!closed;}};
+ async function saveOnlineResult(run){if(!await ensureReady())return {ok:false,reason:'unavailable'};try{return await store.onlineResult(run);}catch{return {ok:false,reason:'unavailable'};}}
+ async function canStartRoom(ws,room){if(room?.gameType!=='salvage'||room.salvage?.mode!=='challenge')return true;for(const p of room.players.filter(Boolean)){if(!p.ws?.socialCode)continue;if(!await ensureReady())return false;const progress=await store.challengeProgress(p.ws.socialCode);if(!require('./neon-salvage-challenges.js').isUnlocked(progress,room.salvage.challengeId,room.players.filter(Boolean).length))return false;}return true;}
+ return {ready,handle,authenticate,close,saveSalvageRun,saveOnlineResult,canStartRoom,get rankingsAvailable(){return available&&!closed;}};
 }
 module.exports={createSocial,STAT_KEYS,cleanProgress,postgresConfig};

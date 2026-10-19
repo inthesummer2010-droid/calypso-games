@@ -5,7 +5,7 @@ const LIMITS=Object.freeze({accounts:10000,friends:200,follows:300,requests:100,
 class SocialError extends Error{constructor(code,status=400){super(code);this.code=code;this.status=status;}}
 const fail=(code,status)=>{throw new SocialError(code,status);};
 const pair=(a,b)=>a<b?[a,b]:[b,a];
-const ACCOUNT_COLUMNS='code,name,avatar,visibility,share_progress,show_online,progress,password_hash';
+const ACCOUNT_COLUMNS='code,name,avatar,visibility,share_progress,show_online,progress,password_hash,public_profile';
 
 // Millisecond timestamps are supplied by the service, so expiry uses the same
 // clock on PostgreSQL, PGlite and the existing room server. No plaintext token
@@ -97,7 +97,7 @@ class SocialStore{
   catch(error){try{await client.query('ROLLBACK');}catch{}throw error;}
   finally{client.release();}
  }
- async init(){await this.transaction(async db=>{await db.query('SELECT pg_advisory_xact_lock($1)',[751015450]);for(const sql of SCHEMA.split(';').map(s=>s.trim()).filter(Boolean))await db.query(sql);});await this.cleanup();}
+ async init(){await this.transaction(async db=>{await db.query('SELECT pg_advisory_xact_lock($1)',[751015450]);for(const sql of (SCHEMA+require('./rankings-store.cjs').SCHEMA).split(';').map(s=>s.trim()).filter(Boolean))await db.query(sql);});await this.cleanup();}
  // These rows are accepted only from the authoritative room simulation. There
  // is deliberately no HTTP score-submission endpoint and no browser import.
  async saveSalvageRun(run){return this.transaction(async db=>{
@@ -136,10 +136,10 @@ class SocialStore{
   await this.query('INSERT INTO social_sessions(hash,code,created_at,expires_at) VALUES($1,$2,$3,$4)',[session.hash,code,createdAt,session.expiresAt],db);
   await this.query('DELETE FROM social_sessions WHERE hash IN (SELECT hash FROM social_sessions WHERE code=$1 AND hash<>$2 ORDER BY created_at DESC,hash LIMIT 10000 OFFSET $3)',[code,session.hash,this.limits.sessions-1],db);
  }
- async register({code,name,avatar,passwordHash},session){return this.transaction(async db=>{
+ async register({code,name,avatar,passwordHash,publicProfile=true},session){return this.transaction(async db=>{
   await this.query("SELECT key FROM social_meta WHERE key='accounts' FOR UPDATE",[],db);
   if(await this.count('SELECT COUNT(*) AS n FROM social_accounts',[],db)>=this.limits.accounts)fail('rate',429);
-  const rows=await this.query('INSERT INTO social_accounts(code,name,avatar,password_hash,created_at) VALUES($1,$2,$3,$4,$5) ON CONFLICT(code) DO NOTHING RETURNING '+ACCOUNT_COLUMNS,[code,name,avatar,passwordHash,this.now()],db);
+  const rows=await this.query('INSERT INTO social_accounts(code,name,avatar,password_hash,created_at,public_profile) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(code) DO NOTHING RETURNING '+ACCOUNT_COLUMNS,[code,name,avatar,passwordHash,this.now(),publicProfile],db);
   if(!rows.length)return null;await this.insertSession(db,code,session);return rows[0];
  });}
  async newSession(code,expectedPasswordHash,session){return this.transaction(async db=>{
@@ -186,7 +186,7 @@ class SocialStore{
  async publicNotice(){const notice=await this.adminNotice(),active=notice.enabled&&(notice.until===null||notice.until>this.now());return {active,messages:active?notice.messages:{de:'',en:'',fr:'',es:''},until:active?notice.until:null,updatedAt:notice.updatedAt};}
  async sessionHashes(code){return (await this.query('SELECT hash FROM social_sessions WHERE code=$1 AND expires_at>$2',[code,this.now()])).map(row=>row.hash);}
  async update(code,fields){
-  const columns={name:'name',avatar:'avatar',visibility:'visibility',shareProgress:'share_progress',showOnline:'show_online'},values=[code],parts=[];
+  const columns={name:'name',avatar:'avatar',visibility:'visibility',shareProgress:'share_progress',showOnline:'show_online',publicProfile:'public_profile'},values=[code],parts=[];
   for(const [key,value]of Object.entries(fields)){if(!columns[key])continue;values.push(value);parts.push(columns[key]+'=$'+values.length);}
   if(fields.shareProgress===false)parts.push('progress=NULL');
   if(parts.length)await this.query('UPDATE social_accounts SET '+parts.join(',')+' WHERE code=$1',values);
@@ -261,4 +261,5 @@ class SocialStore{
   await this.query('DELETE FROM social_invites WHERE id=$1',[id],db);return {row,room};
  });}
 }
+require('./rankings-store.cjs').install(SocialStore,SocialError);
 module.exports={SocialStore,SocialError,LIMITS};

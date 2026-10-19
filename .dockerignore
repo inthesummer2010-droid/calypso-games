@@ -1,4 +1,5 @@
 *
+!.dockerignore
 !package.json
 !pnpm-lock.yaml
 !server.cjs
@@ -6,7 +7,13 @@
 !snake.js
 !bonus-games.js
 !minigolf.js
+!neon-salvage-challenges.js
+!neon-salvage-model.js
 !index.html
 !Dockerfile
 !social-server.cjs
 !social-store.cjs
+!rankings-rules.js
+!rankings-store.cjs
+!verify-package.cjs
+!achievement-requirements.json
