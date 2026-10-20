@@ -8,6 +8,7 @@
   },
   "packageManager": "pnpm@11.25.0",
   "scripts": {
+    "check:package": "node verify-package.cjs",
     "start": "node server.cjs",
     "test:online": "node online-server.test.cjs"
   },
