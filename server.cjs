@@ -171,11 +171,11 @@ class Rooms {
     else if(game==='minigolf'){config.holes=m.courseCount;results=r.players.map((p,i)=>({...m.result,playerIndex:i}));}
     else if(game==='rally'){config.difficulty=0;results=r.players.map((p,i)=>({score:r.game.scores[i],opponent:r.game.scores[1-i]}));}
     else if(game==='snake'){config.mode='online';config.speed=m.settings.speed;config.walls=m.settings.walls;config.obstacles=m.settings.obstacles;config.bonus=m.settings.bonus;results=m.snakes.map(p=>({score:p.score}));}
-    else if(game==='tower'){config.map=m.mapId;config.challengeId=m.challengeId;config.endless=!!m.endless;results=[{score:m.score}];}
+    else if(game==='tower'){config.map=m.mapId;config.challengeId=m.challengeId;config.endless=!!m.endless;results=[{score:m.score,won:m.phase==='won',waves:m.wave,elapsed:m.time}];}
     else {config.mode=r.gameType;config.map=snapshot.mapIndex||0;results=(snapshot.scores||[0,0]).map(score=>({score,seconds:snapshot.elapsed,won:r.game.result==='won'}));}
     const entry={id:run.id,game,config,members:run.members,elapsedMs:Math.max(100,Math.round((m.time||r.game.elapsed||snapshot.elapsed||(this.now()-run.started)/1000)*1000)),results};
     r.rankingStatus='pending';const pending=Promise.resolve().then(()=>this.saveOnlineResult?.(entry)).then(saved=>{
-      if(r.profileRun!==run)return;r.rankingStatus=saved?.ok?'saved':'unavailable';if(this.rooms.get(r.code)===r)this.broadcast(r);
+      if(r.profileRun!==run)return;r.rankingStatus=saved?.ok?(saved.results?.length?'saved':'notranked'):'unavailable';if(this.rooms.get(r.code)===r)this.broadcast(r);
     }).catch(()=>{if(r.profileRun===run)r.rankingStatus='unavailable';}).finally(()=>this.pendingRankings.delete(pending));this.pendingRankings.add(pending);
   }
   ranking(ws,shareResult){const a=this.player(ws);if(!a)return this.error(ws,'not_joined');const r=a.room;
