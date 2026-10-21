@@ -49,7 +49,7 @@
   }
   function firstHit(b,seconds,solids,bumpers){
     const dx=b.vx*seconds,dy=b.vy*seconds;let first=null;
-    const offer=(hit,restitution)=>{if(hit&&hit.t>=0&&hit.t<=1&&(!first||hit.t<first.t))first={...hit,restitution};};
+    const offer=(hit,restitution,kind='golf_wall')=>{if(hit&&hit.t>=0&&hit.t<=1&&(!first||hit.t<first.t))first={...hit,restitution,kind};};
     if(dx<0)offer({t:(45-b.x)/dx,nx:1,ny:0},.72);else if(dx>0)offer({t:(855-b.x)/dx,nx:-1,ny:0},.72);
     if(dy<0)offer({t:(45-b.y)/dy,nx:0,ny:1},.72);else if(dy>0)offer({t:(555-b.y)/dy,nx:0,ny:-1},.72);
     for(const [x,y,w,h]of solids){
@@ -60,29 +60,30 @@
       // Sweeping that arc also catches fast shallow hits between substeps.
       for(const [cx,cy,sx,sy]of [[x,y,-1,-1],[x+w,y,1,-1],[x,y+h,-1,1],[x+w,y+h,1,1]]){const hit=circleHit(b.x,b.y,dx,dy,cx,cy,RADIUS);if(hit&&(b.x+dx*hit.t-cx)*sx>=-1e-9&&(b.y+dy*hit.t-cy)*sy>=-1e-9)offer(hit,.76);}
     }
-    for(const p of bumpers)offer(circleHit(b.x,b.y,dx,dy,p.x,p.y,p.r+RADIUS),.8);
+    for(const p of bumpers)offer(circleHit(b.x,b.y,dx,dy,p.x,p.y,p.r+RADIUS),.8,'golf_bumper');
     return first;
   }
-  function moveBall(b,seconds,solids,bumpers){
+  function moveBall(b,seconds,solids,bumpers,onContact=()=>{}){
     separateContacts(b,solids,bumpers);let remaining=seconds;
     for(let hitCount=0;hitCount<8&&remaining>1e-9;hitCount++){
       const hit=firstHit(b,remaining,solids,bumpers);
       if(!hit){b.x+=b.vx*remaining;b.y+=b.vy*remaining;break;}
       b.x+=b.vx*remaining*hit.t+hit.nx*CONTACT_EPS;b.y+=b.vy*remaining*hit.t+hit.ny*CONTACT_EPS;
+      if(Math.abs(b.vx*hit.nx+b.vy*hit.ny)>40)onContact(hit.kind);
       rebound(b,hit.nx,hit.ny,hit.restitution);remaining*=1-hit.t;
     }
     separateContacts(b,solids,bumpers);
   }
   class Model {
     constructor({players=1,courseCount=9,onEnd=()=>{},onSound=()=>{}}={}){
-      this.players=clamp(Math.round(Number(players)||1),1,4);this.courseCount=[3,6,9].includes(courseCount)?courseCount:9;this.onEnd=onEnd;this.onSound=onSound;this.phase='menu';this.player=0;this.hole=0;this.turnId=0;this.shotId=0;this.time=0;this.moving=false;this.shotAge=0;this.lastShot=null;this.result=null;this.turns=Array.from({length:this.players},()=>[]);this.balls=[];this.aim=[1,0];this.power=0;this.dragging=false;this.resetHole();
+      this.players=clamp(Math.round(Number(players)||1),1,4);this.courseCount=[3,6,9].includes(courseCount)?courseCount:9;this.onEnd=onEnd;this.onSound=onSound;this.contactAt=new Map();this.phase='menu';this.player=0;this.hole=0;this.turnId=0;this.shotId=0;this.time=0;this.moving=false;this.shotAge=0;this.lastShot=null;this.result=null;this.turns=Array.from({length:this.players},()=>[]);this.balls=[];this.aim=[1,0];this.power=0;this.dragging=false;this.resetHole();
     }
     static gateRect(g,time){return gateRect(g,time);}
     get course(){return COURSES[this.hole%COURSES.length];}
     get ball(){return this.balls[this.player];}
     get ready(){return this.phase==='playing'&&!this.moving&&!!this.ball&&!this.ball.sunk&&Math.hypot(this.ball.vx,this.ball.vy)<=STOP_SPEED;}
     resetHole(){const c=this.course;this.balls=Array.from({length:this.players},(_,p)=>({x:c.start[0]+(p%2)*18,y:c.start[1]+Math.floor(p/2)*17,vx:0,vy:0,sunk:false,strokes:0}));this.player=this.hole%this.players;this.aim=[1,0];this.power=0;this.moving=false;this.shotAge=0;this.dragging=false;}
-    start(){this.phase='playing';this.hole=0;this.time=0;this.turnId++;this.shotId=0;this.lastShot=null;this.result=null;this.turns=Array.from({length:this.players},()=>[]);this.resetHole();return this;}
+    start(){this.contactAt.clear();this.phase='playing';this.hole=0;this.time=0;this.turnId++;this.shotId=0;this.lastShot=null;this.result=null;this.turns=Array.from({length:this.players},()=>[]);this.resetHole();return this;}
     pause(){if(this.phase==='playing'){this.phase='paused';this.dragging=false;}}
     resume(){if(this.phase==='paused')this.phase='playing';}
     aimTo(x,y){if(!this.ready||!Number.isFinite(x)||!Number.isFinite(y))return;const dx=this.ball.x-x,dy=this.ball.y-y,d=Math.hypot(dx,dy)||1;this.aim=[dx/d,dy/d];this.power=clamp(d/150,0,1);}
@@ -98,7 +99,7 @@
       const steps=Math.max(1,Math.ceil(dt*120));let ended=false;
       for(let i=0;i<steps;i++){
         const s=dt/steps,solid=[...(c.walls||[]),...(c.gates||[]).map(g=>gateRect(g,this.time-dt+(i+1)*s))];
-        moveBall(b,s,solid,c.bumpers||[]);
+        moveBall(b,s,solid,c.bumpers||[],name=>{if(this.time-(this.contactAt.get(name+this.player)??-Infinity)>=.075){this.contactAt.set(name+this.player,this.time);this.onSound(name,this.player);}});
         const sand=(c.sand||[]).some(r=>inRect(b.x,b.y,r));b.vx*=Math.pow(sand ? .018 : .28,s);b.vy*=Math.pow(sand ? .018 : .28,s);
         // A ramp pushes a rolling ball, never somebody waiting for their turn.
         if(wasMoving)for(const p of c.boosts||[])if(inRect(b.x,b.y,asRect(p))){const d=Math.hypot(p.dx,p.dy)||1;b.vx+=p.dx/d*p.strength*s;b.vy+=p.dy/d*p.strength*s;}

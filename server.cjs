@@ -21,7 +21,7 @@ const GAME_TYPES=new Set(['rally','snake','tower','minigolf','salvage','arena-ca
 // keeps the original browser state machine authoritative; this server only
 // relays its inputs and snapshots so the browser still renders the real game.
 class SnakeDuel {
-  constructor({random=Math.random}={}){this.random=random;this.w=1100;this.h=650;this.phase='menu';this.winner=null;this.result=null;this.model=new SnakeModel({...SnakeDefaults,multiplayer:1},{random,onRoundEnd:()=>{}});}
+  constructor({random=Math.random,onSound=()=>{}}={}){this.random=random;this.w=1100;this.h=650;this.phase='menu';this.winner=null;this.result=null;this.model=new SnakeModel({...SnakeDefaults,multiplayer:1},{random,onSound:(name,player)=>onSound(({collect:'snake_eat',golden:'snake_bonus',combo:'snake_combo',gameover:'snake_end'})[name]||name,player),onRoundEnd:()=>{}});}
   start(){this.model.start();this.model.countdown=0;this.model.state='playing';this.phase='playing';this.winner=null;this.result=null;}
   pause(){if(this.phase==='playing'){this.phase='paused';this.model.state='paused';}}
   resume(){if(this.phase==='paused'){this.phase='playing';this.model.resume();}}
@@ -32,7 +32,7 @@ class SnakeDuel {
 // Tower co-op runs the existing TowerDefense model. Both players send small,
 // validated actions; the server owns gold, waves, enemy movement and damage.
 class TowerCoop {
-  constructor(options={}){this.phase='menu';this.w=900;this.h=600;this.winner=null;this.result=null;this.model=new TowerDefense({random:options.random||Math.random,stats:()=>({tower_games:30}),map:'meadow',challengeId:'balanced',onRoundEnd:r=>{this.phase='over';this.result=r.won?'won':'lost';}});}
+  constructor(options={}){this.phase='menu';this.w=900;this.h=600;this.winner=null;this.result=null;this.model=new TowerDefense({random:options.random||Math.random,stats:()=>({tower_games:30}),map:'meadow',challengeId:'balanced',onSound:options.onSound,onRoundEnd:r=>{this.phase='over';this.result=r.won?'won':'lost';}});}
   start(){this.model.start();this.phase='playing';this.winner=null;this.result=null;}
   pause(){if(this.phase==='playing'){this.phase='paused';this.model.pause();}}
   resume(){if(this.phase==='paused'){this.phase='playing';this.model.resume();}}
@@ -52,7 +52,7 @@ class TowerCoop {
 // The online cup runs the very same model as the local cup. Only the active
 // player may send one shot; balls, penalties, turn order and results stay here.
 class MinigolfDuel {
-  constructor(options={}){this.phase='menu';this.w=900;this.h=600;this.winner=null;this.result=null;this.options=options;this.model=new MinigolfModel({players:2,courseCount:9,onSound:options.onSound,onEnd:r=>{this.phase='over';this.winner=r.winner;this.result=r.winners.length>1?'draw':'won';options.onRoundEnd?.(r);}});}
+  constructor(options={}){this.phase='menu';this.w=900;this.h=600;this.winner=null;this.result=null;this.options=options;this.model=new MinigolfModel({players:2,courseCount:9,onSound:options.onSound,onEnd:r=>{options.onSound?.('win',r.winner);this.phase='over';this.winner=r.winner;this.result=r.winners.length>1?'draw':'won';options.onRoundEnd?.(r);}});}
   configurePlayers(count){if(!Number.isInteger(count)||count<2||count>4)return false;this.model.players=count;return true;}
   start(){this.model.start();this.phase='playing';this.winner=null;this.result=null;}
   pause(){if(this.phase==='playing'){this.phase='paused';this.model.pause();}}
@@ -131,18 +131,18 @@ class SalvageCoop {
 // Online Arena uses the original browser game as the authority. The server
 // only relays inputs and snapshots, so it cannot drift into a second clone.
 class OriginalArenaRelay {
-  constructor(mode){
-    this.mode=mode;this.w=1920;this.h=1080;this.phase='menu';this.latest=null;
+  constructor(mode,options={}){
+    this.options=options;this.lastAudioId=0;this.mode=mode;this.w=1920;this.h=1080;this.phase='menu';this.latest=null;
     this.inputs=[{axis:0,target:null,dx:0,dy:0,dir:null,fire:false},{axis:0,target:null,dx:0,dy:0,dir:null,fire:false}];
     this.winner=null;this.result=null;
   }
-  start(){this.phase='playing';this.latest=null;this.winner=null;this.result=null;this.inputs=[{axis:0,target:null,dx:0,dy:0,dir:null,fire:false},{axis:0,target:null,dx:0,dy:0,dir:null,fire:false}];}
+  start(){this.lastAudioId=0;this.phase='playing';this.latest=null;this.winner=null;this.result=null;this.inputs=[{axis:0,target:null,dx:0,dy:0,dir:null,fire:false},{axis:0,target:null,dx:0,dy:0,dir:null,fire:false}];}
   pause(){if(this.phase==='playing')this.phase='paused';}
   resume(){if(this.phase==='paused')this.phase='playing';}
   update(_dt,inputs=[]){if(this.phase!=='playing')return;for(let i=0;i<2;i++)if(inputs[i])this.inputs[i]={...this.inputs[i],...inputs[i]};}
   setSnapshot(snapshot){
     if(!snapshot||typeof snapshot!=='object'||snapshot.w!==this.w||snapshot.h!==this.h||!Array.isArray(snapshot.players)||snapshot.players.length!==2||!Array.isArray(snapshot.scores)||snapshot.scores.length!==2)return false;
-    const safe=JSON.parse(JSON.stringify(snapshot));safe.mode=this.mode;safe.modeIndex=Number.isInteger(safe.modeIndex)?safe.modeIndex:(this.mode==='arena-catch'?0:this.mode==='arena-boss'?4:2);safe.inputs=this.inputs.map(v=>({...v}));this.latest=safe;
+    const safe=JSON.parse(JSON.stringify(snapshot));const allowed=new Set(['start','pause','resume','arena_power','arena_weapon','arena_point','arena_boss','arena_tag','damage','win','gameover','salvage_enemy']);safe.audioEvents=(Array.isArray(safe.audioEvents)?safe.audioEvents:[]).filter(e=>e&&Number.isSafeInteger(e.id)&&e.id>0&&e.id<=1e9&&allowed.has(e.name)).slice(-16);for(const e of safe.audioEvents)if(e.id>this.lastAudioId)this.options.onSound?.(e.name);this.lastAudioId=Math.max(this.lastAudioId,...safe.audioEvents.map(e=>e.id));safe.mode=this.mode;safe.modeIndex=Number.isInteger(safe.modeIndex)?safe.modeIndex:(this.mode==='arena-catch'?0:this.mode==='arena-boss'?4:2);safe.inputs=this.inputs.map(v=>({...v}));this.latest=safe;
     if(safe.state==='GAME_OVER'){this.phase='over';this.winner=[0,1].includes(safe.winner)?safe.winner:null;this.result=['won','lost','draw'].includes(safe.result)?safe.result:null;}return true;
   }
   snapshot(){if(this.latest)return {...this.latest,inputs:this.inputs.map(v=>({...v}))};return {w:this.w,h:this.h,mode:this.mode,modeIndex:this.mode==='arena-catch'?0:this.mode==='arena-boss'?4:2,mapIndex:0,players:[],scores:[0,0],elapsed:0,catcher:-1,orb:{x:this.w/2,y:this.h/2},powerups:[],weapons:[],projectiles:[],attacks:[],boss:null,zombies:[],winner:null,result:null,state:'PLAYING',inputs:this.inputs.map(v=>({...v}))};}
@@ -175,9 +175,10 @@ class Rooms {
     else {config.mode=r.gameType;config.map=snapshot.mapIndex||0;results=(snapshot.scores||[0,0]).map(score=>({score,seconds:snapshot.elapsed,won:r.game.result==='won'}));}
     const entry={id:run.id,game,config,members:run.members,elapsedMs:Math.max(100,Math.round((m.time||r.game.elapsed||snapshot.elapsed||(this.now()-run.started)/1000)*1000)),results};
     r.rankingStatus='pending';const pending=Promise.resolve().then(()=>this.saveOnlineResult?.(entry)).then(saved=>{
-      if(r.profileRun!==run)return;r.rankingStatus=saved?.ok?(saved.results?.length?'saved':'notranked'):'unavailable';if(this.rooms.get(r.code)===r)this.broadcast(r);
+      if(r.profileRun!==run)return;r.personalBests=new Map((saved?.results||[]).filter(x=>x.code).map(x=>[x.code,x]));for(const p of r.players)if(p?.ws)this.sendPersonalBest(p.ws);r.rankingStatus=saved?.ok?(saved.results?.length?'saved':'notranked'):'unavailable';if(this.rooms.get(r.code)===r)this.broadcast(r);
     }).catch(()=>{if(r.profileRun===run)r.rankingStatus='unavailable';}).finally(()=>this.pendingRankings.delete(pending));this.pendingRankings.add(pending);
   }
+  sendPersonalBest(ws){const member=this.player(ws);if(!member||member.room.phase!=='over'||!ws.socialCode||!(ws.socialExpiresAt>this.now()))return;const b=member.room.personalBests?.get(ws.socialCode);if(b)this.send(ws,{type:'personal-best',round:member.room.round,category:b.category,value:b.value,previousValue:b.previousValue,improved:b.improved});}
   ranking(ws,shareResult){const a=this.player(ws);if(!a)return this.error(ws,'not_joined');const r=a.room;
     if(r.gameType!=='salvage'||typeof shareResult!=='boolean'||shareResult&&!['lobby','over'].includes(r.phase))return this.error(ws,'invalid_action');
     a.p.shareResult=shareResult;if(!shareResult&&r.rankingRun&&!r.rankingRun.submitted)r.rankingRun.sharing[a.slot]=false;
@@ -211,7 +212,7 @@ class Rooms {
     const occupied=r.players.filter(Boolean),required=r.requiredPlayers||(r.gameType==='minigolf'?occupied.length:r.players.length);
     const agreed=r.gameType!=='salvage'||occupied.every(p=>p.salvageVote.mode===r.salvage.mode&&p.salvageVote.challengeId===r.salvage.challengeId);
     if(required>=(r.gameType==='salvage'?1:2)&&occupied.length===required&&agreed&&occupied.every(p=>p.ws&&p.ready&&!p.away&&p.vote===r.gameType)){
-      if(r.phase!=='paused'||!r.round){r.game.configurePlayers?.(occupied.length);r.round++;if(r.gameType==='salvage'){r.rankingRun={id:crypto.randomUUID(),mode:r.salvage.mode,challengeId:r.salvage.challengeId,players:occupied.length,names:occupied.map(p=>p.name),sharing:occupied.map(p=>p.shareResult===true),submitted:false};r.rankingStatus='private';}r.game.start(false);r.rankingStatus='private';r.profileRun={id:crypto.randomUUID(),started:this.now(),submitted:false,members:r.players.flatMap((p,slot)=>p?.ws?.socialCode&&p.ws.socialTokenHash&&p.ws.socialExpiresAt>this.now()?[{code:p.ws.socialCode,hash:p.ws.socialTokenHash,slot}]:[])};r.events=[];}else r.game.resume();
+      if(r.phase!=='paused'||!r.round){r.game.configurePlayers?.(occupied.length);r.round++;r.personalBests=new Map();if(r.gameType==='salvage'){r.rankingRun={id:crypto.randomUUID(),mode:r.salvage.mode,challengeId:r.salvage.challengeId,players:occupied.length,names:occupied.map(p=>p.name),sharing:occupied.map(p=>p.shareResult===true),submitted:false};r.rankingStatus='private';}r.game.start(false);r.rankingStatus='private';r.profileRun={id:crypto.randomUUID(),started:this.now(),submitted:false,members:r.players.flatMap((p,slot)=>p?.ws?.socialCode&&p.ws.socialTokenHash&&p.ws.socialExpiresAt>this.now()?[{code:p.ws.socialCode,hash:p.ws.socialTokenHash,slot}]:[])};r.events=[];}else r.game.resume();
       r.phase='countdown';r.countdown=this.now()+3000;occupied.forEach(p=>{p.input={axis:0,target:null};p.inputAt=0;});
     }this.broadcast(r);
   }
@@ -316,7 +317,7 @@ function createServer(options={}){
         if(!ws.socialAuthWindow||now>=ws.socialAuthWindow.end)ws.socialAuthWindow={count:0,end:now+10000};
         if(++ws.socialAuthWindow.count>2){safeSend(ws,{type:'account',ok:false});return;}
         ws.socialCode=null;ws.socialTokenHash=null;ws.socialExpiresAt=0;ws.socialAuthPending=true;ws.socialPendingTokenHash=crypto.createHash('sha256').update(m.token).digest('hex');const generation=ws.socialAuthGeneration=(ws.socialAuthGeneration||0)+1;
-        social.authenticate(m.token).then(account=>{if(ws.socialAuthGeneration!==generation||ws.readyState!==1)return;if(account&&rooms.player(ws)){ws.socialCode=account.code;ws.socialTokenHash=ws.socialPendingTokenHash;ws.socialExpiresAt=account.expiresAt;ws.socialPublic=account.publicProfile===true;ws.socialName=account.name;const member=rooms.player(ws)?.p;if(member){member.profileCode=account.code;member.hiddenProfile=!account.publicProfile;member.name=account.name;}}safeSend(ws,{type:'account',ok:!!ws.socialCode});}).catch(()=>safeSend(ws,{type:'account',ok:false})).finally(()=>{ws.socialAuthPending=false;ws.socialPendingTokenHash=null;});return;
+        social.authenticate(m.token).then(account=>{if(ws.socialAuthGeneration!==generation||ws.readyState!==1)return;if(account&&rooms.player(ws)){ws.socialCode=account.code;ws.socialTokenHash=ws.socialPendingTokenHash;ws.socialExpiresAt=account.expiresAt;ws.socialPublic=account.publicProfile===true;ws.socialName=account.name;const member=rooms.player(ws)?.p;if(member){member.profileCode=account.code;member.hiddenProfile=!account.publicProfile;member.name=account.name;}}safeSend(ws,{type:'account',ok:!!ws.socialCode});if(ws.socialCode)rooms.sendPersonalBest(ws);}).catch(()=>safeSend(ws,{type:'account',ok:false})).finally(()=>{ws.socialAuthPending=false;ws.socialPendingTokenHash=null;});return;
       }
        if(m.type==='create')rooms.create(ws,m.game,m);else if(m.type==='matchmake')rooms.matchmake(ws,m.game,m.capacity);else if(m.type==='join')rooms.join(ws,m.code);else if(m.type==='resume')rooms.resume(ws,m.code,m.token);else if(m.type==='profile')rooms.profile(ws,m.name);else if(m.type==='vote')rooms.vote(ws,m.game);else if(m.type==='salvage-options')rooms.salvageOptions(ws,m.mode,m.challengeId);else if(m.type==='ranking')rooms.ranking(ws,m.shareResult);else if(m.type==='ready')social.canStartRoom(ws,rooms.player(ws)?.room).then(allowed=>{if(allowed)rooms.ready(ws);else rooms.error(ws,'challenge_locked');}).catch(()=>rooms.error(ws,'unavailable'));else if(m.type==='input')rooms.input(ws,m);else if(m.type==='action')rooms.gameAction(ws,m);else if(m.type==='snapshot')rooms.setSnapshot(ws,m.snapshot);else if(m.type==='pause')rooms.pause(ws);else if(m.type==='leave')rooms.leave(ws);else if(m.type==='ping')safeSend(ws,{type:'pong',at:Number.isFinite(m.at)?m.at:0});else if(m.type==='qr'){
         const a=rooms.player(ws);if(!a||ws.qrPending||ws.qrRoom===a.room.code)return;ws.qrPending=true;const code=a.room.code;

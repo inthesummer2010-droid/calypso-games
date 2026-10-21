@@ -151,8 +151,8 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
     if(!await ensureReady())fail(configured?'unavailable':'database_required',503);
     let viewer=null;if(req.headers.authorization)viewer=(await authenticateRequest(req)).account.code;
     if(url.pathname==='/social/rankings/categories'){json(res,200,await store.rankingCategories(url.searchParams.get('game')));return true;}
-    if(url.pathname==='/social/rankings/board'){json(res,200,await store.leaderboard(url.searchParams.get('category'),viewer));return true;}
-    if(url.pathname.startsWith('/social/public/')){json(res,200,{profile:await store.publicProfile(cleanCode(url.pathname.slice('/social/public/'.length)))});return true;}
+    if(url.pathname==='/social/rankings/board'){json(res,200,await store.leaderboard(url.searchParams.get('category'),viewer,url.searchParams.get('scope')||'all'));return true;}
+    if(url.pathname.startsWith('/social/public/')){const target=cleanCode(url.pathname.slice('/social/public/'.length));if(viewer&&await store.blocked(viewer,target))fail('not_found',404);json(res,200,{profile:await store.publicProfile(target)});return true;}
     fail('not_found',404);
    }
    if(url.pathname==='/social/salvage/leaderboard'&&req.method==='GET'){

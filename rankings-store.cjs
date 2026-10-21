@@ -46,8 +46,9 @@ function install(Store,SocialError){
    await this.query('UPDATE arcade_challenges SET progress=$2::jsonb WHERE code=$1',[code,JSON.stringify(progress)],db);return progress;
   },
   async putBest(code,cat,r,team,source,db){
+   const previous=(await this.query('SELECT value FROM arcade_bests WHERE code=$1 AND category=$2',[code,cat.id],db))[0];
    const rows=await this.query(`INSERT INTO arcade_bests(code,category,value,primary_value,secondary_value,elapsed_ms,achieved_at,team,source,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb) ON CONFLICT(code,category) DO UPDATE SET value=EXCLUDED.value,primary_value=EXCLUDED.primary_value,secondary_value=EXCLUDED.secondary_value,elapsed_ms=EXCLUDED.elapsed_ms,achieved_at=EXCLUDED.achieved_at,team=EXCLUDED.team,source=EXCLUDED.source,details=EXCLUDED.details WHERE (EXCLUDED.primary_value,EXCLUDED.secondary_value)>(arcade_bests.primary_value,arcade_bests.secondary_value) RETURNING value`,[code,cat.id,r.value,r.primary,r.secondary,r.elapsedMs,this.now(),JSON.stringify(team),source,JSON.stringify(r.summary||{})],db);
-   return {ok:true,ranked:true,improved:rows.length>0,category:cat};
+   return {ok:true,ranked:true,improved:rows.length>0,category:cat,value:r.value,previousValue:previous?Number(previous.value):null};
   },
   async onlineResult(run){return this.transaction(async db=>{
    const cat=await this.rankingCategory(run.game,run.config,db),members=[];
@@ -57,18 +58,22 @@ function install(Store,SocialError){
     const inserted=await this.query('INSERT INTO arcade_runs(id,code,session_hash,category,started_at,finished_at,response) VALUES($1,$2,$3,$4,$5,$6,\'{}\') ON CONFLICT DO NOTHING RETURNING id',[id,member.code,member.hash,cat.id,this.now()-run.elapsedMs,this.now()],db);if(!inserted.length)continue;
     const raw=run.results[member.slot]||run.results[0];let r;try{r=Rules.result(cat,raw,run.elapsedMs);}catch{continue;}
     await this.saveChallengeResult(member.code,cat,raw.challenge,db);
-    if(r)results.push(await this.putBest(member.code,cat,r,cat.team?members.map(x=>x.code):[],run.game==='arena'?'online-host-checked':'online-server',db));
+    if(r)results.push({...await this.putBest(member.code,cat,r,cat.team?members.map(x=>x.code):[],run.game==='arena'?'online-host-checked':'online-server',db),code:member.code});
    }return {ok:true,results};
   });},
   async rankingCategories(game){if(!Object.hasOwn(Rules.games,game))fail('invalid_input');const rows=await this.query('SELECT definition FROM arcade_categories WHERE game=$1 ORDER BY id',[game]);return {categories:rows.map(x=>x.definition).filter(Rules.current)};},
-  async leaderboard(category,viewer){
+  async leaderboard(category,viewer,scope='all'){
+   if(!['all','friends'].includes(scope))fail('invalid_input');if(scope==='friends'&&!viewer)fail('unauthorized',401);
    const cat=(await this.query('SELECT definition FROM arcade_categories WHERE id=$1',[category]))[0]?.definition;if(!cat||!Rules.current(cat))fail('not_found',404);
    // Privacy is evaluated for every read; no stale materialized public names.
-   const cte=`WITH ranked AS (SELECT b.*,a.name,a.avatar,ROW_NUMBER() OVER(ORDER BY primary_value DESC,secondary_value DESC,achieved_at ASC,b.code ASC) AS rank FROM arcade_bests b JOIN social_accounts a ON a.code=b.code WHERE b.category=$1 AND a.public_profile=TRUE AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(b.team) t(code) JOIN social_accounts p ON p.code=t.code WHERE p.public_profile=FALSE)) `;
-   const rows=await this.query(cte+'SELECT * FROM ranked WHERE rank<=10 OR code=$2 ORDER BY rank',[category,viewer||'']);
+   const cte=`WITH ranked AS (SELECT b.*,a.name,a.avatar,ROW_NUMBER() OVER(ORDER BY primary_value DESC,secondary_value DESC,achieved_at ASC,b.code ASC) AS rank FROM arcade_bests b JOIN social_accounts a ON a.code=b.code WHERE b.category=$1 AND a.public_profile=TRUE
+    AND ($3='all' OR b.code=$2 OR EXISTS(SELECT 1 FROM social_friends f WHERE (f.first_code=$2 AND f.second_code=b.code) OR (f.second_code=$2 AND f.first_code=b.code)))
+    AND NOT EXISTS(SELECT 1 FROM social_blocks x WHERE (x.sender=$2 AND x.recipient=b.code) OR (x.recipient=$2 AND x.sender=b.code))
+    AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(b.team) t(code) JOIN social_accounts p ON p.code=t.code WHERE p.public_profile=FALSE OR EXISTS(SELECT 1 FROM social_blocks x WHERE (x.sender=$2 AND x.recipient=p.code) OR (x.recipient=$2 AND x.sender=p.code)))) `;
+   const rows=await this.query(cte+'SELECT * FROM ranked WHERE rank<=10 OR code=$2 OR rank BETWEEN (SELECT rank-1 FROM ranked WHERE code=$2) AND (SELECT rank+1 FROM ranked WHERE code=$2) ORDER BY rank',[category,viewer||'',scope]);
    const project=r=>({rank:Number(r.rank),code:r.code,name:r.name,avatar:Number(r.avatar),value:Number(r.value),own:r.code===viewer,team:cat.team,source:r.source,details:r.details||{}});
    const own=rows.find(r=>r.code===viewer);const personal=viewer?(await this.query('SELECT value FROM arcade_bests WHERE category=$1 AND code=$2',[category,viewer]))[0]:null;
-   return {category:cat,entries:rows.filter(x=>Number(x.rank)<=10).map(project),own:own?project(own):null,personal:personal?{value:Number(personal.value),hidden:!own}:null};
+   return {category:cat,scope,entries:rows.filter(x=>Number(x.rank)<=10).map(project),neighbors:rows.filter(x=>Number(x.rank)>10).map(project),own:own?project(own):null,personal:personal?{value:Number(personal.value),hidden:!own}:null};
   },
   async publicProfile(code){const account=await this.account(code);if(!account?.public_profile)fail('not_found',404);const rows=await this.query('SELECT c.definition,b.value,b.details FROM arcade_bests b JOIN arcade_categories c ON c.id=b.category WHERE b.code=$1 AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(b.team) t(code) JOIN social_accounts p ON p.code=t.code WHERE p.public_profile=FALSE) ORDER BY c.game,c.id',[code]);const progress=await this.challengeProgress(code);const stats={...(account.share_progress?account.progress?.stats||{}:{})};
    const counts=await this.query('SELECT c.game,COUNT(*) AS n FROM arcade_runs r JOIN arcade_categories c ON c.id=r.category WHERE r.code=$1 AND r.finished_at IS NOT NULL GROUP BY c.game',[code]);
