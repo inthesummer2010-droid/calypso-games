@@ -182,6 +182,8 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
      rate('runs:'+code,20,60e3);if(Object.keys(body).some(k=>!['game','config'].includes(k)))fail('invalid_input');value=await store.beginRun(code,sessionHash(token),body.game,body.config);
     }else if(req.method==='POST'&&url.pathname==='/social/rankings/finish'){
      if(Object.keys(body).some(k=>!['id','result'].includes(k)))fail('invalid_input');value=await store.finishRun(code,sessionHash(token),body.id,body.result);
+    }else if(req.method==='PUT'&&url.pathname==='/social/pass'){if(Object.keys(body).some(k=>k!=='pins'))fail('invalid_input');value=await store.savePass(code,body.pins);
+    }else if(req.method==='GET'&&url.pathname==='/social/pass'){value={pins:(await store.query('SELECT pins FROM arcade_pass_profile WHERE code=$1',[code]))[0]?.pins||[],earned:(await store.publicProfile(code,true)).achievements.map(a=>a.id)};
     }else if(req.method==='GET'&&url.pathname==='/social/challenges')value={progress:await store.challengeProgress(code)};
     else if(req.method==='GET'&&url.pathname==='/social/me'){
      const lists=await store.lists(code),friends=new Set(lists.friends.map(a=>a.code));value={me:await profile(code,code,account)};
