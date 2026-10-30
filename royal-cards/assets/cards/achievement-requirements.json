@@ -1,0 +1,695 @@
+[
+  {
+    "id": "play_1",
+    "name": "Erste Schritte",
+    "desc": "Spiele deine erste Runde",
+    "req_key": "hub_rounds",
+    "req_val": 1
+  },
+  {
+    "id": "play_10",
+    "name": "Veteran",
+    "desc": "Spiele 10 Runden insgesamt",
+    "req_key": "hub_rounds",
+    "req_val": 10
+  },
+  {
+    "id": "play_50",
+    "name": "Süchtig",
+    "desc": "Spiele 50 Runden insgesamt",
+    "req_key": "hub_rounds",
+    "req_val": 50
+  },
+  {
+    "id": "play_coop",
+    "name": "Teamwork",
+    "desc": "Spiele 5 Runden im Co-op",
+    "req_key": "coop_played",
+    "req_val": 5
+  },
+  {
+    "id": "survive_60",
+    "name": "Überlebenskünstler",
+    "desc": "Überlebe 60 Sekunden",
+    "req_key": "max_survived",
+    "req_val": 60
+  },
+  {
+    "id": "survive_120",
+    "name": "Marathonläufer",
+    "desc": "Überlebe 120 Sekunden",
+    "req_key": "max_survived",
+    "req_val": 120
+  },
+  {
+    "id": "catch_10",
+    "name": "Jäger",
+    "desc": "Fange 10 Mal einen Spieler",
+    "req_key": "catches",
+    "req_val": 10
+  },
+  {
+    "id": "pu_10",
+    "name": "Power-Junkie",
+    "desc": "Sammle 10 Powerups",
+    "req_key": "powerups",
+    "req_val": 10
+  },
+  {
+    "id": "pu_50",
+    "name": "Sammler",
+    "desc": "Sammle 50 Powerups",
+    "req_key": "powerups",
+    "req_val": 50
+  },
+  {
+    "id": "wep_10",
+    "name": "Waffennarr",
+    "desc": "Sammle 10 Waffen",
+    "req_key": "weapons",
+    "req_val": 10
+  },
+  {
+    "id": "wep_50",
+    "name": "Arsenal",
+    "desc": "Sammle 50 Waffen",
+    "req_key": "weapons",
+    "req_val": 50
+  },
+  {
+    "id": "boss_1",
+    "name": "Boss-Killer",
+    "desc": "Besiege den Wächter",
+    "req_key": "bosses_killed",
+    "req_val": 1
+  },
+  {
+    "id": "boss_5",
+    "name": "Boss-Schlächter",
+    "desc": "Besiege den Wächter 5 Mal",
+    "req_key": "bosses_killed",
+    "req_val": 5
+  },
+  {
+    "id": "boss_10",
+    "name": "Wächter-Albtraum",
+    "desc": "Besiege den Wächter 10 Mal",
+    "req_key": "bosses_killed",
+    "req_val": 10
+  },
+  {
+    "id": "revive_5",
+    "name": "Unsterblich",
+    "desc": "Werde 5 Mal wiederbelebt",
+    "req_key": "revives",
+    "req_val": 5
+  },
+  {
+    "id": "speed_10",
+    "name": "Raser",
+    "desc": "Sammle 10 Speed-Powerups",
+    "req_key": "speed_pu",
+    "req_val": 10
+  },
+  {
+    "id": "shield_10",
+    "name": "Schildwache",
+    "desc": "Sammle 10 Schild-Powerups",
+    "req_key": "shield_pu",
+    "req_val": 10
+  },
+  {
+    "id": "ghost_10",
+    "name": "Geist",
+    "desc": "Sammle 10 Geist-Powerups",
+    "req_key": "ghost_pu",
+    "req_val": 10
+  },
+  {
+    "id": "freeze_10",
+    "name": "Eiszeit",
+    "desc": "Sammle 10 Freeze-Powerups",
+    "req_key": "freeze_pu",
+    "req_val": 10
+  },
+  {
+    "id": "shrink_10",
+    "name": "Ameise",
+    "desc": "Sammle 10 Schrumpf-Powerups",
+    "req_key": "shrink_pu",
+    "req_val": 10
+  },
+  {
+    "id": "bot_win_1",
+    "name": "Maschinenstürmer",
+    "desc": "Gewinne 1 Mal gegen den Computer",
+    "req_key": "bot_wins",
+    "req_val": 1
+  },
+  {
+    "id": "bot_win_10",
+    "name": "Unbesiegbar",
+    "desc": "Gewinne 10 Mal gegen den Computer",
+    "req_key": "bot_wins",
+    "req_val": 10
+  },
+  {
+    "id": "royal_first",
+    "name": "Am Kartentisch",
+    "desc": "Schließe eine Royal-Cards-Runde ab.",
+    "req_key": "royal_games",
+    "req_val": 1
+  },
+  {
+    "id": "royal_win",
+    "name": "Gute Hand",
+    "desc": "Gewinne eine Royal-Cards-Runde.",
+    "req_key": "royal_wins",
+    "req_val": 1
+  },
+  {
+    "id": "royal_memory",
+    "name": "Paare im Kopf",
+    "desc": "Finde alle acht Memory-Paare.",
+    "req_key": "royal_memory",
+    "req_val": 1
+  },
+  {
+    "id": "play_100",
+    "name": "Stammgast",
+    "desc": "Spiele 100 Runden insgesamt",
+    "req_key": "games_played",
+    "req_val": 100
+  },
+  {
+    "id": "coop_20",
+    "name": "Starkes Team",
+    "desc": "Spiele 20 Runden im Co-op",
+    "req_key": "coop_played",
+    "req_val": 20
+  },
+  {
+    "id": "survive_180",
+    "name": "Langer Atem",
+    "desc": "Überlebe 180 Sekunden",
+    "req_key": "max_survived",
+    "req_val": 180
+  },
+  {
+    "id": "survive_300",
+    "name": "Fünf Minuten Ruhm",
+    "desc": "Überlebe 300 Sekunden",
+    "req_key": "max_survived",
+    "req_val": 300
+  },
+  {
+    "id": "catch_50",
+    "name": "Fangprofi",
+    "desc": "Fange 50 Mal einen Spieler",
+    "req_key": "catches",
+    "req_val": 50
+  },
+  {
+    "id": "pu_100",
+    "name": "Extras für alle",
+    "desc": "Sammle 100 Powerups",
+    "req_key": "powerups",
+    "req_val": 100
+  },
+  {
+    "id": "wep_100",
+    "name": "Voll ausgerüstet",
+    "desc": "Sammle 100 Waffen",
+    "req_key": "weapons",
+    "req_val": 100
+  },
+  {
+    "id": "maps_8",
+    "name": "Entdecker",
+    "desc": "Spiele auf allen 8 Karten",
+    "req_key": "maps_explored",
+    "req_val": 8
+  },
+  {
+    "id": "modes_5",
+    "name": "Vielseitig",
+    "desc": "Probiere alle 5 Arena-Modi",
+    "req_key": "modes_explored",
+    "req_val": 5
+  },
+  {
+    "id": "snake_1",
+    "name": "Schlangenstart",
+    "desc": "Beende deine erste Snake-Runde",
+    "req_key": "snake_games",
+    "req_val": 1
+  },
+  {
+    "id": "snake_10",
+    "name": "Schlangenfreund",
+    "desc": "Beende 10 Snake-Runden",
+    "req_key": "snake_games",
+    "req_val": 10
+  },
+  {
+    "id": "snake_25",
+    "name": "Apfelkorb",
+    "desc": "Sammle 25 Äpfel in Snake",
+    "req_key": "snake_apples",
+    "req_val": 25
+  },
+  {
+    "id": "snake_100",
+    "name": "Obstgarten",
+    "desc": "Sammle 100 Äpfel in Snake",
+    "req_key": "snake_apples",
+    "req_val": 100
+  },
+  {
+    "id": "snake_score_25",
+    "name": "Lang und länger",
+    "desc": "Erreiche 25 Punkte in Snake",
+    "req_key": "snake_best",
+    "req_val": 25
+  },
+  {
+    "id": "snake_score_100",
+    "name": "Schlangenmeister",
+    "desc": "Erreiche 100 Punkte in Snake",
+    "req_key": "snake_best",
+    "req_val": 100
+  },
+  {
+    "id": "snake_combo",
+    "name": "Kombo-König",
+    "desc": "Erreiche eine 5er-Kombo in Snake",
+    "req_key": "snake_combo",
+    "req_val": 5
+  },
+  {
+    "id": "breaker_1",
+    "name": "Erster Aufschlag",
+    "desc": "Beende eine Runde Neon Breaker",
+    "req_key": "breaker_games",
+    "req_val": 1
+  },
+  {
+    "id": "breaker_bricks",
+    "name": "Stein für Stein",
+    "desc": "Zerstöre 100 Blöcke in Neon Breaker",
+    "req_key": "breaker_bricks",
+    "req_val": 100
+  },
+  {
+    "id": "breaker_score",
+    "name": "Neon-Rekord",
+    "desc": "Erreiche 5000 Punkte in Neon Breaker",
+    "req_key": "breaker_best",
+    "req_val": 5000
+  },
+  {
+    "id": "breaker_win",
+    "name": "Lichtspiel-Meister",
+    "desc": "Schaffe alle fünf Neon-Breaker-Level",
+    "req_key": "breaker_wins",
+    "req_val": 1
+  },
+  {
+    "id": "rally_first",
+    "name": "Court Club",
+    "desc": "Beende eine Runde Neon Rally",
+    "req_key": "rally_games",
+    "req_val": 1
+  },
+  {
+    "id": "rally_win",
+    "name": "Satz und Sieg",
+    "desc": "Gewinne Neon Rally gegen den Computer",
+    "req_key": "rally_wins",
+    "req_val": 1
+  },
+  {
+    "id": "rally_hits",
+    "name": "Hin und her",
+    "desc": "Triff den Ball 100 Mal in Neon Rally",
+    "req_key": "rally_hits",
+    "req_val": 100
+  },
+  {
+    "id": "rally_long",
+    "name": "Ballwechsel",
+    "desc": "Erreiche 15 Treffer in einem Ballwechsel",
+    "req_key": "rally_longest",
+    "req_val": 15
+  },
+  {
+    "id": "orbit_first",
+    "name": "Abflug",
+    "desc": "Beende eine Runde Orbit Dash",
+    "req_key": "orbit_games",
+    "req_val": 1
+  },
+  {
+    "id": "orbit_stars",
+    "name": "Sternensammler",
+    "desc": "Sammle 100 Sterne in Orbit Dash",
+    "req_key": "orbit_stars",
+    "req_val": 100
+  },
+  {
+    "id": "orbit_time",
+    "name": "Eine Minute im All",
+    "desc": "Überlebe 60 Sekunden in Orbit Dash",
+    "req_key": "orbit_time",
+    "req_val": 60
+  },
+  {
+    "id": "orbit_score",
+    "name": "Sternenrekord",
+    "desc": "Erreiche 5000 Punkte in Orbit Dash",
+    "req_key": "orbit_best",
+    "req_val": 5000
+  },
+  {
+    "id": "prism_first",
+    "name": "Prismenstart",
+    "desc": "Beende eine Runde Prism Merge",
+    "req_key": "prism_games",
+    "req_val": 1
+  },
+  {
+    "id": "prism_merge",
+    "name": "Stein für Steinchen",
+    "desc": "Verschmelze 100 Steinpaare in Prism Merge",
+    "req_key": "prism_merges",
+    "req_val": 100
+  },
+  {
+    "id": "prism_512",
+    "name": "Leuchtkristall",
+    "desc": "Erreiche einen 512er-Stein",
+    "req_key": "prism_tile",
+    "req_val": 512
+  },
+  {
+    "id": "prism_2048",
+    "name": "Prismenmeister",
+    "desc": "Erreiche den 2048er-Stein",
+    "req_key": "prism_tile",
+    "req_val": 2048
+  },
+  {
+    "id": "cloud_first",
+    "name": "Wolkenhüpfer",
+    "desc": "Beende eine Runde Cloud Hop",
+    "req_key": "cloud_games",
+    "req_val": 1
+  },
+  {
+    "id": "cloud_height",
+    "name": "Hoch hinaus",
+    "desc": "Erreiche 250 Meter in Cloud Hop",
+    "req_key": "cloud_height",
+    "req_val": 250
+  },
+  {
+    "id": "cloud_stars",
+    "name": "Himmelslichter",
+    "desc": "Sammle 100 Sterne in Cloud Hop",
+    "req_key": "cloud_stars",
+    "req_val": 100
+  },
+  {
+    "id": "cloud_bounce",
+    "name": "Federleicht",
+    "desc": "Lande 100 Mal auf einer Insel",
+    "req_key": "cloud_bounces",
+    "req_val": 100
+  },
+  {
+    "id": "tower_first",
+    "name": "Burgwache",
+    "desc": "Beende eine Runde Tower Bastion",
+    "req_key": "tower_games",
+    "req_val": 1
+  },
+  {
+    "id": "tower_siege",
+    "name": "Belagerungsprofi",
+    "desc": "Schließe eine Turm-Herausforderung ab",
+    "req_key": "tower_challenge_games",
+    "req_val": 1
+  },
+  {
+    "id": "arena_event",
+    "name": "Sondereinsatz",
+    "desc": "Schließe eine Runde mit einem Arena-Ereignis ab",
+    "req_key": "arena_event_games",
+    "req_val": 1
+  },
+  {
+    "id": "prism_time",
+    "name": "Gegen die Zeit",
+    "desc": "Erreiche 512 Punkte im Prism-Zeitangriff",
+    "req_key": "prism_time_best",
+    "req_val": 512
+  },
+  {
+    "id": "crystal_mission",
+    "name": "Kristallauftrag",
+    "desc": "Schließe drei Crystal-Run-Aufträge ab",
+    "req_key": "crystalrun_missions",
+    "req_val": 3
+  },
+  {
+    "id": "snake_variant",
+    "name": "Schlangenmix",
+    "desc": "Spiele drei unterschiedliche Snake-Varianten",
+    "req_key": "snake_variant_count",
+    "req_val": 3
+  },
+  {
+    "id": "tower_waves",
+    "name": "Wellenbrecher",
+    "desc": "Erreiche Welle 8 in Tower Bastion",
+    "req_key": "tower_waves",
+    "req_val": 8
+  },
+  {
+    "id": "tower_kills",
+    "name": "Geschützmeister",
+    "desc": "Besiege 100 Monster in Tower Bastion",
+    "req_key": "tower_kills",
+    "req_val": 100
+  },
+  {
+    "id": "tower_build",
+    "name": "Bauleiter",
+    "desc": "Baue 10 Geschütze in Tower Bastion",
+    "req_key": "tower_built",
+    "req_val": 10
+  },
+  {
+    "id": "tower_upgrade",
+    "name": "Feinmechaniker",
+    "desc": "Verbessere Geschütze 20 Mal in Tower Bastion",
+    "req_key": "tower_upgrades",
+    "req_val": 20
+  },
+  {
+    "id": "tower_boss",
+    "name": "Bossjäger",
+    "desc": "Besiege 3 Bosse in Tower Bastion",
+    "req_key": "tower_bosses",
+    "req_val": 3
+  },
+  {
+    "id": "tower_perfect",
+    "name": "Unberührte Burg",
+    "desc": "Gewinne Tower Bastion ohne ein Leben zu verlieren",
+    "req_key": "tower_perfect",
+    "req_val": 1
+  },
+  {
+    "id": "tower_gold",
+    "name": "Goldreserve",
+    "desc": "Sammle 1000 Gold in einer Runde Tower Bastion",
+    "req_key": "tower_gold_peak",
+    "req_val": 1000
+  },
+  {
+    "id": "tower_morph",
+    "name": "Alchemistische Wache",
+    "desc": "Kombiniere drei unterschiedliche MAX-Türme zu einem Morph",
+    "req_key": "tower_morphs",
+    "req_val": 1
+  },
+  {
+    "id": "tower_recycler",
+    "name": "Zweite Chance",
+    "desc": "Verkaufe 10 Türme in Tower Bastion",
+    "req_key": "tower_sold",
+    "req_val": 10
+  },
+  {
+    "id": "tower_roster",
+    "name": "Fünffache Verteidigung",
+    "desc": "Baue in einer Runde fünf verschiedene Turmtypen",
+    "req_key": "tower_diverse",
+    "req_val": 5
+  },
+  {
+    "id": "tower_storm",
+    "name": "Sturmrufer",
+    "desc": "Lande 100 Spezialangriffe mit Frost und Sturm",
+    "req_key": "tower_special_hits",
+    "req_val": 100
+  },
+  {
+    "id": "tower_endless",
+    "name": "Unendliche Wache",
+    "desc": "Erreiche Welle 20 im Unendlich-Modus",
+    "req_key": "tower_endless_wave",
+    "req_val": 20
+  },
+  {
+    "id": "crystalrun_first",
+    "name": "Kristall-Kompass",
+    "desc": "Beende deinen ersten Lauf in Crystal Run 3D",
+    "req_key": "crystalrun_games",
+    "req_val": 1
+  },
+  {
+    "id": "crystalrun_gems",
+    "name": "Kristallsammler",
+    "desc": "Sammle 50 Kristalle in Crystal Run 3D",
+    "req_key": "crystalrun_gems",
+    "req_val": 50
+  },
+  {
+    "id": "crystalrun_distance",
+    "name": "Lichtgeschwindigkeit",
+    "desc": "Erreiche 2.000 Meter in Crystal Run 3D",
+    "req_key": "crystalrun_distance",
+    "req_val": 2000
+  },
+  {
+    "id": "crystalrun_flawless",
+    "name": "Kristallklar",
+    "desc": "Beende einen Lauf ohne Treffer",
+    "req_key": "crystalrun_clean_runs",
+    "req_val": 1
+  },
+  {
+    "id": "crystalrun_gems_100",
+    "name": "Kristallpfad",
+    "desc": "Sammle insgesamt 100 Kristalle",
+    "req_key": "crystalrun_gems",
+    "req_val": 100
+  },
+  {
+    "id": "crystalrun_two_worlds",
+    "name": "Weltenbummler",
+    "desc": "Beende einen Lauf in zwei unterschiedlichen Kristallwelten",
+    "req_key": "crystalrun_worlds_visited",
+    "req_val": 2
+  },
+  {
+    "id": "crystalrun_all_worlds",
+    "name": "Expeditionsmeister",
+    "desc": "Beende einen Lauf in allen drei Kristallwelten",
+    "req_key": "crystalrun_worlds_visited",
+    "req_val": 3
+  },
+  {
+    "id": "ny_first",
+    "name": "Big Apple",
+    "desc": "Beende deinen ersten New-York-Lauf",
+    "req_key": "newyork_games",
+    "req_val": 1
+  },
+  {
+    "id": "ny_5k",
+    "name": "Rush Hour",
+    "desc": "Laufe 5.000 Meter durch New York",
+    "req_key": "newyork_distance",
+    "req_val": 5000
+  },
+  {
+    "id": "ny_stars",
+    "name": "Broadway Lights",
+    "desc": "Sammle 100 Broadway-Sterne",
+    "req_key": "newyork_stars",
+    "req_val": 100
+  },
+  {
+    "id": "ny_corners",
+    "name": "Around the Block",
+    "desc": "Biege 20 Mal um eine Straßenecke ab",
+    "req_key": "newyork_turns",
+    "req_val": 20
+  },
+  {
+    "id": "ny_metro",
+    "name": "Next Stop: 42 St",
+    "desc": "Betritt fünf U-Bahn-Stationen",
+    "req_key": "newyork_subway_visits",
+    "req_val": 5
+  },
+  {
+    "id": "golf_first",
+    "name": "Abschlag",
+    "desc": "Beende deinen ersten Minigolf-Cup",
+    "req_key": "minigolf_games",
+    "req_val": 1
+  },
+  {
+    "id": "golf_party",
+    "name": "Viererflight",
+    "desc": "Spiele einen Cup mit vier Personen",
+    "req_key": "minigolf_four_player_cups",
+    "req_val": 1
+  },
+  {
+    "id": "salvage_first",
+    "name": "Erste Bergung",
+    "desc": "Beende deine erste Neon-Salvage-Expedition",
+    "req_key": "salvage_games",
+    "req_val": 1
+  },
+  {
+    "id": "salvage_cargo",
+    "name": "Goldene Route",
+    "desc": "Liefere 25 Frachten zur Basis",
+    "req_key": "salvage_deliveries",
+    "req_val": 25
+  },
+  {
+    "id": "salvage_kills",
+    "name": "Trümmerfeld",
+    "desc": "Zerlege 100 Asteroiden",
+    "req_key": "salvage_kills",
+    "req_val": 100
+  },
+  {
+    "id": "weekly_first",
+    "name": "Wochenstarter",
+    "desc": "Schließe eine Wochenaufgabe ab",
+    "req_key": "weekly_challenges",
+    "req_val": 1
+  },
+  {
+    "id": "quest_first",
+    "name": "Arcade-Reise",
+    "desc": "Schließe eine Hub-Quest ab",
+    "req_key": "quest_completions",
+    "req_val": 1
+  },
+  {
+    "id": "eggs_three",
+    "name": "Aufmerksame Augen",
+    "desc": "Finde drei versteckte Hub-Easter-Eggs",
+    "req_key": "easter_eggs_found",
+    "req_val": 3
+  }
+]
