@@ -1,0 +1,10 @@
+Card artwork: https://github.com/hayeah/playing-cards-assets
+Original vector-playing-cards artwork: public domain. Repository: MIT license; see assets/cards/LICENSE.txt.
+Design research: https://www.247blackjack.com/ and https://www.blackjackist.com/en/
+No proprietary game source or game artwork copied.
+
+Chip sprites and card/chip sound effects: Kenney Boardgame Pack v2, CC0.
+Source: https://opengameart.org/content/boardgame-pack
+Official: https://kenney.nl/assets/boardgame-pack
+License: assets/kenney/license.txt
+All 52 card SVGs, including the four tens, are unmodified upstream originals.
