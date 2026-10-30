@@ -154,6 +154,27 @@
     "req_val": 10
   },
   {
+    "id": "royal_first",
+    "name": "Am Kartentisch",
+    "desc": "Schließe eine Royal-Cards-Runde ab.",
+    "req_key": "royal_games",
+    "req_val": 1
+  },
+  {
+    "id": "royal_win",
+    "name": "Gute Hand",
+    "desc": "Gewinne eine Royal-Cards-Runde.",
+    "req_key": "royal_wins",
+    "req_val": 1
+  },
+  {
+    "id": "royal_memory",
+    "name": "Paare im Kopf",
+    "desc": "Finde alle acht Memory-Paare.",
+    "req_key": "royal_memory",
+    "req_val": 1
+  },
+  {
     "id": "play_100",
     "name": "Stammgast",
     "desc": "Spiele 100 Runden insgesamt",

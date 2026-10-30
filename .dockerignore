@@ -17,5 +17,7 @@
 !rankings-store.cjs
 !verify-package.cjs
 !achievement-requirements.json
-
 !arcade-unlocks.js
+
+!royal-cards
+!royal-cards/**

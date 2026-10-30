@@ -1,10 +1,11 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.HubRankingRules=api;})(typeof window!=='undefined'?window:globalThis,function(){
  'use strict';
- const games={arena:'Ultimate Arena',snake:'Snake',breaker:'Neon Breaker',rally:'Neon Rally',orbit:'Orbit Dash',prism:'Prism Merge',cloud:'Cloud Hop',tower:'Tower Bastion',crystalrun:'Crystal Run 3D',newyork:'New York Rush',minigolf:'Minigolf Cup',salvage:'Neon Salvage'};
+ const games={arena:'Ultimate Arena',snake:'Snake',breaker:'Neon Breaker',rally:'Neon Rally',orbit:'Orbit Dash',prism:'Prism Merge',cloud:'Cloud Hop',tower:'Tower Bastion',crystalrun:'Crystal Run 3D',newyork:'New York Rush',minigolf:'Minigolf Cup',salvage:'Neon Salvage',royal:'Royal Cards'};
  const keys=['mode','players','difficulty','map','event','mission','challengeId','endless','timeAttack','holes','speed','obstacles','walls','bonus','metric'];
  const allowed={arena:['mode','players','difficulty','map','event'],snake:['mode','players','speed','walls','obstacles','bonus'],breaker:['players'],rally:['mode','players','difficulty','metric'],orbit:['players'],prism:['timeAttack','players'],cloud:['players'],tower:['map','challengeId','endless','players','mode'],crystalrun:['mission','players','metric'],newyork:['difficulty','players'],minigolf:['holes','players','mode'],salvage:['mode','players','challengeId']};
  const error=()=>{throw Error('invalid_input');};
  function category(game,raw={}){
+  if(game==='royal')return {id:'royal:local:v1',game,config:{players:1},kind:'local',team:false,localOnly:true};
   if(!Object.hasOwn(games,game)||!raw||typeof raw!=='object'||Array.isArray(raw)||Object.keys(raw).some(k=>!allowed[game].includes(k)))error();
   const config={};for(const key of keys){const v=raw[key];if(v===undefined||v===null||v==='')continue;if(typeof v==='boolean')config[key]=v;else if(Number.isInteger(v)&&v>=0&&v<=100)config[key]=v;else if(typeof v==='string'&&/^[a-zA-Z0-9_-]{1,32}$/.test(v))config[key]=v;else error();}
   config.players=config.players??1;if(![1,2,3,4].includes(config.players)||config.players>2&&game!=='minigolf')error();
@@ -23,7 +24,7 @@
   const orderHelp=kind==='time'?'Kürzere Abschlusszeit; bei Gleichstand mehr Punkte.':kind==='survival'?'Längere Überlebenszeit; bei Gleichstand mehr Punkte.':kind==='strokes'?'Weniger Schläge; bei Gleichstand kürzere Spieldauer.':game==='rally'?'Nur Siege: größerer Siegvorsprung; bei Gleichstand kürzere Dauer.':game==='salvage'&&config.mode==='survival'?'Mehr Punkte; bei Gleichstand länger überlebt.':'Mehr Punkte; bei Gleichstand kürzere Spieldauer.';
   return {id,game,config,kind,team,orderHelp,label:label.replace(/ · $/,'')};
  }
- function result(cat,raw,elapsedMs){
+ function result(cat,raw,elapsedMs){if(cat.localOnly)return null;
   if(!raw||typeof raw!=='object'||!Number.isFinite(elapsedMs)||elapsedMs<100||elapsedMs>86400000)error();
   const ms=Math.round(elapsedMs),number=(value,max=1e9)=>{if(!Number.isFinite(value)||value<0||value>max)error();return Math.floor(value);};
   if(cat.game==='crystalrun'&&Number(raw.gems)>10+ms/100)error();
@@ -52,7 +53,7 @@
   if(cat.kind==='margin')return '+'+value+' '+({de:'Vorsprung',en:'lead',fr:'d’avance',es:'de ventaja'})[language];
   return ['time','survival'].includes(cat.kind)?new Intl.NumberFormat(locale,{minimumFractionDigits:2,maximumFractionDigits:2}).format(value/1000)+'\u00a0s':new Intl.NumberFormat(locale).format(value)+'\u00a0'+words[(cat.kind==='strokes'?2:0)+(value===1?0:1)];
  }
- function label(cat,language='de',tr=x=>x){
+ function label(cat,language='de',tr=x=>x){if(cat.localOnly)return ({de:'Lokale Spielstatistiken',en:'Local game records',fr:'Statistiques locales',es:'Estadísticas locales'})[language];
   const c=cat.config||{},fields={mode:'Modus',difficulty:'Stufe',map:'Karte',event:'Event',mission:'Mission',challengeId:'Aufgabe',endless:'Endlos',timeAttack:'Zeitmodus',holes:'Bahnen',speed:'Tempo',obstacles:'Hindernisse',walls:'Wände',bonus:'Bonus',metric:'Wertung'};
   const names={survival:'Überleben',salvage:'Bergung',challenge:'Herausforderung',computer:'Computer',local:'Lokal',online:'Online',classic:'Klassisch',speedrun:'Tempojagd',maze:'Labyrinth',mirror:'Spiegel',fruit_frenzy:'Früchtefieber',off:'Aus',supply:'Vorratsregen',double_points:'Doppelte Punkte',boss_rush:'Boss-Frühstart',normal:'Normal',hard:'Schwer',meadow:'Grüne Festung',pine:'Tannenpass',canyon:'Sonnenklamm',frostline:'Eisgrat',skybridge:'Himmelsbrücke',balanced:'Ausgewogen',siege:'Belagerung',bounty:'Kopfgeld',bossstorm:'Boss-Sturm',boss:'Boss-Sturm',collector:'Kristalljäger',distance:'Langer Lauf',marathon:'Langer Lauf',clean:'Ohne Kratzer'};
   const modes=['Fangen','Zombie-Solo','Zombie-Koop','Boss-Solo','Boss-Koop'];
@@ -62,7 +63,7 @@
   const scoring=cat.game==='rally'?(cat.kind==='wins'?({de:cat.config.mode==='online'?'Siege · Serverbestätigt':'Siege · Nur dieses Gerät',en:cat.config.mode==='online'?'Wins · Server confirmed':'Wins · This device only',fr:cat.config.mode==='online'?'Victoires · Serveur':'Victoires · Cet appareil',es:cat.config.mode==='online'?'Victorias · Servidor':'Victorias · Este dispositivo'})[language]:({de:'Bisherige Bestleistung · Siegvorsprung',en:'Previous best · Winning margin',fr:'Ancien record · Écart',es:'Récord anterior · Ventaja'})[language]):'';
   return [...(scoring?[scoring]:[]),start,...(objective?[objective]:[]),...Object.keys(c).filter(k=>k!=='players'&&!(cat.game==='tower'&&k==='endless')).map(k=>tr(fields[k]||k)+': '+value(k,c[k]))].join(' · ');
  }
- function explain(cat,language='de'){
+ function explain(cat,language='de'){if(cat.localOnly)return label(cat,language);
   if(cat.kind==='wins')return ({de:cat.config.mode==='online'?'Abgeschlossene serverbestätigte Online-Siege seit Einführung dieser Wertung. Jeder Match-Nachweis zählt einmal. Gleichstand: zuerst erreicht, danach stabile Profilreihenfolge.':'Neue abgeschlossene Partien auf diesem Gerät, getrennt nach Gegner und Schwierigkeit. Keine öffentliche oder serverbestätigte Wertung.',en:cat.config.mode==='online'?'Completed server-confirmed online wins since this scoring began. Each match counts once. Ties: first reached, then stable profile order.':'New completed matches on this device, separated by opponent and difficulty. Not public or server-confirmed.',fr:cat.config.mode==='online'?'Victoires en ligne terminées et confirmées depuis cette version. Chaque match compte une fois. Égalité : premier atteint, puis ordre stable.':'Nouveaux matchs terminés sur cet appareil, séparés par adversaire et difficulté. Pas un classement public confirmé.',es:cat.config.mode==='online'?'Victorias en línea completadas y confirmadas desde esta versión. Cada partida cuenta una vez. Empates: primero alcanzado, luego orden estable.':'Nuevas partidas completadas en este dispositivo, separadas por rival y dificultad. No es una clasificación pública confirmada.'})[language];
   if(cat.kind==='time'&&['tower','breaker','prism'].includes(cat.game)){const goal=cat.game==='tower'?({de:'12 Wellen',en:'12 waves',fr:'12 vagues',es:'12 oleadas'})[language]:cat.game==='breaker'?({de:'5 Level',en:'5 levels',fr:'5 niveaux',es:'5 niveles'})[language]:'2048';return ({de:'Nur vollständiger Erfolg ({goal}). Kürzere aktive Abschlusszeit gewinnt; bei Gleichstand mehr Punkte.',en:'Successful completion only ({goal}). Faster active time wins; ties use more points.',fr:'Réussite complète uniquement ({goal}). Temps actif plus court ; puis plus de points.',es:'Solo éxito completo ({goal}). Menor tiempo activo; en empate, más puntos.'})[language].replace('{goal}',goal);}
   if(cat.kind==='gems')return ({de:'Mehr Kristalle; bei Gleichstand mehr Punkte.',en:'More crystals; tied results use more points.',fr:'Plus de cristaux ; puis plus de points.',es:'Más cristales; en empate, más puntos.'})[language];

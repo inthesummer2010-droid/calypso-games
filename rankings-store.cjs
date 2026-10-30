@@ -25,7 +25,7 @@ function install(Store,SocialError){
    // A ticket belongs to this login, never to a browser-provided profile ID.
    await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db);
    if(await this.count('SELECT COUNT(*) AS n FROM arcade_runs WHERE code=$1 AND started_at>$2',[code,this.now()-60000],db)>=20)fail('rate',429);
-   const cat=await this.rankingCategory(game,config,db);if(cat.kind==='wins')fail('invalid_input');
+   const cat=await this.rankingCategory(game,config,db);if(cat.localOnly||cat.kind==='wins')fail('invalid_input');
    if(game==='salvage'&&cat.config.mode==='challenge'&&!Challenges.isUnlocked(await this.challengeProgress(code,db),cat.config.challengeId,cat.config.players))fail('challenge_locked',409);
    const id=crypto.randomUUID();await this.query('INSERT INTO arcade_runs(id,code,session_hash,category,started_at) VALUES($1,$2,$3,$4,$5)',[id,code,hash,cat.id,this.now()],db);return {id,category:cat};
   });},
