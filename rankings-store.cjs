@@ -25,8 +25,8 @@ function install(Store,SocialError){
    // A ticket belongs to this login, never to a browser-provided profile ID.
    await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db);
    if(await this.count('SELECT COUNT(*) AS n FROM arcade_runs WHERE code=$1 AND started_at>$2',[code,this.now()-60000],db)>=20)fail('rate',429);
-   const cat=await this.rankingCategory(game,config,db);if(cat.localOnly||cat.kind==='wins')fail('invalid_input');
-   if(game==='salvage'&&cat.config.mode==='challenge'&&!Challenges.isUnlocked(await this.challengeProgress(code,db),cat.config.challengeId,cat.config.players))fail('challenge_locked',409);
+   const cat=await this.rankingCategory(game,config,db);if(cat.localOnly||cat.kind==='wins'||cat.config.mode==='online'||String(cat.config.mode||'').startsWith('arena-'))fail('invalid_input');
+   if(game==='salvage'&&cat.config.mode==='challenge'&&!(await this.playerAccess(code,db)).allLooks&&!Challenges.isUnlocked(await this.challengeProgress(code,db),cat.config.challengeId,cat.config.players))fail('challenge_locked',409);
    const id=crypto.randomUUID();await this.query('INSERT INTO arcade_runs(id,code,session_hash,category,started_at) VALUES($1,$2,$3,$4,$5)',[id,code,hash,cat.id,this.now()],db);return {id,category:cat};
   });},
   async finishRun(code,hash,id,raw){if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id||''))fail('invalid_input');return this.transaction(async db=>{
@@ -41,7 +41,7 @@ function install(Store,SocialError){
   });},
   async saveChallengeResult(code,cat,result,db){
    if(cat.game!=='salvage'||cat.config.mode!=='challenge'||!result||result.id!==cat.config.challengeId||result.players!==cat.config.players)return null;
-   if(!Challenges.isUnlocked(await this.challengeProgress(code,db),result.id,result.players))fail('challenge_locked',409);
+   if(!(await this.playerAccess(code,db)).allLooks&&!Challenges.isUnlocked(await this.challengeProgress(code,db),result.id,result.players))fail('challenge_locked',409);
    await this.query('INSERT INTO arcade_challenges(code) VALUES($1) ON CONFLICT DO NOTHING',[code],db);
    const old=(await this.query('SELECT progress FROM arcade_challenges WHERE code=$1 FOR UPDATE',[code],db))[0].progress,progress=Challenges.mergeProgress(old,result,this.now());
    if(result.status==='completed'&&(Challenges.record(progress,result.id,result.players)?.completions||0)<=(Challenges.record(old,result.id,result.players)?.completions||0))fail('invalid_input');
@@ -49,6 +49,7 @@ function install(Store,SocialError){
   },
   async putBest(code,cat,r,team,source,db){
    await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db);
+   if((await this.playerAccess(code,db)).rankingBlocked)return {ok:true,ranked:false,improved:false};
    const previous=(await this.query('SELECT value FROM arcade_bests WHERE code=$1 AND category=$2',[code,cat.id],db))[0];
    const rows=await this.query(`INSERT INTO arcade_bests(code,category,value,primary_value,secondary_value,elapsed_ms,achieved_at,team,source,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb) ON CONFLICT(code,category) DO UPDATE SET value=EXCLUDED.value,primary_value=EXCLUDED.primary_value,secondary_value=EXCLUDED.secondary_value,elapsed_ms=EXCLUDED.elapsed_ms,achieved_at=EXCLUDED.achieved_at,team=EXCLUDED.team,source=EXCLUDED.source,details=EXCLUDED.details WHERE (EXCLUDED.primary_value,EXCLUDED.secondary_value)>(arcade_bests.primary_value,arcade_bests.secondary_value) RETURNING value`,[code,cat.id,r.value,r.primary,r.secondary,r.elapsedMs,this.now(),JSON.stringify(team),source,JSON.stringify(r.summary||{})],db);
    return {ok:true,ranked:true,improved:rows.length>0,category:cat,value:r.value,previousValue:previous?Number(previous.value):null};
@@ -56,10 +57,10 @@ function install(Store,SocialError){
   async onlineResult(run){return this.transaction(async db=>{
    const cat=await this.rankingCategory(run.game,run.config,db),members=[];
    for(const member of run.members){const a=(await this.query('SELECT code FROM social_sessions WHERE hash=$1 AND code=$2 AND expires_at>$3',[member.hash,member.code,this.now()],db))[0];if(a&&!members.some(x=>x.code===a.code))members.push(member);}
-   await this.query('SELECT code FROM social_accounts WHERE code=ANY($1::text[]) ORDER BY code FOR UPDATE',[members.map(m=>m.code)],db);const results=[];for(const member of members){
+   await this.query('SELECT code FROM social_accounts WHERE code=ANY($1::text[]) ORDER BY code FOR UPDATE',[members.map(m=>m.code)],db);const results=[],access=new Map();for(const member of members)access.set(member.code,await this.playerAccess(member.code,db));const blockedTeam=cat.team&&members.some(m=>access.get(m.code).rankingBlocked);for(const member of members){
     const id=crypto.createHash('sha256').update(run.id+':'+member.code).digest('hex').slice(0,32).replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/,'$1-$2-$3-$4-$5');
     const inserted=await this.query('INSERT INTO arcade_runs(id,code,session_hash,category,started_at,finished_at,response) VALUES($1,$2,$3,$4,$5,$6,\'{}\') ON CONFLICT DO NOTHING RETURNING id',[id,member.code,member.hash,cat.id,this.now()-run.elapsedMs,this.now()],db);if(!inserted.length)continue;
-    const raw=run.results[member.slot]||run.results[0];if(run.game==='rally'&&run.config.mode==='online'){const tally=await this.rallyMatch(member.code,raw,run.elapsedMs,db);if(tally)results.push({...tally,code:member.code});}let r;try{r=Rules.result(cat,raw,run.elapsedMs);}catch{continue;}
+    const raw=run.results[member.slot]||run.results[0];if(blockedTeam||access.get(member.code).rankingBlocked){await this.saveChallengeResult(member.code,cat,raw.challenge,db);continue;}if(run.game==='rally'&&run.config.mode==='online'){const tally=await this.rallyMatch(member.code,raw,run.elapsedMs,db);if(tally)results.push({...tally,code:member.code});}let r;try{r=Rules.result(cat,raw,run.elapsedMs);}catch{continue;}
     await this.saveChallengeResult(member.code,cat,raw.challenge,db);
     if(r){const best=await this.putBest(member.code,cat,r,cat.team?members.map(x=>x.code):[],run.game==='arena'?'online-host-checked':'online-server',db);if(run.game!=='rally')results.push({...best,code:member.code});}
    }return {ok:true,results};
@@ -76,7 +77,7 @@ function install(Store,SocialError){
    if(!['all','friends'].includes(scope))fail('invalid_input');if(scope==='friends'&&!viewer)fail('unauthorized',401);
    const cat=(await this.query('SELECT definition FROM arcade_categories WHERE id=$1',[category]))[0]?.definition;if(!cat||!Rules.current(cat))fail('not_found',404);
    // Privacy is evaluated for every read; no stale materialized public names.
-   const cte=`WITH ranked AS (SELECT b.*,a.name,a.avatar,ROW_NUMBER() OVER(ORDER BY primary_value DESC,secondary_value DESC,achieved_at ASC,b.code ASC) AS rank FROM arcade_bests b JOIN social_accounts a ON a.code=b.code WHERE b.category=$1 AND a.public_profile=TRUE
+   const cte=`WITH ranked AS (SELECT b.*,a.name,a.avatar,ROW_NUMBER() OVER(ORDER BY primary_value DESC,secondary_value DESC,achieved_at ASC,b.code ASC) AS rank FROM arcade_bests b JOIN social_accounts a ON a.code=b.code WHERE b.category=$1 AND a.public_profile=TRUE AND NOT EXISTS(SELECT 1 FROM social_player_access pa WHERE pa.code=b.code AND pa.ranking_blocked=TRUE)
     AND ($3='all' OR b.code=$2 OR EXISTS(SELECT 1 FROM social_friends f WHERE (f.first_code=$2 AND f.second_code=b.code) OR (f.second_code=$2 AND f.first_code=b.code)))
     AND NOT EXISTS(SELECT 1 FROM social_blocks x WHERE (x.sender=$2 AND x.recipient=b.code) OR (x.recipient=$2 AND x.sender=b.code))
     AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(b.team) t(code) JOIN social_accounts p ON p.code=t.code WHERE p.public_profile=FALSE OR EXISTS(SELECT 1 FROM social_blocks x WHERE (x.sender=$2 AND x.recipient=p.code) OR (x.recipient=$2 AND x.sender=p.code)))) `;

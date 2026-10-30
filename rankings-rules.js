@@ -37,13 +37,14 @@
   }else if(cat.kind==='time'){
    if(['tower','breaker','prism'].includes(cat.game)){if(raw.won!==true)return null;if(cat.game==='tower'&&raw.waves!==12||cat.game==='breaker'&&raw.level!==5||cat.game==='prism'&&raw.tile<2048)error();value=Math.round(Number(raw.elapsed)*1000);if(!Number.isFinite(value)||value<100||value>ms+3000)error();secondary=number(raw.score);
     }else if(cat.game==='arena'){if(raw.won!==true)return null;value=number(raw.seconds,86400)*1000;secondary=number(raw.score);if(value>ms+3000)error();return {value,primary:-value,secondary,elapsedMs:ms,completed:true,summary:{score:Number(raw.score)||0}};}
-   else {const c=raw.challenge;if(!c||c.id!==cat.config.challengeId||c.status!=='completed'||!Number.isFinite(c.elapsed))return null;
+   else {const c=raw.challenge;if(!c||c.id!==cat.config.challengeId||c.status!=='completed'||!Number.isFinite(c.elapsed))return null;if(c.players!==cat.config.players)error();
    value=Math.round(c.elapsed*1000);secondary=number(raw.score);if(value>ms+3000)error();}
   }else if(cat.kind==='survival'){value=number(raw.seconds,86400)*1000;secondary=number(raw.score);if(value>ms+3000)error();
   }else{
    value=number(raw.score);if(value>10000+ms*100)error();
    if(cat.game==='rally'){if(value>7||!Number.isInteger(raw.opponent)||raw.opponent<0||raw.opponent>7||Math.max(value,raw.opponent)!==7)error();secondary=-number(raw.opponent);}
   }
+  if(cat.kind==='time'&&value<100)error();
   return {value,primary:['score','survival','gems','margin'].includes(cat.kind)?value:-value,secondary,elapsedMs:ms,completed,summary:{score:Number(raw.score)||0,...(cat.game==='crystalrun'?{gems:number(raw.gems||0,100000),distance:number(raw.distance||0,1e7)}:{}),stars:Math.min(3,Math.max(0,Number(raw.challenge?.stars)||0))}};
  }
  function format(cat,value,language='de'){

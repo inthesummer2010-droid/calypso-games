@@ -27,7 +27,7 @@
   if(game==='salvage')return Object.values(challengeProgress?.records||stats.salvage_challenges?.records||{}).filter(r=>r&&r.completions>0).length;
   return 0;
  }
- function unlocked(game,id,stats={},challengeProgress){const s=skin(game,id);return !!s&&(s.goal<=progress(game,stats,challengeProgress)||(Array.isArray(stats.arcade_unlocked)&&stats.arcade_unlocked.includes(game+':'+s.id)));}
+ function unlocked(game,id,stats={},challengeProgress){const s=skin(game,id);return !!s&&(globalThis.HubSocial?.accountAccess?.()?.allLooks===true||s.goal<=progress(game,stats,challengeProgress)||(Array.isArray(stats.arcade_unlocked)&&stats.arcade_unlocked.includes(game+':'+s.id)));}
  const challenges={
   'golf3-v1':{id:'golf3-v1',game:'minigolf',version:1,kind:'strokes',config:{holes:3,players:1},name:['Park-Cup · 3 Bahnen','Park cup · 3 holes','Coupe du parc · 3 trous','Copa del parque · 3 hoyos'],min:3,max:300},
   'salvage-c01-v1':{id:'salvage-c01-v1',game:'salvage',version:1,kind:'time',seed:739021,config:{mode:'challenge',challengeId:'c01',players:1},name:['Erster Sektor · Aufgabe 01','First sector · Mission 01','Premier secteur · Mission 01','Primer sector · Misión 01'],min:100,max:180000}

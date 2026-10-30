@@ -443,7 +443,7 @@
     const index=catalogue.findIndex(entry=>entry.id===id);
     if(index<0||![1,2].includes(players))return false;
     // Preserve earlier achievements when migrating from the old open selection.
-    if(index===0||record(progress,id,players)?.completions>0)return true;
+    if(index===0||record(progress,id,players)?.completions>0||typeof window==='object'&&window.HubSocial?.accountAccess?.()?.allLooks===true)return true;
     return record(progress,catalogue[index-1].id,players)?.completions>0;
   }
   function nextId(id){const i=catalogue.findIndex(entry=>entry.id===id);return i>=0?catalogue[i+1]?.id||null:null;}

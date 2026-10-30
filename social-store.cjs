@@ -84,6 +84,14 @@ CREATE TABLE IF NOT EXISTS salvage_ranked_runs (
  completed BOOLEAN NOT NULL, created_at BIGINT NOT NULL,
  CHECK((mode='arcade' AND challenge_id='') OR (mode='challenge' AND challenge_id ~ '^c(0[1-9]|[12][0-9]|30)$'))
 );
+CREATE TABLE IF NOT EXISTS social_player_access (
+ code TEXT PRIMARY KEY REFERENCES social_accounts(code) ON DELETE CASCADE,
+ all_looks BOOLEAN NOT NULL DEFAULT FALSE, ranking_blocked BOOLEAN NOT NULL DEFAULT FALSE,
+ revision INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS social_admin_audit (
+ id UUID PRIMARY KEY, code TEXT NOT NULL, action TEXT NOT NULL, created_at BIGINT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS salvage_ranked_board ON salvage_ranked_runs(rules_version,mode,players,challenge_id,score DESC,elapsed_ms);
 `;
 
@@ -121,6 +129,32 @@ class SocialStore{
  }
  async cleanup(){const now=this.now();await this.query('DELETE FROM social_sessions WHERE expires_at<=$1',[now]);await this.query('DELETE FROM social_invites WHERE expires_at<=$1',[now]);}
  async account(code,db=this.db){return (await this.query('SELECT '+ACCOUNT_COLUMNS+' FROM social_accounts WHERE code=$1',[code],db))[0]||null;}
+ async playerAccess(code,db=this.db){const r=(await this.query('SELECT * FROM social_player_access WHERE code=$1',[code],db))[0];return {allLooks:r?.all_looks===true,rankingBlocked:r?.ranking_blocked===true,revision:Number(r?.revision)||0};}
+ async adminPlayer(code){const a=await this.account(code);if(!a)fail('not_found',404);return {code:a.code,name:a.name,avatar:Number(a.avatar),access:await this.playerAccess(code),audit:(await this.query('SELECT action,created_at FROM social_admin_audit WHERE code=$1 ORDER BY created_at DESC,id DESC LIMIT 20',[code])).map(r=>({action:r.action,at:Number(r.created_at)}))};}
+ async administerPlayer(code,action,revision,id){return this.transaction(async db=>{
+  const a=(await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db))[0];if(!a)fail('not_found',404);
+  const old=(await this.query('SELECT code,action FROM social_admin_audit WHERE id=$1',[id],db))[0];if(old){if(old.code!==code||old.action!==action)fail('invalid_input');return {ok:true,duplicate:true};}
+  const access=await this.playerAccess(code,db);if(access.revision!==revision)fail('conflict',409);
+  await this.query('INSERT INTO social_player_access(code) VALUES($1) ON CONFLICT DO NOTHING',[code],db);
+  if(action==='unlock-all'||action==='restore-unlocks')await this.query('UPDATE social_player_access SET all_looks=$2 WHERE code=$1',[code,action==='unlock-all'],db);
+  if(action==='block-rankings'||action==='allow-rankings')await this.query('UPDATE social_player_access SET ranking_blocked=$2 WHERE code=$1',[code,action==='block-rankings'],db);
+  if(['reset-progress','reset-rankings','block-rankings'].includes(action)){
+   // Team records must not retain a removed participant's identity/results.
+   await this.query("DELETE FROM arcade_bests WHERE code=$1 OR team @> $2::jsonb",[code,JSON.stringify([code])],db);
+   await this.query('DELETE FROM arcade_runs WHERE code=$1',[code],db);
+   await this.query('DELETE FROM arcade_rally_totals WHERE code=$1',[code],db);
+  }
+  if(action==='reset-progress'){
+   await this.query('DELETE FROM arcade_challenges WHERE code=$1',[code],db);
+   await this.query('DELETE FROM arcade_pass_profile WHERE code=$1',[code],db);
+   await this.query('UPDATE social_accounts SET progress=NULL WHERE code=$1',[code],db);
+   await this.query('UPDATE social_player_access SET all_looks=FALSE WHERE code=$1',[code],db);
+   await this.query('DELETE FROM social_sessions WHERE code=$1',[code],db);
+  }
+  await this.query('UPDATE social_player_access SET revision=revision+1 WHERE code=$1',[code],db);
+  await this.query('INSERT INTO social_admin_audit(id,code,action,created_at) VALUES($1,$2,$3,$4)',[id,code,action,this.now()],db);
+  return {ok:true};
+ });}
  async lockAccounts(a,b,db){
   if(a===b)fail('invalid_input');const ordered=pair(a,b);
   const rows=await this.query('SELECT code FROM social_accounts WHERE code IN ($1,$2) ORDER BY code FOR UPDATE',ordered,db);
