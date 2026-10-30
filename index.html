@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="de" data-hub-startup="loading">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
-    <title>Manuels Arcade · Spiele-Hub</title>
+    <title>Calypso Arcade · Spiele-Hub</title>
     <style>
         body, html {
             margin: 0; padding: 0; width: 100%; height: 100%;
@@ -18,8 +18,16 @@
             position: absolute;
         }
     </style>
-</head>
+<style>
+html[data-hub-startup] #gameCanvas{visibility:hidden}
+#hubStartup{position:fixed;inset:0;z-index:30000;display:grid;place-content:center;justify-items:center;gap:12px;padding:24px;box-sizing:border-box;background:#101b29;color:#edf7fa;font:16px/1.5 system-ui,sans-serif;text-align:center}
+#hubStartup strong{font-size:clamp(24px,5vw,36px);letter-spacing:-.025em}
+#hubStartup p{margin:0;max-width:40ch;color:#b8cdd6}
+#hubStartup button{min-height:44px;padding:10px 18px;border:1px solid #8ed7c6;border-radius:10px;background:#244b46;color:#effff9;font:inherit;cursor:pointer}
+#hubStartup button:focus-visible{outline:3px solid #f0ce85;outline-offset:4px}
+</style></head>
 <body style="background-color: #121218; margin: 0; padding: 0; overflow: hidden; touch-action: auto;">
+    <div id="hubStartup" role="status" aria-live="polite"><strong>Calypso Arcade</strong><p>Wird geladen …</p><button type="button" hidden>Erneut laden</button></div>
     <canvas id="gameCanvas"></canvas>
 
 <script>
@@ -62,6 +70,52 @@ window.HubStorage = (() => {
             return success;
         }
     };
+})();
+
+// Readiness belongs to the last UI module, not DOMContentLoaded or a fixed delay.
+// On a script failure, show a recoverable message instead of an endless cover.
+window.HubStartup = (() => {
+    if (typeof document === 'undefined') return { ready() {} };
+    const cover = document.getElementById('hubStartup');
+    if (!cover) return { ready() {} };
+    const messages = {
+        de: ['Wird geladen …', 'Die Arcade konnte nicht vollständig starten. Bitte lade sie erneut.', 'Erneut laden'],
+        en: ['Loading …', 'The arcade could not finish starting. Please reload it.', 'Reload'],
+        fr: ['Chargement …', 'Le démarrage de l’arcade a échoué. Rechargez la page.', 'Recharger'],
+        es: ['Cargando …', 'La arcade no pudo iniciarse por completo. Vuelve a cargarla.', 'Recargar']
+    };
+    const language = window.HubStorage.getItem('ua_language') || 'de';
+    const text = messages[language] || messages.de;
+    const message = cover.querySelector('p'), retry = cover.querySelector('button');
+    message.textContent = text[0]; retry.textContent = text[2];
+    retry.addEventListener('click', () => window.location.reload());
+    let finished = false;
+    function blockEarlyGameKeys(event) {
+        if (event.ctrlKey || event.metaKey || event.altKey || event.code === 'Tab' || event.target === retry) return;
+        event.preventDefault(); event.stopImmediatePropagation();
+    }
+    function detach() {
+        window.removeEventListener('error', fail);
+        document.removeEventListener('DOMContentLoaded', fail);
+        window.removeEventListener('keydown', blockEarlyGameKeys, true);
+        window.removeEventListener('keyup', blockEarlyGameKeys, true);
+    }
+    function fail(event) {
+        if (finished || (event.type === 'error' && !(event instanceof ErrorEvent))) return;
+        cover.dataset.failed = 'true';
+        message.textContent = text[1]; retry.hidden = false;
+        document.getElementById('gameCanvas')?.setAttribute('aria-hidden', 'true');
+    }
+    window.addEventListener('error', fail);
+    document.addEventListener('DOMContentLoaded', fail);
+    window.addEventListener('keydown', blockEarlyGameKeys, true);
+    window.addEventListener('keyup', blockEarlyGameKeys, true);
+    return { ready() {
+        if (finished || cover.dataset.failed) return;
+        finished = true; detach();
+        document.documentElement.removeAttribute('data-hub-startup');
+        cover.remove();
+    } };
 })();
 
 </script>
@@ -2067,7 +2121,7 @@ requestAnimationFrame(gameLoop);
         ["Sternenrekord", "Stellar record", "Record stellaire", "Récord estelar"],
         ["Erreiche 5000 Punkte in Orbit Dash", "Reach 5000 points in Orbit Dash", "Atteignez 5000 points dans Orbit Dash", "Consigue 5000 puntos en Orbit Dash"],
 
-        ['MANUELS SPIELE-HUB', "MANUEL’S GAME HUB", 'LE HUB DE MANUEL', 'EL HUB DE MANUEL'],
+        ['CALYPSO ARCADE', 'CALYPSO ARCADE', 'CALYPSO ARCADE', 'CALYPSO ARCADE'],
         ['Blau', 'Blue', 'Bleu', 'Azul'],
         ['Grün', 'Green', 'Vert', 'Verde'],
         ['Orange', 'Orange', 'Orange', 'Naranja'],
@@ -11937,7 +11991,7 @@ window.HubOnlineConfig = {
     return target.href;
   }
   function persist(){try{env.HubStorage?.setItem(key,JSON.stringify({directLinks:enabled}));}catch{}}
-  function setTitle(){if(env.document)env.document.title=valid(current)?titles[current]+' · Manuels Arcade':'Manuels Arcade · Spiele-Hub';}
+  function setTitle(){if(env.document)env.document.title=valid(current)?titles[current]+' · Calypso Arcade':'Calypso Arcade · Spiele-Hub';}
   function write(replace=false){
     const target=href(enabled?current:null),value={hubRoute:{v:1,index,game:current}};
     try{env.history?.[replace?'replaceState':'pushState'](value,'',target);currentURL=target;}catch{currentURL=url().href;}
@@ -13412,7 +13466,7 @@ window.HubOnlineConfig = {
             ctx.clearRect(0,0,WIDTH,HEIGHT);ctx.drawImage(BACKGROUND,0,0);
             if(state==='HUB'){
                 const motion=HubFeedback.getSettings().motion&&!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,previewTime=motion?performance.now()/1000:0;
-                blitGlow(ctx,cx,190,450,[70,160,255],28);textCenter(ctx,'MANUELS SPIELE-HUB','bold 70px Arial',toRGB(CYAN),cx,142,1500);
+                blitGlow(ctx,cx,190,450,[70,160,255],28);textCenter(ctx,'CALYPSO ARCADE','bold 70px Arial',toRGB(CYAN),cx,142,1500);
                 textCenter(ctx,ft(18),'29px Arial','#b7cadc',cx,241);
                 const cards=[['arena','Ultimate Arena v2',btns.hubArena,()=>go('MENU')],['snake','Snake',btns.hubSoon1,openSnake],['breaker','Neon Breaker',btns.hubSoon2,openBreaker]];
                 cards.forEach(([game,title,rect,action],i)=>{
@@ -18868,8 +18922,18 @@ window.HubOnlineConfig = {
   let padLast=[],padId=null;function tick(){if(closed)return;const a=root.HubAudio.getSettings(),settings={muted:a.muted||a.effects===false,volume:a.volume*a.effectsVolume,language:root.HubI18n.language,motion:root.HubFeedback.getSettings().motion&&!root.matchMedia('(prefers-reduced-motion: reduce)').matches,appearance:root.HubAppearance?.resolved||'dark'};const sig=JSON.stringify(settings);if(sig!==lastSettings){lastSettings=sig;room.setConfig(settings);}const pad=Array.from(navigator.getGamepads?.()||[]).find(p=>p?.connected),bs=(pad?.buttons||[]).map(b=>!!b.pressed);if(pad&&pad.index===padId&&!root.HubGameShell.active&&!root.HubRankings.active&&!root.HubTutorials.active){for(const [i,action]of [[12,'previous'],[14,'previous'],[13,'next'],[15,'next'],[0,'activate'],[1,'back']])if(bs[i]&&!padLast[i])room.command('controller',{action});if(bs[9]&&!padLast[9])pause.click();}padId=pad?.index;padLast=bs;frameId=requestAnimationFrame(tick);}tick();
   function visibility(){if(document.hidden)v.pause();}document.addEventListener('visibilitychange',visibility);root.addEventListener('hub-language',labels);room.frame.addEventListener('pointerdown',()=>root.HubAudio.unlock());return v;
  }
- function preview(host,target){host.classList.add('royal-preview');const cover=el('div',null,host);cover.className='royal-preview-room';cover.style.backgroundImage='linear-gradient(90deg,#10291fe8,#18362b88),url("'+base()+'assets/royale-room.webp")';el('strong','ROYALE',cover);el('small',L('Acht Kartenspiele','Eight card games','Huit jeux de cartes','Ocho juegos de cartas'),cover);const hand=el('div',null,cover);hand.className='royal-preview-hand';for(const [rank,suit]of [['ace','spades'],['king','hearts']]){const img=el('img',null,hand);img.alt='';img.loading='lazy';img.src=base()+'assets/cards/'+rank+'_of_'+suit+'.svg';}host.dataset.previewGame='royal';return {host,game:'royal',stop(){},dispose(){cover.remove();}};}
- const style=el('style',null,document.head);style.textContent=`.royal-hub-view{position:fixed;inset:0;z-index:10000;background:#10241e;color:#f4e5c5;box-sizing:border-box;overflow:hidden;padding-top:56px}.royal-hub-slot{height:100%;min-height:0}.royal-hub-view>.hub-management{background:#142c25;border-color:#8a805d;color:#f4e5c5}.royal-hub-view .hub-management button{background:#294638;border-color:#9a8b61}.royal-record{border-bottom:1px solid #6c8059;padding:10px 0}.royal-record h3{margin:4px 0}.royal-preview{aspect-ratio:600/230;overflow:hidden}.royal-preview-room{height:100%;position:relative;background-size:cover;padding:8% 6%;box-sizing:border-box;color:#f7e4b8}.royal-preview-room strong{display:block;font:700 clamp(24px,3vw,42px) Georgia;letter-spacing:.08em}.royal-preview-room small{font:12px system-ui}.royal-preview-hand{position:absolute;right:12%;top:14%;height:76%;width:32%}.royal-preview-hand img{position:absolute;display:block;height:100%;width:auto;max-width:100%;border-radius:5px;box-shadow:0 8px 14px #0007;transform:rotate(-14deg);transition:transform .25s}.royal-preview-hand img+img{transform:rotate(15deg) translateX(32%)}.game-tile:hover .royal-preview-hand img:first-child{transform:rotate(-22deg) translateY(-5%)}.game-tile:hover .royal-preview-hand img+img{transform:rotate(23deg) translateX(40%)}@media(prefers-reduced-motion:reduce){.royal-preview-hand img{transition:none}}.hub-still .royal-preview-hand img{transition:none}`;
+ function preview(host,target){host.classList.add('royal-preview');const cover=el('div',null,host);cover.className='royal-preview-room';cover.style.backgroundImage='linear-gradient(90deg,#10291fe8,#18362b88),url("'+base()+'assets/royale-room.webp")';const copy=el('div',null,cover);copy.className='royal-preview-copy';el('strong','ROYALE',copy);el('small',L('Acht Kartenspiele','Eight card games','Huit jeux de cartes','Ocho juegos de cartas'),copy);const hand=el('div',null,cover);hand.className='royal-preview-hand';for(const [rank,suit]of [['ace','spades'],['king','hearts']]){const img=el('img',null,hand);img.alt='';img.loading='lazy';img.src=base()+'assets/cards/'+rank+'_of_'+suit+'.svg';}host.dataset.previewGame='royal';return {host,game:'royal',stop(){},dispose(){cover.remove();}};}
+ const style=el('style',null,document.head);style.textContent=`.royal-hub-view{position:fixed;inset:0;z-index:10000;background:#10241e;color:#f4e5c5;box-sizing:border-box;overflow:hidden;padding-top:56px}.royal-hub-slot{height:100%;min-height:0}.royal-hub-view>.hub-management{background:#142c25;border-color:#8a805d;color:#f4e5c5}.royal-hub-view .hub-management button{background:#294638;border-color:#9a8b61}.royal-record{border-bottom:1px solid #6c8059;padding:10px 0}.royal-record h3{margin:4px 0}.royal-preview{aspect-ratio:600/230;overflow:hidden;container-type:inline-size;isolation:isolate}
+.royal-preview-room{width:100%;height:100%;min-width:0;position:relative;display:grid;grid-template-columns:minmax(0,58fr) minmax(0,37fr);column-gap:5%;align-items:center;justify-self:stretch;background-size:cover;background-position:center;padding:5% 7%;box-sizing:border-box;color:#f7e4b8}
+.royal-preview-copy{min-width:0;position:relative;z-index:1}
+.royal-preview .royal-preview-room strong{display:block;white-space:nowrap;font:700 clamp(8px,7.2cqw,42px)/1.1 Georgia,serif;letter-spacing:.045em}
+.royal-preview .royal-preview-room small{display:block;margin-top:.6em;font:600 clamp(6px,2.6cqw,14px)/1.4 system-ui,sans-serif;color:#bbdbcf}
+.royal-preview-hand{position:relative;width:100%;height:100%;min-height:0;min-width:0}
+.royal-preview-hand img{position:absolute;left:0;top:50%;display:block;width:76%;height:82%;max-width:100%;object-fit:contain;border-radius:5px;filter:drop-shadow(0 7px 6px #0006);transform:translateY(-50%) rotate(-12deg);transition:transform .2s}
+.royal-preview-hand img+img{transform:translate(24%,-46%) rotate(12deg)}
+@media(hover:hover) and (prefers-reduced-motion:no-preference){html:not(.hub-still) .game-tile:hover .royal-preview-hand img:first-child{transform:translateY(-53%) rotate(-15deg)}html:not(.hub-still) .game-tile:hover .royal-preview-hand img+img{transform:translate(27%,-48%) rotate(15deg)}}
+@media(prefers-reduced-motion:reduce){.royal-preview-hand img{transition:none}}
+.hub-still .royal-preview-hand img{transition:none}`;
  root.HubRoyal={open,preview,record,renderStats,variants};
 })(window);
 
@@ -19594,7 +19658,7 @@ window.HubOnlineConfig = {
   function renderHub(){
     const focused=screen.contains(document.activeElement)?document.activeElement?.dataset?.hubFocus:null,scroll=lastState==='HUB'?(screen.scrollTop||0):savedScroll,generation=++renderGeneration;
     previewObserver?.disconnect();previewObserver=null;window.HubGamePreviews?.releaseWithin(screen);screen.replaceChildren();previews=[];tiles=[];filterButtons={};lastPreview=-1000;const inner=el('div',undefined,screen,'device-inner'),head=el('header',undefined,inner,'device-head'),intro=el('div',undefined,head);
-    el('small','MANUEL’S ARCADE / '+games.length,intro);el('h1',tr('MANUELS SPIELE-HUB'),intro);el('p',t(0),intro);
+    el('small','CALYPSO ARCADE / '+games.length,intro);el('h1',tr('CALYPSO ARCADE'),intro);el('p',t(0),intro);
     const nav=el('div',undefined,head,'device-actions');button(({de:'Freunde',en:'Friends',fr:'Amis',es:'Amigos'})[HubI18n.language],()=>HubActions.info('FRIENDS','HUB'),nav).dataset.hubFocus='friends';button(HubActions.languageLabel(),()=>HubActions.cycleLanguage(),nav).dataset.hubFocus='language';button(tr('Einstellungen'),()=>HubActions.info('SETTINGS','HUB'),nav).dataset.hubFocus='settings';button(({de:'Spielerprofil',en:'Player profile',fr:'Profil',es:'Perfil'})[HubI18n.language],()=>HubActions.info('PROFILE','HUB'),nav).dataset.hubFocus='profile';gameLink('online',HubOnline.COPY[HubI18n.language].online,()=>HubActions.openOnline(),nav).dataset.hubFocus='online';
     const text=libraryText(),last=games.find(([id])=>id===stats.hub_last_game);
     if(last){const recent=el('section',undefined,inner,'hub-recent'),detail=el('div',undefined,recent);el('span',text.recent,detail,'hub-recent-label');const online=stats.hub_last_online===true&&onlineGames.has(last[0]);el('strong',last[1]+(online?' · '+text.online:''),detail);el('span',online?text.recentOnline:text.recentHint,detail);const again=button(text.again,()=>launch(last[0],online?()=>HubActions.openOnline(last[0]):last[2],'recent',online),recent);again.dataset.hubFocus='recent';again.setAttribute('aria-label',`${text.again}: ${last[1]}${online?' · '+text.online:''}`);}
@@ -19667,7 +19731,7 @@ window.HubOnlineConfig = {
   // Native controls handle Space/Enter themselves; game shortcuts must not leak through.
   const invitation=(()=>{const path=String(window.location?.pathname||'').match(/^\/room\/([ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6})\/?$/i);if(path)return path[1].toUpperCase();const hash=String(window.location?.hash||'').match(/^#room=([ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6})$/i);if(hash)return hash[1].toUpperCase();const query=String(window.location?.search||'').match(/[?&]room=([ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6})(?:&|$)/i)?.[1]?.toUpperCase();return /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/.test(query||'')?query:'';})();if(invitation)setTimeout(()=>{if(state==='HUB')HubActions.openOnline('rally',invitation);},0);
   window.DeviceUI={sync,clearSearch,navigate,get screen(){return screen;},get active(){return !screen.hidden;},get buttons(){const all=Array.from(screen.querySelectorAll('button,a')).filter(b=>!b.disabled&&!b.closest?.('[hidden]'));if(state==='HUB'){const starts=all.filter(b=>b.className==='game-open');return [...starts,...all.filter(b=>!starts.includes(b))];}return all;},credits:()=>t(21)};
-  sync();HubNavigation.start();
+  sync();HubNavigation.start();window.HubStartup?.ready();
 })();
 
 </script>
