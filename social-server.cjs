@@ -12,6 +12,7 @@ const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value)
 const sessionHash=token=>crypto.createHash('sha256').update(token).digest('hex');
 const cleanCode=value=>{if(typeof value!=='string')fail('invalid_input');const code=value.trim().toUpperCase();if(!CODE.test(code))fail('invalid_input');return code;};
 function cleanName(value){if(typeof value!=='string')fail('invalid_input');const name=value.replace(/[\u0000-\u001f\u007f-\u009f]/g,'').trim();if(!name||Array.from(name).length>18)fail('invalid_input');return name;}
+function username(value){if(typeof value!=='string')fail('invalid_input');const name=value.trim().toLowerCase();if(!/^[a-z0-9][a-z0-9._-]{2,15}$/.test(name))fail('invalid_input');return name;}
 function password(value){if(typeof value!=='string'||Array.from(value).length<10||Array.from(value).length>128)fail('invalid_input');return value;}
 function avatar(value){if(!Number.isInteger(value)||value<0||value>11)fail('invalid_input');return value;}
 function cleanNotice(body,time){
@@ -37,13 +38,13 @@ function cleanProgress(value){
 function bearer(req){const match=String(req.headers.authorization||'').match(/^Bearer ([a-f0-9]{64})$/i);return match&&TOKEN.test(match[1])?match[1]:null;}
 // The URI's SSL flags replace node-postgres's explicit SSL object. Remove
 // those flags before supplying mandatory CA/hostname verification ourselves.
-function postgresConfig(connectionString,{allowInsecureLocalDb=false}={}){
+function postgresConfig(connectionString,{allowInsecureLocalDb=false,mailer=require('./account-mail.cjs').createMailer()}={}){
  const url=new URL(connectionString);if(!['postgres:','postgresql:'].includes(url.protocol)||!url.hostname||url.hash)throw new Error('Invalid PostgreSQL configuration');
  for(const key of ['ssl','sslmode','sslcert','sslkey','sslrootcert','uselibpqcompat'])url.searchParams.delete(key);
  const local=['localhost','127.0.0.1','[::1]'].includes(url.hostname.toLowerCase());
  return {connectionString:url.href,ssl:allowInsecureLocalDb===true&&local&&process.env.NODE_ENV!=='production'?false:{rejectUnauthorized:true},enableChannelBinding:true,max:4,connectionTimeoutMillis:3500,idleTimeoutMillis:30000,query_timeout:5000,statement_timeout:5000};
 }
-function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHash=process.env.ADMIN_PASSWORD_HASH,db,rooms,originAllowed=()=>false,clientAddress=req=>req.socket?.remoteAddress||'unknown',now=Date.now,limits={},retryMs=10000,cleanupMs=10000,allowInsecureLocalDb=false}={}){
+function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHash=process.env.ADMIN_PASSWORD_HASH,db,rooms,originAllowed=()=>false,clientAddress=req=>req.socket?.remoteAddress||'unknown',now=Date.now,limits={},retryMs=10000,cleanupMs=10000,allowInsecureLocalDb=false,mailer=require('./account-mail.cjs').createMailer()}={}){
  let pool=null,store=null,available=false,closed=false,initializing=null,lastAttempt=-Infinity,passwordJobs=0,authGeneration=0;
  const configured=!!db||typeof connectionString==='string'&&!!connectionString.trim(),adminConfigured=configured&&validPasswordHash(adminPasswordHash),rates=new Map(),presence=new Map(),adminSessions=new Map();
  async function initialize(){
@@ -81,7 +82,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
   const account=known||await store.account(target);if(!account)fail('not_found',404);const relationship=await store.relation(viewer,target);if(relationship.blocked)fail('blocked',403);
   if(viewer!==target&&!account.public_profile&&!relationship.friend)fail('not_found',404);
   const own=viewer===target,details=own||account.visibility==='public'||account.visibility==='friends'&&relationship.friend,progress=own||account.share_progress&&details?account.progress:null;
-  const result={...person(account,viewer,relationship.friend,relationship.friend),publicProfile:!!account.public_profile,visibility:account.visibility,shareProgress:!!account.share_progress,showOnline:!!account.show_online,progress:progress||null,relationship,counts:details?await store.counts(target):{friends:0,followers:0,following:0},mutualFriends:details&&!own?(await store.mutual(viewer,target)).map(a=>person(a,viewer,true)):[]};return result;
+  const result={...person(account,viewer,relationship.friend,relationship.friend),publicProfile:!!account.public_profile,visibility:account.visibility,shareProgress:!!account.share_progress,showOnline:!!account.show_online,progress:progress||null,relationship,counts:details?await store.counts(target):{friends:0,followers:0,following:0},mutualFriends:details&&!own?(await store.mutual(viewer,target)).map(a=>person(a,viewer,true)):[]};if(own)result.username=account.username||null;return result;
  }
  async function authenticate(token){if(!TOKEN.test(token||'')||!await ensureReady())return null;try{const hash=sessionHash(token);for(let attempt=0;attempt<3;attempt++){const generation=authGeneration,account=await store.session(hash);if(generation!==authGeneration)continue;return account?{code:account.code,name:account.name,avatar:Number(account.avatar),publicProfile:!!account.public_profile,expiresAt:Number(account.expires_at)}:null;}return null;}catch{available=false;return null;}}
  async function authenticateRequest(req){const token=bearer(req);if(!token)fail('unauthorized',401);const account=await store.session(sessionHash(token));if(!account)fail('unauthorized',401);presence.set(account.code,now()+PRESENCE_MS);return {account,token};}
@@ -106,9 +107,11 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
   const hash=authenticateAdmin(req);rate('admin:'+hash,120,60e3);
   if(req.method==='GET'&&url.pathname==='/social/admin/state')return store.adminAdState();
   if(req.method==='GET'&&url.pathname==='/social/admin/overview')return adminOverview();
+  if(req.method==='GET'&&url.pathname==='/social/admin/lookup'){const name=cleanName(url.searchParams.get('name'));return {matches:await store.query('SELECT code,name,avatar FROM social_accounts WHERE lower(name)=lower($1) OR lower(username)=lower($1) ORDER BY code LIMIT 20',[name])};}
   if(req.method==='GET'&&url.pathname==='/social/admin/notice')return store.adminNotice();
   if(req.method==='GET'&&url.pathname.startsWith('/social/admin/player/'))return store.adminPlayer(cleanCode(url.pathname.slice('/social/admin/player/'.length)));
   const body=req.method==='GET'?{}:await readBody(req);
+  if(req.method==='POST'&&url.pathname==='/social/admin/recovery'){if(Object.keys(body).some(k=>!['code','confirmCode'].includes(k)))fail('invalid_input');const code=cleanCode(body.code);if(body.confirmCode!==code)fail('invalid_input');rate('recovery-admin:'+code,3,60e3);const token=crypto.randomBytes(32).toString('hex'),result=await store.issueRecovery(code,sessionHash(token));await store.query('INSERT INTO social_admin_audit(id,code,action,created_at) VALUES($1,$2,$3,$4)',[crypto.randomUUID(),code,'recovery-issued',now()]);return {...result,token};}
   if(req.method==='POST'&&url.pathname==='/social/admin/player'){
    if(Object.keys(body).some(k=>!['code','confirmCode','action','revision','id'].includes(k))||!['unlock-all','restore-unlocks','reset-progress','reset-rankings','block-rankings','allow-rankings'].includes(body.action)||!Number.isSafeInteger(body.revision)||body.revision<0||typeof body.id!=='string'||!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(body.id))fail('invalid_input');
    const code=cleanCode(body.code);if(body.confirmCode!==code)fail('invalid_input');rate('admin-player:'+hash,20,60e3);
@@ -152,7 +155,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
    if(req.method==='OPTIONS'){if(!allowed)fail('forbidden',403);res.setHeader('Access-Control-Allow-Methods','GET,POST,PATCH,PUT,DELETE,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Authorization,Content-Type');res.setHeader('Access-Control-Max-Age','600');json(res,200,{ok:true});return true;}
    if(req.method!=='GET'&&!allowed)fail('forbidden',403);
    const ip=String(clientAddress(req)||'unknown');rate('all:'+ip,600,60e3);
-   if(url.pathname==='/social/config'&&req.method==='GET'){const enabled=await ensureReady();json(res,200,{enabled,adminConfigured,...(!enabled?{reason:configured?'unavailable':'database_required'}:{})});return true;}
+   if(url.pathname==='/social/config'&&req.method==='GET'){const enabled=await ensureReady();json(res,200,{enabled,adminConfigured,emailEnabled:mailer.enabled===true,...(!enabled?{reason:configured?'unavailable':'database_required'}:{})});return true;}
    if(req.method==='GET'&&(url.pathname.startsWith('/social/rankings/')||url.pathname.startsWith('/social/public/'))){
     if(!await ensureReady())fail(configured?'unavailable':'database_required',503);
     let viewer=null;if(req.headers.authorization)viewer=(await authenticateRequest(req)).account.code;
@@ -178,13 +181,22 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
    const body=req.method==='GET'?{}:await readBody(req);let value;
    if(url.pathname==='/social/register'&&req.method==='POST'){
     if('publicProfile'in body&&typeof body.publicProfile!=='boolean')fail('invalid_input');
-    const name=cleanName(body.name),pass=password(body.password),icon=avatar(body.avatar??0),hash=await passwordJob(()=>hashPassword(pass));
-    const session=freshSession();let account=null;for(let i=0;i<8&&!account;i++){const code=Array.from({length:8},()=>ALPHABET[crypto.randomInt(ALPHABET.length)]).join('');account=await store.register({code,name,avatar:icon,passwordHash:hash,publicProfile:body.publicProfile!==false},session);}if(!account)fail('conflict',409);value=await sessionResult(account,session);status=201;
+    const loginName=body.username===undefined?null:username(body.username),name=cleanName(body.name),pass=password(body.password),icon=avatar(body.avatar??0),hash=await passwordJob(()=>hashPassword(pass));
+    if(loginName&&Array.from(name).length>16)fail('invalid_input');const session=freshSession();let account=null;for(let i=0;i<8&&!account;i++){const code=Array.from({length:8},()=>ALPHABET[crypto.randomInt(ALPHABET.length)]).join('');account=await store.register({code,name,avatar:icon,passwordHash:hash,publicProfile:body.publicProfile!==false,username:loginName},session);}if(!account)fail('conflict',409);value=await sessionResult(account,session);status=201;
    }else if(url.pathname==='/social/login'&&req.method==='POST'){
-    const code=cleanCode(body.code),pass=password(body.password),account=await store.account(code),valid=await passwordJob(()=>verifyPassword(pass,account?.password_hash));if(!account||!valid)fail('wrong_password',401);const session=freshSession(),previous=await store.sessionHashes(code);await store.newSession(code,account.password_hash,session);const active=new Set(await store.sessionHashes(code));revokeSockets(code,{hashes:previous.filter(hash=>!active.has(hash))});value=await sessionResult(account,session);
+    if(body.code!==undefined)cleanCode(body.code);const identifier=body.identifier??body.code??body.legacyName;if(typeof identifier!=='string'||identifier.trim().length>18||!identifier.trim())fail('invalid_input');const pass=password(body.password),account=await store.loginAccount(identifier.trim(),body.legacyName!==undefined),code=account?.code,valid=await passwordJob(()=>verifyPassword(pass,account?.password_hash));if(!account||!valid)fail('wrong_password',401);const session=freshSession(),previous=await store.sessionHashes(code);await store.newSession(code,account.password_hash,session);const active=new Set(await store.sessionHashes(code));revokeSockets(code,{hashes:previous.filter(hash=>!active.has(hash))});value=await sessionResult(account,session);
+   }else if(url.pathname==='/social/email/verify'&&req.method==='POST'){rate('verify-email:'+ip,10,60e3);if(!TOKEN.test(body.token||'')||Object.keys(body).some(k=>k!=='token'))fail('invalid_recovery');value=await store.verifyEmail(sessionHash(body.token));
+   }else if(url.pathname==='/social/forgot'&&req.method==='POST'){
+    if(!mailer.enabled)fail('mail_unavailable',503);rate('forgot:'+ip,5,60e3);if(Object.keys(body).some(k=>k!=='identifier')||typeof body.identifier!=='string'||body.identifier.length>18)fail('invalid_input');const a=await store.loginAccount(body.identifier.trim());value={ok:true};if(a){const email=await store.emailState(a.code);if(email.address){try{rate('forgot-profile:'+a.code,3,3600e3);rate('mail-global',100,3600e3);}catch{json(res,200,{ok:true});return true;}const token=crypto.randomBytes(32).toString('hex');await store.issueRecovery(a.code,sessionHash(token));Promise.resolve().then(()=>mailer.send(email.address,'reset',token,a.username||a.code)).catch(()=>{});}}
+   }else if(url.pathname==='/social/recover'&&req.method==='POST'){rate('recover:'+ip,5,60e3);if(Object.keys(body).some(k=>!['token','password'].includes(k))||!TOKEN.test(body.token||''))fail('invalid_recovery');const hash=await passwordJob(()=>hashPassword(password(body.password))),code=await store.recover(sessionHash(body.token),hash);revokeSockets(code,{all:true});value={ok:true};
    }else{
     const {account,token}=await authenticateRequest(req),code=account.code;
-    if(req.method==='POST'&&url.pathname==='/social/rankings/start'){
+    if(req.method==='GET'&&url.pathname==='/social/email'){value={...(await store.emailState(code)),enabled:mailer.enabled===true};}
+    else if(req.method==='PUT'&&url.pathname==='/social/email'){
+     if(!mailer.enabled)fail('mail_unavailable',503);rate('mail-profile:'+code,3,3600e3);rate('mail-global',100,3600e3);if(Object.keys(body).some(k=>!['address','password'].includes(k))||typeof body.address!=='string'||body.address.length>254||!/^[-a-zA-Z0-9.!#$%&'*+/=?^_`{|}~]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,63}$/.test(body.address))fail('invalid_input');if(!await passwordJob(()=>verifyPassword(password(body.password),account.password_hash)))fail('wrong_password',401);const address=body.address.toLowerCase(),token=crypto.randomBytes(32).toString('hex');await store.pendingEmail(code,address,sessionHash(token));try{await mailer.send(address,'verify',token,account.username||code);}catch{fail('mail_unavailable',503);}value={ok:true};
+    }else if(req.method==='DELETE'&&url.pathname==='/social/email'){if(!await passwordJob(()=>verifyPassword(password(body.password),account.password_hash)))fail('wrong_password',401);value=await store.removeEmail(code);}
+    else if(req.method==='PUT'&&url.pathname==='/social/username'){if(Object.keys(body).some(k=>!['username','password'].includes(k)))fail('invalid_input');const pass=password(body.password);if(!await passwordJob(()=>verifyPassword(pass,account.password_hash)))fail('wrong_password',401);value=await store.setUsername(code,account.password_hash,username(body.username));}
+    else if(req.method==='POST'&&url.pathname==='/social/rankings/start'){
      rate('runs:'+code,20,60e3);if(Object.keys(body).some(k=>!['game','config'].includes(k)))fail('invalid_input');value=await store.beginRun(code,sessionHash(token),body.game,body.config);
     }else if(req.method==='POST'&&url.pathname==='/social/rankings/finish'){
      if(Object.keys(body).some(k=>!['id','result'].includes(k)))fail('invalid_input');value=await store.finishRun(code,sessionHash(token),body.id,body.result);
@@ -198,7 +210,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
     }else if(req.method==='GET'&&url.pathname.startsWith('/social/profile/'))value={profile:await profile(code,cleanCode(url.pathname.slice('/social/profile/'.length)))};
     else if(req.method==='PATCH'&&url.pathname==='/social/me'){
      const fields={};if(!Object.keys(body).length||Object.keys(body).some(k=>!['name','avatar','visibility','shareProgress','showOnline','publicProfile'].includes(k)))fail('invalid_input');
-     if('name'in body)fields.name=cleanName(body.name);if('avatar'in body)fields.avatar=avatar(body.avatar);
+     if('name'in body){fields.name=cleanName(body.name);if(fields.name!==account.name&&Array.from(fields.name).length>16)fail('invalid_input');}if('avatar'in body)fields.avatar=avatar(body.avatar);
      if('visibility'in body){if(!['friends','public','private'].includes(body.visibility))fail('invalid_input');fields.visibility=body.visibility;}
      for(const key of ['shareProgress','showOnline','publicProfile'])if(key in body){if(typeof body[key]!=='boolean')fail('invalid_input');fields[key]=body[key];}
      const updated=await store.update(code,fields);if(!updated)fail('unauthorized',401);if(fields.showOnline===false)presence.delete(code);if('publicProfile'in fields||'name'in fields)rooms?.profilePrivacy?.(code,!!updated.public_profile,updated.name);value={me:await profile(code,code,updated)};

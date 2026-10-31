@@ -5,7 +5,7 @@ const LIMITS=Object.freeze({accounts:10000,friends:200,follows:300,requests:100,
 class SocialError extends Error{constructor(code,status=400){super(code);this.code=code;this.status=status;}}
 const fail=(code,status)=>{throw new SocialError(code,status);};
 const pair=(a,b)=>a<b?[a,b]:[b,a];
-const ACCOUNT_COLUMNS='code,name,avatar,visibility,share_progress,show_online,progress,password_hash,public_profile';
+const ACCOUNT_COLUMNS='code,name,avatar,visibility,share_progress,show_online,progress,password_hash,public_profile,username';
 
 // Millisecond timestamps are supplied by the service, so expiry uses the same
 // clock on PostgreSQL, PGlite and the existing room server. No plaintext token
@@ -20,6 +20,10 @@ CREATE TABLE IF NOT EXISTS social_accounts (
  share_progress BOOLEAN NOT NULL DEFAULT FALSE, show_online BOOLEAN NOT NULL DEFAULT FALSE,
  progress JSONB, created_at BIGINT NOT NULL
 );
+ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS username TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS social_username_unique ON social_accounts(lower(username)) WHERE username IS NOT NULL;
+CREATE TABLE IF NOT EXISTS social_email(code TEXT PRIMARY KEY REFERENCES social_accounts(code) ON DELETE CASCADE, address TEXT, pending TEXT, verify_hash TEXT, expires_at BIGINT);
+CREATE TABLE IF NOT EXISTS social_recovery(code TEXT PRIMARY KEY REFERENCES social_accounts(code) ON DELETE CASCADE, token_hash TEXT NOT NULL UNIQUE, expires_at BIGINT NOT NULL);
 CREATE TABLE IF NOT EXISTS social_sessions (
  hash TEXT PRIMARY KEY CHECK (hash ~ '^[a-f0-9]{64}$'),
  code TEXT NOT NULL REFERENCES social_accounts(code) ON DELETE CASCADE,
@@ -127,7 +131,7 @@ class SocialStore{
   const rows=await this.query('SELECT names,score,elapsed_ms,kills,wave,completed,created_at FROM salvage_ranked_runs WHERE rules_version=2 AND mode=$1 AND players=$2 AND challenge_id=$3 ORDER BY '+order+' LIMIT 20',[mode,players,challengeId||'']);
   return {enabled:true,rulesVersion:2,mode,players,challengeId,entries:rows.map((row,index)=>({rank:index+1,names:row.names,score:Number(row.score),elapsedMs:Number(row.elapsed_ms),kills:Number(row.kills),wave:Number(row.wave),completed:!!row.completed,createdAt:Number(row.created_at)}))};
  }
- async cleanup(){const now=this.now();await this.query('DELETE FROM social_sessions WHERE expires_at<=$1',[now]);await this.query('DELETE FROM social_invites WHERE expires_at<=$1',[now]);}
+ async cleanup(){const now=this.now();await this.query('DELETE FROM social_recovery WHERE expires_at<=$1',[now]);await this.query('UPDATE social_email SET pending=NULL,verify_hash=NULL,expires_at=NULL WHERE expires_at<=$1',[now]);await this.query('DELETE FROM social_sessions WHERE expires_at<=$1',[now]);await this.query('DELETE FROM social_invites WHERE expires_at<=$1',[now]);}
  async account(code,db=this.db){return (await this.query('SELECT '+ACCOUNT_COLUMNS+' FROM social_accounts WHERE code=$1',[code],db))[0]||null;}
  async playerAccess(code,db=this.db){const r=(await this.query('SELECT * FROM social_player_access WHERE code=$1',[code],db))[0];return {allLooks:r?.all_looks===true,rankingBlocked:r?.ranking_blocked===true,revision:Number(r?.revision)||0};}
  async adminPlayer(code){const a=await this.account(code);if(!a)fail('not_found',404);return {code:a.code,name:a.name,avatar:Number(a.avatar),access:await this.playerAccess(code),audit:(await this.query('SELECT action,created_at FROM social_admin_audit WHERE code=$1 ORDER BY created_at DESC,id DESC LIMIT 20',[code])).map(r=>({action:r.action,at:Number(r.created_at)}))};}
@@ -170,12 +174,22 @@ class SocialStore{
   await this.query('INSERT INTO social_sessions(hash,code,created_at,expires_at) VALUES($1,$2,$3,$4)',[session.hash,code,createdAt,session.expiresAt],db);
   await this.query('DELETE FROM social_sessions WHERE hash IN (SELECT hash FROM social_sessions WHERE code=$1 AND hash<>$2 ORDER BY created_at DESC,hash LIMIT 10000 OFFSET $3)',[code,session.hash,this.limits.sessions-1],db);
  }
- async register({code,name,avatar,passwordHash,publicProfile=true},session){return this.transaction(async db=>{
+ async register({code,name,avatar,passwordHash,publicProfile=true,username=null},session){return this.transaction(async db=>{
   await this.query("SELECT key FROM social_meta WHERE key='accounts' FOR UPDATE",[],db);
   if(await this.count('SELECT COUNT(*) AS n FROM social_accounts',[],db)>=this.limits.accounts)fail('rate',429);
-  const rows=await this.query('INSERT INTO social_accounts(code,name,avatar,password_hash,created_at,public_profile) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(code) DO NOTHING RETURNING '+ACCOUNT_COLUMNS,[code,name,avatar,passwordHash,this.now(),publicProfile],db);
+  if((await this.query('SELECT 1 FROM social_accounts WHERE lower(username)=lower($1)',[code],db)).length)return null;
+  if(username&&(await this.query('SELECT 1 FROM social_accounts WHERE lower(username)=$1 OR code=upper($1)',[username],db)).length)fail('username_taken',409);
+  const rows=await this.query('INSERT INTO social_accounts(code,name,avatar,password_hash,created_at,public_profile,username) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(code) DO NOTHING RETURNING '+ACCOUNT_COLUMNS,[code,name,avatar,passwordHash,this.now(),publicProfile,username],db);
   if(!rows.length)return null;await this.insertSession(db,code,session);return rows[0];
  });}
+ async emailState(code){const r=(await this.query('SELECT address,pending,expires_at FROM social_email WHERE code=$1',[code]))[0];return {address:r?.address||null,pending:r?.pending&&Number(r.expires_at)>this.now()?r.pending:null};}
+ async pendingEmail(code,address,hash){await this.query('INSERT INTO social_email(code,pending,verify_hash,expires_at) VALUES($1,$2,$3,$4) ON CONFLICT(code) DO UPDATE SET pending=EXCLUDED.pending,verify_hash=EXCLUDED.verify_hash,expires_at=EXCLUDED.expires_at',[code,address,hash,this.now()+30*60e3]);}
+ async verifyEmail(hash){return this.transaction(async db=>{const r=(await this.query('SELECT code FROM social_email WHERE verify_hash=$1 AND expires_at>$2',[hash,this.now()],db))[0];if(!r)fail('invalid_recovery');await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[r.code],db);const rows=await this.query('UPDATE social_email SET address=pending,pending=NULL,verify_hash=NULL,expires_at=NULL WHERE code=$1 AND verify_hash=$2 AND expires_at>$3 RETURNING code',[r.code,hash,this.now()],db);if(!rows.length)fail('invalid_recovery');await this.query('DELETE FROM social_recovery WHERE code=$1',[r.code],db);return {ok:true};});}
+ async removeEmail(code){return this.transaction(async db=>{await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db);await this.query('DELETE FROM social_email WHERE code=$1',[code],db);await this.query('DELETE FROM social_recovery WHERE code=$1',[code],db);return {ok:true};});}
+ async loginAccount(identifier,legacy=false){const rows=await this.query('SELECT '+ACCOUNT_COLUMNS+' FROM social_accounts WHERE '+(legacy?'username IS NULL AND lower(name)=lower($1)':'lower(username)=lower($1) OR code=$2')+' LIMIT 2',legacy?[identifier]:[identifier,identifier.toUpperCase()]);return rows.length===1?rows[0]:null;}
+ async setUsername(code,expectedHash,username){return this.transaction(async db=>{const a=await this.account(code,db);if(!a||a.password_hash!==expectedHash)fail('unauthorized',401);await this.query("SELECT key FROM social_meta WHERE key='accounts' FOR UPDATE",[],db);if((await this.query('SELECT 1 FROM social_accounts WHERE (lower(username)=$1 OR code=upper($1)) AND code<>$2',[username,code],db)).length)fail('username_taken',409);const saved=await this.query('UPDATE social_accounts SET username=$2 WHERE code=$1 AND password_hash=$3 RETURNING code',[code,username,expectedHash],db);if(!saved.length)fail('unauthorized',401);return {ok:true};});}
+ async issueRecovery(code,hash){return this.transaction(async db=>{await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db);if(!await this.account(code,db))fail('not_found',404);await this.query('INSERT INTO social_recovery(code,token_hash,expires_at) VALUES($1,$2,$3) ON CONFLICT(code) DO UPDATE SET token_hash=EXCLUDED.token_hash,expires_at=EXCLUDED.expires_at',[code,hash,this.now()+15*60e3],db);return {expiresAt:this.now()+15*60e3};});}
+ async recover(hash,passwordHash){return this.transaction(async db=>{const target=(await this.query('SELECT code FROM social_recovery WHERE token_hash=$1 AND expires_at>$2',[hash,this.now()],db))[0];if(!target)fail('invalid_recovery');await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[target.code],db);const rows=await this.query('DELETE FROM social_recovery WHERE code=$1 AND token_hash=$2 AND expires_at>$3 RETURNING code',[target.code,hash,this.now()],db);if(!rows.length)fail('invalid_recovery');await this.query('UPDATE social_accounts SET password_hash=$2 WHERE code=$1',[target.code,passwordHash],db);await this.query('DELETE FROM social_sessions WHERE code=$1',[target.code],db);return target.code;});}
  async newSession(code,expectedPasswordHash,session){return this.transaction(async db=>{
   const row=(await this.query('SELECT '+ACCOUNT_COLUMNS+' FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db))[0];
   if(!row||row.password_hash!==expectedPasswordHash)fail('wrong_password',401);
@@ -227,6 +241,8 @@ class SocialStore{
   return this.account(code);
  }
  async changePassword(code,oldHash,newHash,session){return this.transaction(async db=>{
+  await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db);
+  await this.query('DELETE FROM social_recovery WHERE code=$1',[code],db);
   const rows=await this.query('UPDATE social_accounts SET password_hash=$1 WHERE code=$2 AND password_hash=$3 RETURNING '+ACCOUNT_COLUMNS,[newHash,code,oldHash],db);
   if(!rows.length)fail('wrong_password',401);await this.query('DELETE FROM social_sessions WHERE code=$1',[code],db);await this.insertSession(db,code,session);return rows[0];
  });}

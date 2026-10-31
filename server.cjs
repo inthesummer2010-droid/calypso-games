@@ -293,7 +293,7 @@ function createServer(options={}){
     }json(res,404,{error:'Not found'});
   });
   function originAllowed(origin){if(allowed.has(origin))return true;if(local){try{const u=new URL(origin);return u.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(u.hostname)&&u.port===String(server.address().port);}catch{}}return false;}
-  const social=createSocial({connectionString:options.databaseUrl??process.env.DATABASE_URL,db:options.socialDb,rooms,originAllowed,clientAddress,now:options.socialNow||Date.now});
+  const social=createSocial({connectionString:options.databaseUrl??process.env.DATABASE_URL,db:options.socialDb,mailer:options.socialMailer,rooms,originAllowed,clientAddress,now:options.socialNow||Date.now});
   rooms.rankingsAvailable=()=>social.rankingsAvailable;rooms.saveSalvageRun=run=>social.saveSalvageRun(run);rooms.saveOnlineResult=run=>social.saveOnlineResult(run);
   function rate(map,key,max,windowMs){const now=Date.now(),old=map.get(key);if(!old||now>=old.end){if(map.size>10000){for(const [k,v]of map)if(now>=v.end)map.delete(k);if(map.size>10000)return false;}map.set(key,{count:1,end:now+windowMs});return true;}return ++old.count<=max;}
   // Expired connection-address counters must not wait for another request or
