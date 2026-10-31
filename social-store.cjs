@@ -109,7 +109,7 @@ class SocialStore{
   catch(error){try{await client.query('ROLLBACK');}catch{}throw error;}
   finally{client.release();}
  }
- async init(){await this.transaction(async db=>{await db.query('SELECT pg_advisory_xact_lock($1)',[751015450]);for(const sql of (SCHEMA+require('./rankings-store.cjs').SCHEMA).split(';').map(s=>s.trim()).filter(Boolean))await db.query(sql);});await this.cleanup();}
+ async init(){await this.transaction(async db=>{await db.query('SELECT pg_advisory_xact_lock($1)',[751015450]);for(const sql of (SCHEMA+require('./rankings-store.cjs').SCHEMA+require('./cloud-achievements-store.cjs').SCHEMA).split(';').map(s=>s.trim()).filter(Boolean))await db.query(sql);});await this.cleanup();}
  // These rows are accepted only from the authoritative room simulation. There
  // is deliberately no HTTP score-submission endpoint and no browser import.
  async saveSalvageRun(run){return this.transaction(async db=>{
@@ -149,6 +149,7 @@ class SocialStore{
    await this.query('DELETE FROM arcade_rally_totals WHERE code=$1',[code],db);
   }
   if(action==='reset-progress'){
+   await this.resetAchievementSave(code,db);
    await this.query('DELETE FROM arcade_challenges WHERE code=$1',[code],db);
    await this.query('DELETE FROM arcade_pass_profile WHERE code=$1',[code],db);
    await this.query('UPDATE social_accounts SET progress=NULL WHERE code=$1',[code],db);
@@ -312,4 +313,5 @@ class SocialStore{
  });}
 }
 require('./rankings-store.cjs').install(SocialStore,SocialError);
+require('./cloud-achievements-store.cjs').install(SocialStore,SocialError);
 module.exports={SocialStore,SocialError,LIMITS};

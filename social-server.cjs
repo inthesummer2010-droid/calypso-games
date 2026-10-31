@@ -132,13 +132,13 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
  async function passwordJob(fn){if(passwordJobs>=4)fail('rate',429);passwordJobs++;try{return await fn();}finally{passwordJobs--;}}
  function freshSession(){const token=crypto.randomBytes(32).toString('hex');return {token,hash:sessionHash(token),expiresAt:now()+SESSION_MS};}
  async function sessionResult(account,session){presence.set(account.code,now()+PRESENCE_MS);return {token:session.token,expiresAt:session.expiresAt,me:await profile(account.code,account.code,account)};}
- async function readBody(req){
+ async function readBody(req,limit=MAX_BODY){
   if(!/^application\/json(?:\s*;|$)/i.test(String(req.headers['content-type']||'')))fail('invalid_input');
-  const declared=Number(req.headers['content-length']);if(Number.isFinite(declared)&&declared>MAX_BODY){req.resume();fail('invalid_input');}
+  const declared=Number(req.headers['content-length']);if(Number.isFinite(declared)&&declared>limit){req.resume();fail('invalid_input');}
   return new Promise((resolve,reject)=>{
    const chunks=[];let size=0,done=false;
    const finish=(error,value)=>{if(done)return;done=true;clearTimeout(timeout);req.removeListener('data',onData);req.removeListener('end',onEnd);req.removeListener('error',onError);req.removeListener('aborted',onError);if(error){req.once('error',()=>{});req.resume();reject(new SocialError('invalid_input',400));}else resolve(value);};
-   const onData=chunk=>{size+=chunk.length;if(size>MAX_BODY){chunks.length=0;finish(true);return;}chunks.push(chunk);};
+   const onData=chunk=>{size+=chunk.length;if(size>limit){chunks.length=0;finish(true);return;}chunks.push(chunk);};
    const onEnd=()=>{let value;try{value=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{finish(true);return;}finish(!object(value),value);};
    const onError=()=>finish(true),timeout=setTimeout(()=>finish(true),10000);timeout.unref?.();
    req.on('data',onData);req.once('end',onEnd);req.once('error',onError);req.once('aborted',onError);
@@ -178,7 +178,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
    if(url.pathname==='/social/ad-policy'&&req.method==='GET'){let code;if(req.headers.authorization){const auth=await authenticateRequest(req);code=auth.account.code;}json(res,200,await store.adPolicy(code));return true;}
    const publicAuth=['/social/register','/social/login'].includes(url.pathname)&&req.method==='POST';
    if(publicAuth)rate(url.pathname+':'+ip,url.pathname==='/social/register'?5:30,url.pathname==='/social/register'?60*60e3:60e3);
-   const body=req.method==='GET'?{}:await readBody(req);let value;
+   const body=req.method==='GET'?{}:await readBody(req,url.pathname==='/social/achievements-save'?65536:MAX_BODY);let value;
    if(url.pathname==='/social/register'&&req.method==='POST'){
     if('publicProfile'in body&&typeof body.publicProfile!=='boolean')fail('invalid_input');
     const loginName=body.username===undefined?null:username(body.username),name=cleanName(body.name),pass=password(body.password),icon=avatar(body.avatar??0),hash=await passwordJob(()=>hashPassword(pass));
@@ -187,11 +187,13 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
     if(body.code!==undefined)cleanCode(body.code);const identifier=body.identifier??body.code??body.legacyName;if(typeof identifier!=='string'||identifier.trim().length>18||!identifier.trim())fail('invalid_input');const pass=password(body.password),account=await store.loginAccount(identifier.trim(),body.legacyName!==undefined),code=account?.code,valid=await passwordJob(()=>verifyPassword(pass,account?.password_hash));if(!account||!valid)fail('wrong_password',401);const session=freshSession(),previous=await store.sessionHashes(code);await store.newSession(code,account.password_hash,session);const active=new Set(await store.sessionHashes(code));revokeSockets(code,{hashes:previous.filter(hash=>!active.has(hash))});value=await sessionResult(account,session);
    }else if(url.pathname==='/social/email/verify'&&req.method==='POST'){rate('verify-email:'+ip,10,60e3);if(!TOKEN.test(body.token||'')||Object.keys(body).some(k=>k!=='token'))fail('invalid_recovery');value=await store.verifyEmail(sessionHash(body.token));
    }else if(url.pathname==='/social/forgot'&&req.method==='POST'){
-    if(!mailer.enabled)fail('mail_unavailable',503);rate('forgot:'+ip,5,60e3);if(Object.keys(body).some(k=>k!=='identifier')||typeof body.identifier!=='string'||body.identifier.length>18)fail('invalid_input');const a=await store.loginAccount(body.identifier.trim());value={ok:true};if(a){const email=await store.emailState(a.code);if(email.address){try{rate('forgot-profile:'+a.code,3,3600e3);rate('mail-global',100,3600e3);}catch{json(res,200,{ok:true});return true;}const token=crypto.randomBytes(32).toString('hex');await store.issueRecovery(a.code,sessionHash(token));Promise.resolve().then(()=>mailer.send(email.address,'reset',token,a.username||a.code)).catch(()=>{});}}
+    if(!mailer.enabled)fail('mail_unavailable',503);rate('forgot:'+ip,5,60e3);if(Object.keys(body).some(k=>!['identifier','email'].includes(k))||typeof body.identifier!=='string'||body.identifier.length>18||typeof body.email!=='string'||body.email.length>254)fail('invalid_input');const a=await store.loginAccount(body.identifier.trim());value={ok:true};if(a){const email=await store.emailState(a.code);if(email.address&&email.address===body.email.trim().toLowerCase()){try{rate('forgot-profile:'+a.code,3,3600e3);rate('mail-global',100,3600e3);}catch{json(res,200,{ok:true});return true;}const token=crypto.randomBytes(32).toString('hex');await store.issueRecovery(a.code,sessionHash(token));Promise.resolve().then(()=>mailer.send(email.address,'reset',token,a.username||a.code)).catch(()=>{});}}
    }else if(url.pathname==='/social/recover'&&req.method==='POST'){rate('recover:'+ip,5,60e3);if(Object.keys(body).some(k=>!['token','password'].includes(k))||!TOKEN.test(body.token||''))fail('invalid_recovery');const hash=await passwordJob(()=>hashPassword(password(body.password))),code=await store.recover(sessionHash(body.token),hash);revokeSockets(code,{all:true});value={ok:true};
    }else{
     const {account,token}=await authenticateRequest(req),code=account.code;
-    if(req.method==='GET'&&url.pathname==='/social/email'){value={...(await store.emailState(code)),enabled:mailer.enabled===true};}
+    if(req.method==='GET'&&url.pathname==='/social/achievements-save'){value=await store.achievementSave(code);}
+    else if(req.method==='PUT'&&url.pathname==='/social/achievements-save'){rate('achievement-save:'+code,20,60e3);value=await store.putAchievementSave(code,body);}
+    else if(req.method==='GET'&&url.pathname==='/social/email'){value={...(await store.emailState(code)),enabled:mailer.enabled===true};}
     else if(req.method==='PUT'&&url.pathname==='/social/email'){
      if(!mailer.enabled)fail('mail_unavailable',503);rate('mail-profile:'+code,3,3600e3);rate('mail-global',100,3600e3);if(Object.keys(body).some(k=>!['address','password'].includes(k))||typeof body.address!=='string'||body.address.length>254||!/^[-a-zA-Z0-9.!#$%&'*+/=?^_`{|}~]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,63}$/.test(body.address))fail('invalid_input');if(!await passwordJob(()=>verifyPassword(password(body.password),account.password_hash)))fail('wrong_password',401);const address=body.address.toLowerCase(),token=crypto.randomBytes(32).toString('hex');await store.pendingEmail(code,address,sessionHash(token));try{await mailer.send(address,'verify',token,account.username||code);}catch{fail('mail_unavailable',503);}value={ok:true};
     }else if(req.method==='DELETE'&&url.pathname==='/social/email'){if(!await passwordJob(()=>verifyPassword(password(body.password),account.password_hash)))fail('wrong_password',401);value=await store.removeEmail(code);}

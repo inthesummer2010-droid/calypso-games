@@ -23,3 +23,8 @@
 !royal-cards/**
 
 !account-mail.cjs
+
+!arcade-logo.png
+!arcade-logo.svg
+!cloud-achievements.js
+!cloud-achievements-store.cjs
