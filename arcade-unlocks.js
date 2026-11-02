@@ -18,7 +18,7 @@
    {id:'dusk',name:['Dämmerfuchs','Dusk fox','Renard du crépuscule','Zorro crepuscular'],goal:1200,color:'#c7b3e0',edge:'#927cba',scarf:'#f0c887',tail:'#9279b4'}
   ]
  };
- const languageIndex=language=>Math.max(0,['de','en','fr','es'].indexOf(language));
+ const languageIndex=language=>(['de','en','fr','es'].includes(language)?['de','en','fr','es'].indexOf(language):1);
  const skin=(game,id)=>skins[game]?.find(s=>s.id===id)||skins[game]?.[0]||null;
  const normalize=raw=>Object.fromEntries(['rally','salvage','cloud'].map(g=>[g,skin(g,raw&&typeof raw==='object'?raw[g]:null).id]));
  function progress(game,stats={},challengeProgress){

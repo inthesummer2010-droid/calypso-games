@@ -7,7 +7,7 @@
 
   // These are Neon Salvage's own missions. Atari publicly documents the number
   // of Recharged challenges, but not a complete set of their individual rules.
-  const L = (de, en, fr, es) => ({ de, en, fr, es });
+  const L = (de, en, fr, es) => (((v)=>globalThis.HubI18n?.extendCopies?.(v)||v)(/* locale-copy */{ de, en, fr, es }));
   const labels = {
     kills: L('Asteroiden', 'Asteroids', 'Astéroïdes', 'Asteroides'),
     small: L('Kleine Asteroiden', 'Small asteroids', 'Petits astéroïdes', 'Asteroides pequeños'),
