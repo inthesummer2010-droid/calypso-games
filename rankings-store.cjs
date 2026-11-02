@@ -4,7 +4,7 @@ const achievementRequirements=require('./achievement-requirements.json');
 const SCHEMA=`
 ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS public_profile BOOLEAN;
 UPDATE social_accounts SET public_profile=(visibility='public') WHERE public_profile IS NULL;
-ALTER TABLE social_accounts ALTER COLUMN public_profile SET DEFAULT TRUE;
+ALTER TABLE social_accounts ALTER COLUMN public_profile SET DEFAULT FALSE;
 ALTER TABLE social_accounts ALTER COLUMN public_profile SET NOT NULL;
 CREATE TABLE IF NOT EXISTS arcade_pass_profile(code TEXT PRIMARY KEY REFERENCES social_accounts(code) ON DELETE CASCADE,pins JSONB NOT NULL DEFAULT '[]');
 CREATE TABLE IF NOT EXISTS arcade_rally_totals(code TEXT NOT NULL REFERENCES social_accounts(code) ON DELETE CASCADE,category TEXT NOT NULL,wins BIGINT NOT NULL DEFAULT 0,losses BIGINT NOT NULL DEFAULT 0,matches BIGINT NOT NULL DEFAULT 0,updated_at BIGINT NOT NULL,PRIMARY KEY(code,category));

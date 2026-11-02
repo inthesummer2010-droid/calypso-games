@@ -182,7 +182,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
    if(url.pathname==='/social/register'&&req.method==='POST'){
     if('publicProfile'in body&&typeof body.publicProfile!=='boolean')fail('invalid_input');
     const loginName=body.username===undefined?null:username(body.username),name=cleanName(body.name),pass=password(body.password),icon=avatar(body.avatar??0),hash=await passwordJob(()=>hashPassword(pass));
-    if(loginName&&Array.from(name).length>16)fail('invalid_input');const session=freshSession();let account=null;for(let i=0;i<8&&!account;i++){const code=Array.from({length:8},()=>ALPHABET[crypto.randomInt(ALPHABET.length)]).join('');account=await store.register({code,name,avatar:icon,passwordHash:hash,publicProfile:body.publicProfile!==false,username:loginName},session);}if(!account)fail('conflict',409);value=await sessionResult(account,session);status=201;
+    if(loginName&&Array.from(name).length>16)fail('invalid_input');const session=freshSession();let account=null;for(let i=0;i<8&&!account;i++){const code=Array.from({length:8},()=>ALPHABET[crypto.randomInt(ALPHABET.length)]).join('');account=await store.register({code,name,avatar:icon,passwordHash:hash,publicProfile:body.publicProfile===true,username:loginName},session);}if(!account)fail('conflict',409);value=await sessionResult(account,session);status=201;
    }else if(url.pathname==='/social/login'&&req.method==='POST'){
     if(body.code!==undefined)cleanCode(body.code);const identifier=body.identifier??body.code??body.legacyName;if(typeof identifier!=='string'||identifier.trim().length>18||!identifier.trim())fail('invalid_input');const pass=password(body.password),account=await store.loginAccount(identifier.trim(),body.legacyName!==undefined),code=account?.code,valid=await passwordJob(()=>verifyPassword(pass,account?.password_hash));if(!account||!valid)fail('wrong_password',401);const session=freshSession(),previous=await store.sessionHashes(code);await store.newSession(code,account.password_hash,session);const active=new Set(await store.sessionHashes(code));revokeSockets(code,{hashes:previous.filter(hash=>!active.has(hash))});value=await sessionResult(account,session);
    }else if(url.pathname==='/social/email/verify'&&req.method==='POST'){rate('verify-email:'+ip,10,60e3);if(!TOKEN.test(body.token||'')||Object.keys(body).some(k=>k!=='token'))fail('invalid_recovery');value=await store.verifyEmail(sessionHash(body.token));
@@ -191,7 +191,13 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
    }else if(url.pathname==='/social/recover'&&req.method==='POST'){rate('recover:'+ip,5,60e3);if(Object.keys(body).some(k=>!['token','password'].includes(k))||!TOKEN.test(body.token||''))fail('invalid_recovery');const hash=await passwordJob(()=>hashPassword(password(body.password))),code=await store.recover(sessionHash(body.token),hash);revokeSockets(code,{all:true});value={ok:true};
    }else{
     const {account,token}=await authenticateRequest(req),code=account.code;
-    if(req.method==='GET'&&url.pathname==='/social/achievements-save'){value=await store.achievementSave(code);}
+    if(req.method==='POST'&&url.pathname==='/social/me/export'){
+     rate('export:'+code,3,3600e3);
+     if(Object.keys(body).some(k=>k!=='password'))fail('invalid_input');
+     if(!await passwordJob(()=>verifyPassword(password(body.password),account.password_hash)))fail('wrong_password',401);
+     value=await store.exportAccount(code,account.password_hash);
+    }
+    else if(req.method==='GET'&&url.pathname==='/social/achievements-save'){value=await store.achievementSave(code);}
     else if(req.method==='PUT'&&url.pathname==='/social/achievements-save'){rate('achievement-save:'+code,20,60e3);value=await store.putAchievementSave(code,body);}
     else if(req.method==='GET'&&url.pathname==='/social/email'){value={...(await store.emailState(code)),enabled:mailer.enabled===true};}
     else if(req.method==='PUT'&&url.pathname==='/social/email'){
