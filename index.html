@@ -2371,7 +2371,17 @@ requestAnimationFrame(gameLoop);
     for (let i = 1; i < languages.length; i++) {
         dictionaries[languages[i][0]] = new Map(rows.map(row => [row[0], row[i]]));
     }
-    let language = 'de';
+    function detectLanguage() {
+        const preferences = typeof navigator === 'undefined' ? [] :
+            [...(Array.isArray(navigator.languages) ? navigator.languages : []), navigator.language];
+        for (const preference of preferences) {
+            const code = String(preference || '').toLowerCase().split(/[-_]/)[0];
+            if (languages.some(item => item[0] === code)) return code;
+        }
+        return 'en';
+    }
+    let automatic = true;
+    let language = detectLanguage();
     const cache = new Map();
     const choose = (en, fr, es) => ({en, fr, es})[language] || en;
     const rules = [
@@ -2448,21 +2458,30 @@ requestAnimationFrame(gameLoop);
         return result;
     }
 
-    function setLanguage(nextLanguage) {
-        language = languages.some(item => item[0] === nextLanguage) ? nextLanguage : 'de';
+    function applyLanguage() {
         cache.clear();
-        window.dispatchEvent?.(new Event('hub-language'));
         if (document.documentElement) document.documentElement.lang = language;
-        try { HubStorage.setItem('ua_language', language); } catch (_) { /* Storage may be disabled. */ }
+        window.dispatchEvent?.(new Event('hub-language'));
+    }
+    function setLanguage(nextLanguage) {
+        automatic = nextLanguage === 'auto';
+        language = automatic ? detectLanguage() :
+            (languages.some(item => item[0] === nextLanguage) ? nextLanguage : 'en');
+        try { HubStorage.setItem('ua_language', automatic ? 'auto' : language); } catch (_) { /* Storage may be disabled. */ }
+        applyLanguage();
         return language;
     }
-
     try {
         const saved = HubStorage.getItem('ua_language');
-        if (languages.some(item => item[0] === saved)) language = saved;
+        if (languages.some(item => item[0] === saved)) { language = saved; automatic = false; }
     } catch (_) { /* Continue without persistence. */ }
+    window.addEventListener?.('languagechange', () => {
+        if (automatic) { language = detectLanguage(); applyLanguage(); }
+    });
     if (document.documentElement) document.documentElement.lang = language;
-    window.HubI18n = {languages, translate, setLanguage, get language() { return language; }};
+    window.HubI18n = {languages, translate, setLanguage, detectLanguage,
+        get preference() { return automatic ? 'auto' : language; },
+        get language() { return language; }};
 })();
 
 </script>
@@ -13176,7 +13195,7 @@ es:{username:'Nombre de acceso',usernameHint:'Único · 3–16 caracteres: a–z
         stats.maps_explored=stats.played_maps.length;stats.modes_explored=stats.played_modes.length;
         const saved=load_highscores();
         for(const mode of MODES){const a=saved[mode],b=sessionHighscores[mode];if(a.best_score===null||(b.best_score!==null&&b.best_score>a.best_score))saved[mode]=b;saved[mode].attempts=Math.max(a.attempts,b.attempts);}
-        highscores=saved;save_stats(stats);save_highscores(highscores);HubI18n.setLanguage(HubI18n.language);
+        highscores=saved;save_stats(stats);save_highscores(highscores);HubI18n.setLanguage(HubI18n.preference);
         const savedSnakeBest=Math.max(0,parseInt(HubStorage.getItem('snake17_highscore'),10)||0);HubStorage.setItem('snake17_highscore',String(Math.max(sessionSnakeBest,savedSnakeBest)));
         HubAudio.setSettings({});HubFeedback.setSettings({});window.HubNavigation?.persist();window.HubTutorials?.persistSeen();window.HubAppearance?.persist();panelState='';
     }
@@ -13519,8 +13538,9 @@ es:{username:'Nombre de acceso',usernameHint:'Único · 3–16 caracteres: a–z
         const inner=element('div',undefined,panel,'inner'),header=element('header',undefined,inner);
         htmlButton('← '+tr('Zurück'),back,header);
         const select=element('select',undefined,header);select.setAttribute('aria-label',tr('Sprache'));
+        const autoOption=element('option',({de:'Automatisch (Browser)',en:'Automatic (browser)',fr:'Automatique (navigateur)',es:'Automático (navegador)'})[HubI18n.language],select);autoOption.value='auto';
         for(const [code,name] of HubI18n.languages){const o=element('option',name,select);o.value=code;o.selected=code===HubI18n.language;}
-        select.value=HubI18n.language;select.addEventListener('change',()=>{HubI18n.setLanguage(select.value);panelState='';renderPanel();});
+        select.value=HubI18n.preference;select.addEventListener('change',()=>{HubI18n.setLanguage(select.value);panelState='';renderPanel();});
         const title={LEGAL:'Datenschutz & Impressum',CREDITS:'Credits & Info',ACHIEVEMENTS:'Erfolge',SETTINGS:'Einstellungen',DELETE_CONFIRM:'Daten wirklich löschen?',PROFILE:'Spielerprofil',FRIENDS:'Freunde & Online-Profil'}[state];
         element('h1',state==='FRIENDS'?({de:'Freunde & Online-Profil',en:'Friends & online profile',fr:'Amis et profil en ligne',es:'Amigos y perfil en línea'})[HubI18n.language]:state==='PROFILE'?({de:'Spielerprofil',en:'Player profile',fr:'Profil du joueur',es:'Perfil del jugador'})[HubI18n.language]:tr(title),inner);
         if(state==='CREDITS'){
