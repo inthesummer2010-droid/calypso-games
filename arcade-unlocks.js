@@ -2,6 +2,16 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.HubUnlocks=api;})(typeof window==='object'?window:globalThis,function(){
  'use strict';
  const skins={
+  orbit:[
+   {id:'classic',name:['Original','Original','Original','Original'],goal:0,color:null,edge:null},
+   {id:'coral',name:['Korallflug','Coral flight','Vol corail','Vuelo coral'],goal:20,color:'#ffac91',edge:'#fff0d9'},
+   {id:'ion',name:['Ionenblau','Ion blue','Bleu ionique','Azul iónico'],goal:75,color:'#85d4ff',edge:'#f2faff'}
+  ],
+  breaker:[
+   {id:'classic',name:['Original','Original','Original','Original'],goal:0,color:null,edge:null},
+   {id:'ember',name:['Glut','Ember','Braise','Brasa'],goal:30,color:'#ffc07c',edge:'#fff2ce'},
+   {id:'amethyst',name:['Amethyst','Amethyst','Améthyste','Amatista'],goal:120,color:'#c7acff',edge:'#f7edff'}
+  ],
   rally:[
    {id:'classic',name:['Original','Original','Original','Original'],goal:0,color:null,edge:null,pattern:'classic'},
    {id:'copper',name:['Kupfer-Liga','Copper league','Ligue cuivre','Liga de cobre'],goal:3,color:'#ffd08a',edge:'#a5663d',pattern:'bands'},
@@ -23,6 +33,8 @@
  const normalize=raw=>Object.fromEntries(['rally','salvage','cloud'].map(g=>[g,skin(g,raw&&typeof raw==='object'?raw[g]:null).id]));
  function progress(game,stats={},challengeProgress){
   if(game==='rally')return Math.max(0,Number(stats.rally_wins)||0)+Math.max(0,Number(stats.rally_online_wins)||0)+Math.max(0,Number(stats.rally_local_wins)||0);
+  if(game==='orbit')return Math.max(0,Number(stats.orbit_stars)||0);
+  if(game==='breaker')return Math.max(0,Number(stats.breaker_bricks)||0);
   if(game==='cloud')return Math.max(0,Number(stats.cloud_height)||0);
   if(game==='salvage')return Object.values(challengeProgress?.records||stats.salvage_challenges?.records||{}).filter(r=>r&&r.completions>0).length;
   return 0;
