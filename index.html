@@ -2555,7 +2555,7 @@ window.HubLegal = ((v)=>globalThis.HubI18n?.extendCopies?.(v)||v)(/* locale-copy
     },
     {
       "heading": "Spiel, Musik und Datenschutz",
-      "body": "Gäste können ohne Konto spielen. Lokale Spielstände bleiben auf dem Gerät. Bei angemeldeten Konten werden Bestleistungen und Aufgaben sowie private Erfolgszähler auf dem Server gespeichert; dies ist von der freiwilligen öffentlichen Fortschrittsfreigabe getrennt. Musik und Klänge entstehen lokal. Es werden keine externen Werbe-, Analyse- oder Schriftartskripte geladen. Eine lokal berechnete Empfehlung hat keine rechtliche oder ähnlich erhebliche Wirkung."
+      "body": "Gäste können ohne Konto spielen. Lokale Spielstände bleiben auf dem Gerät. Bei angemeldeten Konten werden Bestleistungen und Aufgaben sowie private Erfolgszähler auf dem Server gespeichert; dies ist von der freiwilligen öffentlichen Fortschrittsfreigabe getrennt. Bisherige Musik und Klänge entstehen lokal. Zusätzliche KI-Instrumentalstücke werden als Audiodateien von derselben Website geladen; beim Spielen wird kein externer Musikdienst kontaktiert. Es werden keine externen Werbe-, Analyse- oder Schriftartskripte geladen. Eine lokal berechnete Empfehlung hat keine rechtliche oder ähnlich erhebliche Wirkung."
     },
     {
       "heading": "Online-Partien · aktiver Render-Dienst",
@@ -2649,7 +2649,7 @@ window.HubLegal = ((v)=>globalThis.HubI18n?.extendCopies?.(v)||v)(/* locale-copy
     },
     {
       "heading": "Games, music and privacy",
-      "body": "Guests may play without an account. Local saves remain on the device. Signed-in accounts store best results, challenges and private achievement counters on the server, independently of optional public progress sharing. Music is generated locally. No external advertising, analytics or font scripts are loaded. Local recommendations have no legal or similarly significant effect."
+      "body": "Guests may play without an account. Local saves remain on the device. Signed-in accounts store best results, challenges and private achievement counters on the server, independently of optional public progress sharing. Original music is generated locally. Additional AI instrumental tracks are audio files loaded from this same website; playing does not contact an external music service. No external advertising, analytics or font scripts are loaded. Local recommendations have no legal or similarly significant effect."
     },
     {
       "heading": "Online matches · active Render service",
@@ -2743,7 +2743,7 @@ window.HubLegal = ((v)=>globalThis.HubI18n?.extendCopies?.(v)||v)(/* locale-copy
     },
     {
       "heading": "Jeux, musique et confidentialité",
-      "body": "Les invités jouent sans compte; leurs sauvegardes restent locales. Les comptes conservent records, défis et compteurs privés de succès sur le serveur, indépendamment du partage public. Musique locale; aucun script externe de publicité, analyse ou police. La recommandation locale ne produit pas d’effet juridique important."
+      "body": "Les invités jouent sans compte; leurs sauvegardes restent locales. Les comptes conservent records, défis et compteurs privés de succès sur le serveur, indépendamment du partage public. Musique originale produite localement ; nouveaux morceaux instrumentaux générés par IA chargés depuis ce même site, sans service musical externe pendant le jeu ; aucun script externe de publicité, analyse ou police. La recommandation locale ne produit pas d’effet juridique important."
     },
     {
       "heading": "Parties en ligne · service Render actif",
@@ -2837,7 +2837,7 @@ window.HubLegal = ((v)=>globalThis.HubI18n?.extendCopies?.(v)||v)(/* locale-copy
     },
     {
       "heading": "Juegos, música y privacidad",
-      "body": "Invitados sin cuenta y guardado local. Las cuentas guardan récords, retos y contadores privados en el servidor, independientemente del intercambio público. Música local; sin scripts externos publicitarios, analíticos o tipográficos. Recomendaciones locales sin efectos jurídicos significativos."
+      "body": "Invitados sin cuenta y guardado local. Las cuentas guardan récords, retos y contadores privados en el servidor, independientemente del intercambio público. Música original generada localmente; nuevos instrumentales generados por IA cargados desde este mismo sitio, sin servicio musical externo al jugar; sin scripts externos publicitarios, analíticos o tipográficos. Recomendaciones locales sin efectos jurídicos significativos."
     },
     {
       "heading": "Partidas en línea · servicio Render activo",
@@ -3084,14 +3084,16 @@ window.HubLegalSources = [
 
 </script>
 <script>
-/* Original, offline synthesizer. Audio begins only after an explicit user gesture. */
+/* Original synthesizer plus packaged instrumental recordings. Audio starts after a user gesture. */
 (function (root, factory) {
     if (typeof module === 'object' && module.exports) module.exports = { createHubAudio: factory };
     else root.HubAudio = factory(root);
 })(typeof window === 'object' ? window : globalThis, function createHubAudio(env) {
     'use strict';
     const score = env.HubScore || (typeof require === 'function' ? require('./soundtrack.js') : null);
-    const defaults = { muted: false, music: true, effects: true, volume: 0.45, musicVolume: 0.65, effectsVolume: 0.85, musicStyle: 'dynamic' };
+    const defaults = { muted: false, music: true, effects: true, volume: 0.45, musicVolume: 0.65, effectsVolume: 0.85, musicStyle: 'dynamic', musicLibrary: 'mixed' };
+    // Files are shipped with the hub; no provider request, token or remote player at runtime.
+    const recordings={hub:'After Hours Arcade',arena:'Neon Rivals',snake:'Emerald Circuit',breaker:'Prism Impact',rally:'Match Point',orbit:'Starlane Drift',salvage:'Void Runner',prism:'Glass Garden',cloud:'Skybound',tower:'Bastion Lights',crystalrun:'Luminous Sprint',newyork:'Midnight Avenue',minigolf:'Putting Sunshine',royal:'Velvet Table'};
     const storage = () => env.HubStorage;
     let settings = { ...defaults };
     function clean(value, previous = defaults) {
@@ -3101,6 +3103,7 @@ window.HubLegalSources = [
         if (typeof value.volume === 'number' && Number.isFinite(value.volume)) next.volume = Math.max(0, Math.min(1, value.volume));
         for (const key of ['musicVolume','effectsVolume']) if (typeof value[key] === 'number' && Number.isFinite(value[key])) next[key]=Math.max(0,Math.min(1,value[key]));
         if (['dynamic','calm','arcade'].includes(value.musicStyle)) next.musicStyle=value.musicStyle;
+        if (['mixed','new','original'].includes(value.musicLibrary)) next.musicLibrary=value.musicLibrary;
         return next;
     }
     try { if (storage()?.enabled) settings = clean(JSON.parse(storage().getItem('ua_audio'))); } catch (_) { /* Session defaults also work with blocked storage. */ }
@@ -3113,6 +3116,8 @@ window.HubLegalSources = [
     let unlocked = false, active = true, scene = 'hub', timer = null, nextBeat = 0, step = 0, resumePromise = null;
     let generation = 0, theme = 'hub', trackOffset = 0, lastMusicFamily = 'hub', noiseBuffer = null;
     const musicPositions = new Map();
+    const recordedPositions=new Map(), failedRecordings=new Set();
+    let sourcePhase='new', media=null, mediaNode=null, mediaFamily='', mediaRevision=0;
     const voices = new Set(), lastEffects = new Map(), pendingEffects = new Set();
     const doc = env.document;
     const hidden = () => !!doc?.hidden;
@@ -3148,6 +3153,7 @@ window.HubLegalSources = [
         if (timer !== null) { env.clearTimeout(timer); timer = null; }
         nextBeat = 0;
         stopVoices('music', immediate);
+        pauseRecording();
     }
     function suspend() {
         generation++;
@@ -3285,8 +3291,48 @@ window.HubLegalSources = [
         const i=instruments[e.voice]||instruments.epiano;
         for(const [ratio,amp] of i.parts)tone(midi(e.note)*ratio,t,e.duration,i.level*amp*g,i.type||'sine','music',undefined,{...i,pan:e.pan});
     }
-    function trackInfo(){const family=score?.tracks[scene]?scene:lastMusicFamily,variant=trackOffset,s=score?.get(family,variant);return {family,variant,title:s?.title||'',bpm:s?.bpm,groove:s?.groove,step};}
-    function rememberMusic(){if(score?.tracks[scene])musicPositions.set(scene,{step,trackOffset});}
+    const familyForScene=()=>recordings[scene]||score?.tracks[scene]?scene:lastMusicFamily;
+    const recordingId=family=>family==='boss'?'arena':family;
+    function canRecord(family){return !!(recordings[recordingId(family)]&&env.Audio&&context?.createMediaElementSource&&!failedRecordings.has(family));}
+    function wantsRecording(family=familyForScene()){return settings.musicLibrary==='new'||(settings.musicLibrary==='mixed'&&sourcePhase==='new'&&canRecord(family));}
+    function trackInfo(){const family=familyForScene(),variant=trackOffset,s=score?.get(family,variant),recorded=wantsRecording(family);return {family,variant,title:recorded?recordings[recordingId(family)]:s?.title||'',source:recorded?'new':'original',unavailable:recorded&&failedRecordings.has(family),bpm:recorded?undefined:s?.bpm,groove:recorded?'recorded':s?.groove,step};}
+    function announceTrack(){env.dispatchEvent?.(new env.CustomEvent('hub-audio-track',{detail:trackInfo()}));}
+    function rememberMusic(){if(recordings[scene]||score?.tracks[scene])musicPositions.set(scene,{step,trackOffset,sourcePhase});}
+    function pauseRecording(){
+        mediaRevision++;
+        if(!media)return;
+        if(mediaFamily&&Number.isFinite(media.currentTime))recordedPositions.set(mediaFamily,media.ended?0:media.currentTime);
+        media.pause();
+    }
+    function startRecording(family){
+        if(!canRecord(family))return; // New-only never silently substitutes the old score.
+        if(!media){
+            media=new env.Audio();media.preload='none';media.loop=false;media.hidden=true;media.setAttribute?.('data-hub-music','');doc?.body?.append?.(media);
+            // file:// media cannot safely be routed through Web Audio in all browsers.
+            // Its normalized recording uses the same controls directly instead.
+            if(env.location?.protocol!=='file:'){mediaNode=context.createMediaElementSource(media);mediaNode.connect(musicBus);}
+            else media.volume=MUSIC_GAIN*settings.musicVolume*settings.volume;
+            media.addEventListener('loadedmetadata',()=>{const offset=recordedPositions.get(mediaFamily)||0;if(Number.isFinite(media.duration)&&offset<media.duration)try{media.currentTime=offset;}catch{}});
+            media.addEventListener('ended',()=>{
+                if(!media.ended||!musicWanted()||!wantsRecording()||mediaFamily!==familyForScene())return;
+                recordedPositions.set(mediaFamily,0);try{media.currentTime=0;}catch{}
+                if(settings.musicLibrary==='mixed')sourcePhase='original';
+                rememberMusic();startMusic();announceTrack();
+            });
+            media.addEventListener('error',()=>{
+                if(!mediaFamily)return;failedRecordings.add(mediaFamily);pauseRecording();
+                if(settings.musicLibrary==='mixed'){sourcePhase='original';rememberMusic();startMusic();}
+                announceTrack();
+            });
+        }
+        if(mediaFamily!==family){
+            pauseRecording();mediaFamily=family;
+            const base=env.location?.protocol==='file:'?'./music/':'/music/';
+            media.src=base+recordingId(family)+'.mp3';media.load();
+        }
+        const revision=mediaRevision;
+        try{Promise.resolve(media.play()).then(()=>{if(revision!==mediaRevision)return;if(!musicWanted()||!wantsRecording()||mediaFamily!==familyForScene())media.pause();}).catch(()=>{/* Autoplay denial is retried on the next user gesture. */});}catch{}
+    }
     function scheduleMusic() {
         timer = null;
         if (!musicWanted() || !context || context.state !== 'running' || !score) return;
@@ -3295,16 +3341,18 @@ window.HubLegalSources = [
             const info=trackInfo(),plan=score.stepPlan(info.family,info.variant,step,settings.musicStyle);
             for(const event of plan.events)playMusicEvent(event,nextBeat);
             nextBeat+=plan.seconds;step++;
-            if(step>=plan.length){step=0;trackOffset=(trackOffset+1)%(score?.tracks[info.family]?.length||2);}
+            if(step>=plan.length){step=0;trackOffset=(trackOffset+1)%(score?.tracks[info.family]?.length||2);if(settings.musicLibrary==='mixed'&&canRecord(info.family)){sourcePhase='new';rememberMusic();stopVoices('music');nextBeat=0;startMusic();announceTrack();return;}}
             rememberMusic();
         }
         timer = env.setTimeout(scheduleMusic, 80);
     }
     function startMusic() {
         if (timer !== null || !musicWanted() || context?.state !== 'running') return;
+        if(wantsRecording()){startRecording(familyForScene());return;}
         scheduleMusic();
     }
     function refresh() {
+        if(media&&!mediaNode)media.volume=settings.muted||!settings.music?0:MUSIC_GAIN*settings.musicVolume*settings.volume;
         ramp(master?.gain, settings.muted ? 0 : settings.volume);
         ramp(musicBus?.gain,MUSIC_GAIN*settings.musicVolume);ramp(effectsBus?.gain,EFFECTS_GAIN*settings.effectsVolume);
         if (!settings.music) clearMusic();
@@ -3432,28 +3480,31 @@ window.HubLegalSources = [
         },
         setScene(value) {
             const nextActive = !['inactive', 'hidden', 'closed'].includes(value);
-            const next = Object.hasOwn(score?.tracks||{}, value) || value === 'paused' ? value : 'hub';
+            const next = Object.hasOwn(recordings,value) || Object.hasOwn(score?.tracks||{}, value) || value === 'paused' ? value : 'hub';
             if (nextActive === active && (!nextActive || next === scene)) return;
             rememberMusic();
             active = nextActive;
             if (!active) { suspend(); return; }
             scene = next;
-            if(score?.tracks[next]){lastMusicFamily=next;const saved=musicPositions.get(next);step=saved?.step||0;trackOffset=saved?.trackOffset||0;}
+            if(recordings[next]||score?.tracks[next]){lastMusicFamily=next;const saved=musicPositions.get(next);step=saved?.step||0;trackOffset=saved?.trackOffset||0;sourcePhase=saved?.sourcePhase||'new';}
             clearMusic(); refresh();
+            announceTrack();
         },
         setTheme(value){theme=['hub','arena','snake','breaker','rally','orbit','prism','cloud','tower','crystalrun','newyork','minigolf','salvage'].includes(value)?value:'hub';},
         getTrack:trackInfo,
-        nextTrack(){const family=trackInfo().family;trackOffset=(trackOffset+1)%(score?.tracks[family]?.length||2);step=0;musicPositions.set(family,{step,trackOffset});clearMusic();refresh();return trackInfo();},
+        nextTrack(){const family=familyForScene(),wasNew=wantsRecording(family);clearMusic();trackOffset=(trackOffset+1)%(score?.tracks[family]?.length||2);step=0;if(settings.musicLibrary==='mixed')sourcePhase=wasNew?'original':'new';recordedPositions.set(family,0);if(mediaFamily===family&&media)try{media.currentTime=0;}catch{}rememberMusic();refresh();announceTrack();return trackInfo();},
         getSettings() { return { ...settings }; },
         setSettings(partial) {
-            const oldStyle=settings.musicStyle;settings = clean(partial, settings);
-            if(oldStyle!==settings.musicStyle)clearMusic();
+            const oldStyle=settings.musicStyle,oldLibrary=settings.musicLibrary;settings = clean(partial, settings);
+            if(oldStyle!==settings.musicStyle||oldLibrary!==settings.musicLibrary)clearMusic();
+            if(oldLibrary!==settings.musicLibrary){sourcePhase='new';failedRecordings.clear();rememberMusic();}
             try { if (storage()?.enabled) storage().setItem('ua_audio', JSON.stringify(settings)); } catch (_) { /* Settings remain valid for this session. */ }
             refresh();
+            announceTrack();
             return { ...settings };
         },
         stop() { active = false; suspend(); },
-        reset() { settings = { ...defaults }; lastEffects.clear(); musicPositions.clear(); step=0;trackOffset=0;clearMusic();refresh(); return { ...settings }; }
+        reset() { clearMusic();settings = { ...defaults }; lastEffects.clear(); musicPositions.clear();recordedPositions.clear();failedRecordings.clear();sourcePhase='new';step=0;trackOffset=0;refresh();announceTrack();return { ...settings }; }
     };
     doc?.addEventListener?.('visibilitychange', () => { if (hidden()) suspend(); else refresh(); });
     env.addEventListener?.('pagehide', suspend);
@@ -13079,10 +13130,10 @@ es:{username:'Nombre de acceso',usernameHint:'Único · 3–16 caracteres: a–z
     const panelPages = ['LEGAL','CREDITS','ACHIEVEMENTS','SETTINGS','DELETE_CONFIRM','PROFILE','FRIENDS'];
     let panelHistory = [];
     const audioText = ((v)=>globalThis.HubI18n?.extendCopies?.(v)||v)(/* locale-copy */{
-        de:['Klang','Hintergrundmusik','Spieleffekte','Lautstärke','Alles stummschalten','Musik und Effekte werden direkt im Browser erzeugt.','Ton an','Ton aus'],
-        en:['Audio','Background music','Sound effects','Volume','Mute all','Music and effects are generated directly in your browser.','Sound on','Sound off'],
-        fr:['Audio','Musique de fond','Effets sonores','Volume','Tout couper','La musique et les effets sont produits dans le navigateur.','Son activé','Son coupé'],
-        es:['Audio','Música de fondo','Efectos de sonido','Volumen','Silenciar todo','La música y los efectos se generan en el navegador.','Sonido activado','Sonido desactivado']
+        de:['Klang','Hintergrundmusik','Spieleffekte','Lautstärke','Alles stummschalten','Bisherige Musik und Effekte entstehen im Browser. Neue Instrumentalstücke: KI-generiert mit Background Music / Lyria, als Dateien mitgeliefert; kein externer Musikdienst beim Spielen.','Ton an','Ton aus'],
+        en:['Audio','Background music','Sound effects','Volume','Mute all','Original music and effects are generated in your browser. New instrumentals: AI-generated with Background Music / Lyria and shipped as audio files; no external music service during play.','Sound on','Sound off'],
+        fr:['Audio','Musique de fond','Effets sonores','Volume','Tout couper','Les musiques anciennes et les effets sont produits dans le navigateur. Nouveaux instrumentaux générés par IA avec Background Music / Lyria et fournis en fichiers, sans service musical externe pendant le jeu.','Son activé','Son coupé'],
+        es:['Audio','Música de fondo','Efectos de sonido','Volumen','Silenciar todo','La música anterior y los efectos se generan en el navegador. Nuevos instrumentales generados con IA mediante Background Music / Lyria e incluidos como archivos, sin servicio musical externo al jugar.','Sonido activado','Sonido desactivado']
     });
     const at = index => (audioText[HubI18n.language] || audioText.de)[index];
     function onlineTheme(){const game=onlineView?.currentGame||'rally';return game.startsWith('arena')?'arena':['snake','tower','minigolf','salvage'].includes(game)?game:'rally';}
@@ -13582,13 +13633,14 @@ es:{username:'Nombre de acceso',usernameHint:'Único · 3–16 caracteres: a–z
     }
     function applyAppearance(){document.documentElement.classList.toggle('hub-high-contrast',!!stats.high_contrast);document.documentElement.classList.toggle('hub-large-text',!!stats.large_text);}
     applyAppearance();
-    let disposeAppearanceControl;
+    let disposeAppearanceControl,disposeAudioTrack;
     function renderPanel(){
         const signature=state+HubI18n.language+HubStorage.enabled+HubStorage.available;
         if(panelState===signature)return;
         const samePage=panel.dataset.page===state,focusIndex=samePage?Array.from(panel.querySelectorAll('button,select,input')).indexOf(document.activeElement):-1,scroll=samePage?(panel.scrollTop||0):0;
         friendsNotice?.dispose();friendsNotice=null;
         disposeAppearanceControl?.();disposeAppearanceControl=null;
+        disposeAudioTrack?.();disposeAudioTrack=null;
         panelState=signature;panel.dataset.page=state;panel.replaceChildren();panel.hidden=false;
         const inner=element('div',undefined,panel,'inner'),header=element('header',undefined,inner);
         htmlButton('← '+tr('Zurück'),back,header);
@@ -13663,7 +13715,23 @@ es:{username:'Nombre de acceso',usernameHint:'Único · 3–16 caracteres: a–z
             }
             const musicRow=element('div',undefined,audio,'row');element('span',ft(8),musicRow);
             const musicSelect=element('select',undefined,musicRow);musicSelect.setAttribute('aria-label',ft(8));['dynamic','calm','arcade'].forEach((value,i)=>{const o=element('option',ft(9+i),musicSelect);o.value=value;o.selected=value===audioSettings.musicStyle;});musicSelect.value=audioSettings.musicStyle;musicSelect.addEventListener('change',()=>{HubAudio.setSettings({musicStyle:musicSelect.value});sound('toggle');});
-            const tune=element('p',HubAudio.getTrack().title,audio,'hub-audio-track');tune.setAttribute('role','status');const audioActions=element('div',undefined,audio,'hub-audio-actions');htmlButton(ft(12),()=>{HubAudio.unlock();tune.textContent=HubAudio.nextTrack().title;},audioActions);
+            const libraryCopy={
+                de:['Musikauswahl','Gemischt · neue & bisherige','Nur neue Musik','Nur bisherige Musik','Gemischt wechselt ganze Stücke ab. Musikstil verändert nur die bisherigen Browser-Melodien.','Neue Musik','Bisherige Musik','Datei nicht verfügbar – erneut auswählen oder bisherige Musik nutzen.'],
+                en:['Music collection','Mixed · new & original','New music only','Original music only','Mixed alternates complete tracks. Music style affects only the original browser arrangements.','New music','Original music','File unavailable – retry your selection or use original music.'],
+                fr:['Collection musicale','Mixte · nouvelle et ancienne','Nouvelle musique uniquement','Ancienne musique uniquement','Le mode mixte alterne les morceaux complets. Le style ne modifie que les anciens arrangements du navigateur.','Nouvelle musique','Ancienne musique','Fichier indisponible – réessayez ou choisissez l’ancienne musique.'],
+                es:['Selección musical','Mezclada · nueva y anterior','Solo música nueva','Solo música anterior','El modo mezclado alterna temas completos. El estilo solo cambia los arreglos anteriores del navegador.','Música nueva','Música anterior','Archivo no disponible: vuelve a seleccionar o usa la música anterior.'],
+                it:['Raccolta musicale','Mista · nuova e precedente','Solo nuova musica','Solo musica precedente','La modalità mista alterna brani interi. Lo stile modifica solo gli arrangiamenti precedenti.','Nuova musica','Musica precedente','File non disponibile: riprova o usa la musica precedente.'],
+                pt:['Seleção musical','Mista · nova e anterior','Só música nova','Só música anterior','O modo misto alterna faixas completas. O estilo só altera os arranjos anteriores.','Música nova','Música anterior','Ficheiro indisponível: tente novamente ou use a música anterior.'],
+                th:['ชุดเพลง','ผสม · เพลงใหม่และเพลงเดิม','เฉพาะเพลงใหม่','เฉพาะเพลงเดิม','โหมดผสมสลับเพลงเต็มเพลง รูปแบบเพลงมีผลเฉพาะเพลงเดิมที่สร้างในเบราว์เซอร์','เพลงใหม่','เพลงเดิม','ไฟล์ไม่พร้อมใช้งาน โปรดลองเลือกอีกครั้งหรือใช้เพลงเดิม'],
+                nl:['Muziekcollectie','Gemengd · nieuw en bestaand','Alleen nieuwe muziek','Alleen bestaande muziek','Gemengd wisselt volledige nummers af. De muziekstijl verandert alleen de bestaande browsermelodieën.','Nieuwe muziek','Bestaande muziek','Bestand niet beschikbaar: probeer opnieuw of kies bestaande muziek.']
+            }[HubI18n.language]||['Music collection','Mixed · new & original','New music only','Original music only','Mixed alternates complete tracks. Music style affects only original arrangements.','New music','Original music','File unavailable.'];
+            const libraryRow=element('div',undefined,audio,'row'),libraryLabel=element('label',libraryCopy[0],libraryRow),librarySelect=element('select',undefined,libraryRow);librarySelect.id='hub-music-library';libraryLabel.htmlFor=librarySelect.id;librarySelect.setAttribute('aria-label',libraryCopy[0]);['mixed','new','original'].forEach((value,i)=>{const o=element('option',libraryCopy[i+1],librarySelect);o.value=value;});librarySelect.value=audioSettings.musicLibrary;
+            element('p',libraryCopy[4],audio);
+            const tune=element('p','',audio,'hub-audio-track');tune.setAttribute('role','status');
+            const updateTune=()=>{const info=HubAudio.getTrack();tune.textContent=info.title+' · '+libraryCopy[info.source==='new'?5:6]+(info.unavailable?' · '+libraryCopy[7]:'');musicSelect.disabled=HubAudio.getSettings().musicLibrary==='new';};
+            updateTune();window.addEventListener('hub-audio-track',updateTune);disposeAudioTrack=()=>window.removeEventListener('hub-audio-track',updateTune);
+            librarySelect.addEventListener('change',()=>{HubAudio.setSettings({musicLibrary:librarySelect.value});HubAudio.unlock();updateTune();sound('toggle');});
+            const audioActions=element('div',undefined,audio,'hub-audio-actions');htmlButton(ft(12),()=>{HubAudio.unlock();HubAudio.nextTrack();updateTune();},audioActions);
             htmlButton(ft(23),()=>sound('arena_power'),audioActions);
             const feel=section(inner,ft(0),ft(4)),feedback=HubFeedback.getSettings();
             for(const [key,label] of [['vibration',ft(1)],['motion',ft(5)]]){const row=element('div',undefined,feel,'row');element('span',label,row);const toggle=htmlButton(tr(feedback[key]?'AN':'AUS'),()=>{const next=HubFeedback.setSettings({[key]:!HubFeedback.getSettings()[key]});toggle.textContent=tr(next[key]?'AN':'AUS');toggle.setAttribute('aria-pressed',String(next[key]));HubPresentation.motion(next.motion);},row);toggle.setAttribute('aria-label',label);toggle.setAttribute('aria-pressed',String(feedback[key]));}
@@ -13747,7 +13815,7 @@ es:{username:'Nombre de acceso',usernameHint:'Único · 3–16 caracteres: a–z
         const royalPaused=state==='ROYAL'&&royalView?.model?.phase==='paused';
         const salvagePaused=state==='SALVAGE'&&salvageView?.model?.phase==='paused';
         const activeTheme=gameTheme();HubAudio.setTheme(activeTheme);HubPresentation.theme(activeTheme);HubPresentation.tick();HubPresentation.motion(HubFeedback.getSettings().motion);
-        const next=document.hidden?'hidden':state==='CLOSED'?'closed':onlinePaused||bonusPaused||arcadePaused||snakePaused||breakerPaused||crystalPaused||expansionPaused||salvagePaused||royalPaused||state==='PAUSED'||(state==='QUIT_CONFIRM'&&quitFrom==='PAUSED')?'paused':state==='PLAYING'?(boss_active?'boss':'arena'):state==='SNAKE'?'snake':state==='BREAKER'?'breaker':state==='ONLINE'?onlineScene():state==='RALLY'?'rally':state==='ORBIT'?'orbit':state==='PRISM'?'prism':state==='CLOUD'?'cloud':state==='TOWER'?'tower':state==='CRYSTALRUN'?'crystalrun':state==='NYRUN'?'newyork':state==='MINIGOLF'?'minigolf':state==='SALVAGE'?'salvage':'hub';
+        const next=document.hidden?'hidden':state==='CLOSED'?'closed':onlinePaused||bonusPaused||arcadePaused||snakePaused||breakerPaused||crystalPaused||expansionPaused||salvagePaused||royalPaused||state==='PAUSED'||(state==='QUIT_CONFIRM'&&quitFrom==='PAUSED')?'paused':state==='PLAYING'?(boss_active?'boss':'arena'):state==='SNAKE'?'snake':state==='BREAKER'?'breaker':state==='ONLINE'?onlineScene():state==='RALLY'?'rally':state==='ORBIT'?'orbit':state==='PRISM'?'prism':state==='CLOUD'?'cloud':state==='TOWER'?'tower':state==='CRYSTALRUN'?'crystalrun':state==='NYRUN'?'newyork':state==='MINIGOLF'?'minigolf':state==='SALVAGE'?'salvage':state==='ROYAL'?'royal':'hub';
         if(next!==previousAudioScene){if(['paused','hidden','closed'].includes(next)||state==='HUB')HubFeedback.stop();HubAudio.setScene(next);previousAudioScene=next;}
         if(state==='PAUSED'&&previousDrawState==='PLAYING')sound('pause');
         if(state==='PLAYING'&&previousDrawState==='PAUSED')sound('resume');

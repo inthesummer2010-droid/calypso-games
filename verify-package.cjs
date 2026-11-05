@@ -13,6 +13,13 @@ function verify(root=__dirname){
   for(const name of entries.slice(0,-1))required.add(name.replace(/^\.\//,''));
  }
  if(required.has('royal-cards')){required.add('royal-cards/runtime-manifest.json');try{const manifest=JSON.parse(read('royal-cards/runtime-manifest.json'));for(const [file,hash]of Object.entries(manifest)){if(file.includes('..')||file.startsWith('/')){errors.push('Ungültiger Royal-Ressourcenpfad');continue;}const name='royal-cards/'+file;required.add(name);try{if(require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(root,name))).digest('hex')!==hash)errors.push('Royal-Ressource veraltet: '+name);}catch{errors.push('Royal-Ressource fehlt: '+name);}}if(Object.keys(manifest).filter(n=>n.endsWith('.svg')).length!==52)errors.push('Royal-Kartenbestand ist unvollständig');}catch{errors.push('Royal-Ressourcenmanifest fehlt oder ist ungültig');}}
+ if(required.has('music')){
+  required.add('music/manifest.json');required.add('music/CREDITS.txt');
+  try{const catalogue=JSON.parse(read('music/manifest.json')),ids=new Set(['hub','arena','snake','breaker','rally','orbit','salvage','prism','cloud','tower','crystalrun','newyork','minigolf','royal']);
+   if(catalogue.version!==1||!Array.isArray(catalogue.tracks)||catalogue.tracks.length!==ids.size)throw new Error('14 Stücke erwartet');
+   for(const track of catalogue.tracks){if(!ids.delete(track.id)||track.file!==track.id+'.mp3'||!/^[a-f0-9]{64}$/.test(track.sha256))throw new Error('Ungültiger Musikeintrag');const name='music/'+track.file;required.add(name);try{const bytes=fs.readFileSync(path.join(root,name));if(bytes.length!==track.bytes||require('node:crypto').createHash('sha256').update(bytes).digest('hex')!==track.sha256)errors.push('Musikdatei veraltet/beschädigt: '+name);}catch{errors.push('Musikdatei fehlt: '+name);}}
+  }catch(e){errors.push('Musikmanifest fehlt oder ist ungültig: '+e.message);}
+ }
  const queue=[...required];for(let i=0;i<queue.length;i++){
   const name=queue[i],parts=name.split('/');let current=root,exists=true;
   for(const part of parts){try{if(!fs.readdirSync(current).includes(part)){exists=false;break;}current=path.join(current,part);}catch{exists=false;break;}}
