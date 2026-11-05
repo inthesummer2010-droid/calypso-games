@@ -1,0 +1,244 @@
+{
+  "version": 1,
+  "generatedOn": "2026-11-05",
+  "tracks": [
+    {
+      "id": "hub",
+      "title": "After Hours Arcade",
+      "file": "hub.mp3",
+      "prompt": "Instrumental arcade lounge soundtrack, welcoming playful lobby mood, warm electric piano, rounded synth bass, crisp restrained electronic drums, sparkling mallet melody, violet neon atmosphere, 104 BPM, polished balanced mix, no vocals, no speech, gentle opening and ending suitable for continuous background listening.",
+      "source": "generated",
+      "provider": "Background Music / Lyria",
+      "aiGenerated": true,
+      "durationHint": 173,
+      "sha256": "24fb224e9472fd8567782c6a236d5c507ef5f4a6d72e6ee52c59c80e97a274dd",
+      "bytes": 2761081,
+      "normalization": {
+        "integratedLufs": -20,
+        "truePeakCeilingDb": -3,
+        "codec": "MP3 128 kbps stereo 44.1 kHz"
+      }
+    },
+    {
+      "id": "arena",
+      "title": "Neon Rivals",
+      "file": "arena.mp3",
+      "prompt": "High-energy instrumental electronic arena game soundtrack, punchy breakbeats, bold short synthesizer motifs, tight bass, playful competitive tension, 126 BPM, clear balanced mix, no vocals or speech.",
+      "source": "library",
+      "provider": "Background Music / Lyria",
+      "aiGenerated": true,
+      "durationHint": 178,
+      "sha256": "2150254335012bf70da129a5a4da5a72270ee9944d1fe9787add0335822ecaf5",
+      "bytes": 2855122,
+      "normalization": {
+        "integratedLufs": -20,
+        "truePeakCeilingDb": -3,
+        "codec": "MP3 128 kbps stereo 44.1 kHz"
+      }
+    },
+    {
+      "id": "snake",
+      "title": "Emerald Circuit",
+      "file": "snake.mp3",
+      "prompt": "Playful instrumental electro funk arcade soundtrack, bouncy plucked synth melody, rounded bass, crisp light drums, sly cheerful energy, 112 BPM, balanced background mix, no vocals or speech.",
+      "source": "library",
+      "provider": "Background Music / Lyria",
+      "aiGenerated": true,
+      "durationHint": 179,
+      "sha256": "a0d62277e89522de6236411f36462d26010c9f8d51caa49f9e7cc38d2153b9c3",
+      "bytes": 2864317,
+      "normalization": {
+        "integratedLufs": -20,
+        "truePeakCeilingDb": -3,
+        "codec": "MP3 128 kbps stereo 44.1 kHz"
+      }
+    },
+    {
+      "id": "breaker",
+      "title": "Prism Impact",
+      "file": "breaker.mp3",
+      "prompt": "Instrumental bright retro futuristic arcade soundtrack, energetic synth arpeggios, rubbery bass, punchy electronic drums, sparkling short melodic hooks, 124 BPM, controlled high frequencies, no vocals or speech.",
+      "source": "library",
+      "provider": "Background Music / Lyria",
+      "aiGenerated": true,
+      "durationHint": 180,
+      "sha256": "28487b4f61b4e37716adf99adfa997a9c9e485fc36b3644de1774e8d1de1f301",
+      "bytes": 2879781,
+      "normalization": {
+        "integratedLufs": -20,
+        "truePeakCeilingDb": -3,
+        "codec": "MP3 128 kbps stereo 44.1 kHz"
+      }
+    },
+    {
+      "id": "rally",
+      "title": "Match Point",
+      "file": "rally.mp3",
+      "prompt": "Instrumental neon sports arcade soundtrack, clean electro disco groove, syncopated synth stabs, tight bass, crisp percussion, confident fun match energy, 120 BPM, no vocals or speech.",
+      "source": "library",
+      "provider": "Background Music / Lyria",
+      "aiGenerated": true,
+      "durationHint": 161,
+      "sha256": "bd974584c1e05ff77004664d810d8907de13117d32e544ad125f315a4d9a6d8e",
+      "bytes": 2573417,
+      "normalization": {
+        "integratedLufs": -20,
+        "truePeakCeilingDb": -3,
+        "codec": "MP3 128 kbps stereo 44.1 kHz"
+      }
+    },
+    {
+      "id": "orbit",
+      "title": "Starlane Drift",
+      "file": "orbit.mp3",
+      "prompt": "Instrumental cosmic arcade soundtrack, airy synth chords, twinkling arpeggios, gentle propulsive electronic beat, rounded bass, curious flowing space exploration mood, 110 BPM, no vocals or speech.",
+      "source": "library",
+      "provider": "Background Music / Lyria",
+      "aiGenerated": true,
+      "durationHint": 174,
+      "sha256": "0e66cf79517c94c6891b3e1a77b548b493c420cd5adc4b149889c588aa62d72d",
+      "bytes": 2783233,
+      "normalization": {
+        "integratedLufs": -20,
+        "truePeakCeilingDb": -3,
+        "codec": "MP3 128 kbps stereo 44.1 kHz"
+      }
+    },
+    {
+      "id": "salvage",
+      "title": "Void Runner",
+      "file": "salvage.mp3",
+      "prompt": "Instrumental dark neon space combat soundtrack, tense pulsing analog synthesizers, deep controlled bass, urgent electronic breakbeats, luminous restrained melodic lead, 132 BPM, energetic but readable background mix, no vocals or speech.",
+      "source": "library",
+      "provider": "Background Music / Lyria",
+      "aiGenerated": true,
+      "durationHint": 173,
+      "sha256": "b8640c55c40fc812fb8ff315a20280293efb7de7337257fa2d5eb86b855e56b8",
+      "bytes": 2764007,
+      "normalization": {
+        "integratedLufs": -20,
+        "truePeakCeilingDb": -3,
+        "codec": "MP3 128 kbps stereo 44.1 kHz"
+      }
+    },
+    {
+      "id": "prism",
+      "title": "Glass Garden",
+      "file": "prism.mp3",
+      "prompt": "Instrumental calm puzzle game soundtrack, crystalline mallets, soft electric piano, warm synth pads, subtle downtempo percussion, elegant inquisitive repeating motifs, 88 BPM, no vocals or speech.",
+      "source": "library",
+      "provider": "Background Music / Lyria",
+      "aiGenerated": true,
+      "durationHint": 176,
+      "sha256": "37c99759fa529ac5f74ef9533e84767ce44d82c25c870eb12f8967779aee7990",
+      "bytes": 2815416,
+      "normalization": {
+        "integratedLufs": -20,
+        "truePeakCeilingDb": -3,
+        "codec": "MP3 128 kbps stereo 44.1 kHz"
+      }
+    },
+    {
+      "id": "cloud",
+      "title": "Skybound",
+      "file": "cloud.mp3",
+      "prompt": "Instrumental whimsical platform game soundtrack, light marimba, soft flute-like synth, buoyant bass, delicate hand percussion, warm sunny floating mood, 106 BPM, no vocals or speech.",
+      "source": "library",
+      "provider": "Background Music / Lyria",
+      "aiGenerated": true,
+      "durationHint": 121,
+      "sha256": "ab48d600021208eee1c196837c5fae51b0b38429010551837b365be920e8a304",
+      "bytes": 1932268,
+      "normalization": {
+        "integratedLufs": -20,
+        "truePeakCeilingDb": -3,
+        "codec": "MP3 128 kbps stereo 44.1 kHz"
+      }
+    },
+    {
+      "id": "tower",
+      "title": "Bastion Lights",
+      "file": "tower.mp3",
+      "prompt": "Instrumental fantasy arcade strategy soundtrack, plucked strings, warm brass-like synth accents, restrained steady drums, deep bass, thoughtful heroic momentum without bombastic peaks, 108 BPM, no vocals or speech.",
+      "source": "library",
+      "provider": "Background Music / Lyria",
+      "aiGenerated": true,
+      "durationHint": 177,
+      "sha256": "285551b5cbb070ee6ccc247544610ae682125d023f27a244960492b919f39cee",
+      "bytes": 2840075,
+      "normalization": {
+        "integratedLufs": -20,
+        "truePeakCeilingDb": -3,
+        "codec": "MP3 128 kbps stereo 44.1 kHz"
+      }
+    },
+    {
+      "id": "crystalrun",
+      "title": "Luminous Sprint",
+      "file": "crystalrun.mp3",
+      "prompt": "Instrumental fast luminous arcade runner soundtrack, sparkling electronic arpeggios, bright concise synth melody, driving bass and tight drums, exhilarating forward motion, 140 BPM, no vocals or speech.",
+      "source": "library",
+      "provider": "Background Music / Lyria",
+      "aiGenerated": true,
+      "durationHint": 176,
+      "sha256": "03e88c52276bc138ca68d602cb1dd0d46660fc237ffcad1b6189912b4519f885",
+      "bytes": 2811654,
+      "normalization": {
+        "integratedLufs": -20,
+        "truePeakCeilingDb": -3,
+        "codec": "MP3 128 kbps stereo 44.1 kHz"
+      }
+    },
+    {
+      "id": "newyork",
+      "title": "Midnight Avenue",
+      "file": "newyork.mp3",
+      "prompt": "Instrumental urban arcade runner soundtrack, energetic jazzy electronic breakbeat, warm electric piano stabs, lively bassline, bright brass-like synth hooks, night city excitement, 128 BPM, no vocals or speech.",
+      "source": "library",
+      "provider": "Background Music / Lyria",
+      "aiGenerated": true,
+      "durationHint": 169,
+      "sha256": "fe551447051725732b455679e2f84060a04211a128889e94f65e7281081b0e00",
+      "bytes": 2697551,
+      "normalization": {
+        "integratedLufs": -20,
+        "truePeakCeilingDb": -3,
+        "codec": "MP3 128 kbps stereo 44.1 kHz"
+      }
+    },
+    {
+      "id": "minigolf",
+      "title": "Putting Sunshine",
+      "file": "minigolf.mp3",
+      "prompt": "Instrumental cheerful miniature golf soundtrack, gentle bossa nova groove, nylon string guitar, warm electric piano, light shaker and brushed percussion, relaxed playful concentration, 94 BPM, no vocals or speech.",
+      "source": "library",
+      "provider": "Background Music / Lyria",
+      "aiGenerated": true,
+      "durationHint": 178,
+      "sha256": "b54388bceda174564ffa6769cd1ed91bf6556a57fd1678874f4983c551104c62",
+      "bytes": 2854286,
+      "normalization": {
+        "integratedLufs": -20,
+        "truePeakCeilingDb": -3,
+        "codec": "MP3 128 kbps stereo 44.1 kHz"
+      }
+    },
+    {
+      "id": "royal",
+      "title": "Velvet Table",
+      "file": "royal.mp3",
+      "prompt": "Instrumental elegant card room lounge soundtrack, warm jazz piano, soft upright bass, restrained brushed drums, subtle vibraphone accents, intimate relaxed evening atmosphere, 84 BPM, no vocals or speech.",
+      "source": "library",
+      "provider": "Background Music / Lyria",
+      "aiGenerated": true,
+      "durationHint": 164,
+      "sha256": "2ba25ce61e357d278a32af52aedbf382fb9df5f3490a7d694a4f673860e6900c",
+      "bytes": 2630678,
+      "normalization": {
+        "integratedLufs": -20,
+        "truePeakCeilingDb": -3,
+        "codec": "MP3 128 kbps stereo 44.1 kHz"
+      }
+    }
+  ]
+}

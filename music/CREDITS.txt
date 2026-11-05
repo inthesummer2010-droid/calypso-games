@@ -1,0 +1,15 @@
+Calypso Arcade - additional instrumental soundtrack, 5 November 2026
+
+14 AI-generated instrumental tracks created through Background Music using Lyria.
+Style-only prompts, track titles and source metadata: manifest.json.
+The generated audio includes the provider's AI watermark. No third-party artist,
+song or soundtrack was requested. Loudness-adjusted for this hub (FFmpeg loudnorm,
+target -20 LUFS, true-peak ceiling -3 dBTP); MP3 128 kbps stereo.
+
+These files supplement the original locally synthesized HubScore arrangements.
+The existing arrangements and game sound effects remain available unchanged.
+This credit is a provenance notice, not a claim of exclusive copyright or a
+license granting others ownership of provider technology.
+
+The game loads the packaged files from its own origin. No Background Music
+account, API key, expiring URL, session token or external player is shipped.
