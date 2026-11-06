@@ -18025,8 +18025,13 @@ es:{username:'Nombre de acceso',usernameHint:'Único · 3–16 caracteres: a–z
     for(const side of [-1,1]){mesh.box(side*.65,.68,-1.861,.31,.18,.045,[1,.95,.73,.45]);mesh.box(side*.65,.67,1.865,.30,.17,.04,[.77,.18,.11]);}mesh.box(0,.42,1.948,.37,.16,.025,[.90,.75,.39]);
   }
   function star(mesh,p,time,seed){
-    mesh.frame(p);const a=time*1.8+seed,c=Math.cos(a),s=Math.sin(a),points=[];for(let i=0;i<10;i++){const t=i/10*TAU+Math.PI/2,r=i%2===0?.43:.19;points.push([Math.cos(t)*r*c,1.12+Math.sin(t)*r,Math.cos(t)*r*s]);}
-    for(let i=0;i<10;i++){const j=(i+1)%10;mesh.tri([0,1.12,.08],points[i],points[j],[1,.73,.12,.4]);mesh.tri([0,1.12,-.08],points[j],points[i],[1,.82,.22,.4]);}
+    mesh.frame(p);const angle=time*1.8+seed,c=Math.cos(angle),s=Math.sin(angle),front=[],back=[];
+    const turn=(x,y,z)=>[x*c-z*s,y,x*s+z*c];
+    // The complete solid rotates together. Fixed unrotated centre points made
+    // the old collectible collapse into a zero-width plane when seen side-on.
+    for(let i=0;i<10;i++){const a=i/10*TAU+Math.PI/2,r=i%2===0?.43:.19,x=Math.cos(a)*r,y=1.12+Math.sin(a)*r;front.push(turn(x,y,.075));back.push(turn(x,y,-.075));}
+    const crown=turn(0,1.12,.115),reverse=turn(0,1.12,-.115);
+    for(let i=0;i<10;i++){const j=(i+1)%10;mesh.tri(crown,front[i],front[j],[1,.73,.12,.4]);mesh.tri(reverse,back[j],back[i],[1,.82,.22,.4]);mesh.quad(front[i],back[i],back[j],front[j],i%2?[.86,.51,.07,.15]:[1,.66,.10,.2]);}
     mesh.disk(0,.025,0,.38,.28,[.39,.36,.22]);
   }
   function hazard(mesh,p,type,time,seed){
