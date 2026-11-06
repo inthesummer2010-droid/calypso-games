@@ -19465,6 +19465,25 @@ es:{username:'Nombre de acceso',usernameHint:'Único · 3–16 caracteres: a–z
  [data-hub-game][data-dock=stack]>.arcade-toolbar{display:flex!important;flex-direction:row!important;flex-wrap:wrap;justify-content:center!important;width:100%!important;max-height:144px;overflow:auto;position:relative!important;inset:auto!important;order:2}
  [data-hub-game][data-dock=stack] .tower-build-strip{flex-direction:row;overflow-x:auto;max-width:100%;gap:6px;flex-wrap:nowrap;flex-basis:100%}
  [data-dock=side] .tower-build-strip{flex-direction:column!important;overflow:visible}
+ /* A landscape board in a tall viewport stays directly below navigation.
+    Use the remaining height for readable actions rather than centring a
+    clipped 144px toolbar in otherwise empty space. Side docking is unchanged. */
+ [data-hub-game=tower][data-dock=stack]{justify-content:flex-start!important;padding-top:calc(var(--shell-height) + 8px)!important;padding-bottom:max(8px,env(safe-area-inset-bottom))!important}
+ [data-hub-game=tower][data-dock=stack]>.arcade-stage{flex:0 0 auto!important}
+ [data-hub-game=tower][data-dock=stack]>.arcade-toolbar{flex:0 1 auto;min-height:0;max-height:calc(100dvh - var(--shell-height) - var(--shell-stage-height,250px) - 24px - env(safe-area-inset-bottom));align-content:flex-start;align-items:stretch;justify-content:flex-start!important;overscroll-behavior:contain;padding:4px!important;scroll-padding-block:8px}
+ [data-hub-game=tower][data-dock=stack]>.arcade-toolbar>button{flex-basis:100%;width:100%!important;max-width:none!important}
+ [data-hub-game=tower][data-dock=stack] .tower-build-strip{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));width:100%;overflow:visible;flex-basis:100%;padding-bottom:0}
+ [data-hub-game=tower][data-dock=stack] .tower-type-button{min-width:0!important;min-height:48px;width:auto!important;overflow-wrap:anywhere}
+ [data-hub-game=tower][data-dock=stack] .hub-tower-info{flex-basis:100%;min-height:44px;max-height:none;overflow:visible}
+ [data-hub-game=tower][data-dock=stack] .hub-tower-actions{flex-basis:100%}
+ [data-hub-game=tower] .arcade-toolbar .hub-tower-actions>button{flex:1 1 0!important;min-width:0!important;overflow-wrap:anywhere}
+ [data-hub-game=tower] .arcade-toolbar .hub-tower-actions>button[hidden]{display:none!important}
+ [data-hub-game=tower] .hub-tower-actions:not(:has(>button:not([hidden]))){display:none}
+ @media(max-height:500px){
+  [data-hub-game=tower][data-dock=side]>.hub-management{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px}
+  [data-hub-game=tower][data-dock=side] .hub-shell-title{grid-column:1/-1;padding:2px}
+  [data-hub-game=tower][data-dock=side]>.arcade-toolbar button{min-height:44px!important;min-width:0!important;overflow-wrap:anywhere}
+ }
  [data-hub-game=minigolf][data-dock=side]{grid-template-rows:auto minmax(0,1fr)!important}
  [data-hub-game=minigolf][data-dock=side] .golf-controls{position:absolute;grid-area:auto!important;inset:var(--shell-rail-bottom) 8px 8px auto;width:184px;display:flex;flex-direction:column;justify-content:flex-start;gap:8px;overflow:auto;padding:8px;box-sizing:border-box}
  [data-hub-game=minigolf][data-dock=side]>.hub-management{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;align-items:stretch}
@@ -19549,7 +19568,7 @@ es:{username:'Nombre de acceso',usernameHint:'Único · 3–16 caracteres: a–z
   v.host.dataset.dock=result.dock;v.host.style.setProperty('--shell-height',result.dock==='side'?'0px':'56px');
   const barHeight=bar?.getBoundingClientRect().height||230;v.host.style.setProperty('--shell-rail-bottom',Math.ceil(barHeight+18)+'px');
   if(['snake','breaker'].includes(game)){Object.assign(v.wrapper.style,{width:bw*result.scale+'px',height:bh*result.scale+'px'});}
-  else if(['prism','cloud','tower','rally','orbit'].includes(game)){for(const n of [v.stage,v.canvas])Object.assign(n.style,{width:bw*result.scale+'px',height:bh*result.scale+'px'});}
+  else if(['prism','cloud','tower','rally','orbit'].includes(game)){for(const n of [v.stage,v.canvas])Object.assign(n.style,{width:bw*result.scale+'px',height:bh*result.scale+'px'});if(game==='tower')v.host.style.setProperty('--shell-stage-height',bh*result.scale+'px');}
   hint(v,game,bw,bh);
  }
  function sync(v,game){if(v.closed)return;const phase=v.page||v.model?.phase||v.model?.state;v.host.dataset.shellPhase=phase;if(v.shellBack&&['snake','breaker'].includes(game))v.shellBack.hidden=phase==='menu';if(['snake','breaker'].includes(game)&&v.pauseButton)v.pauseButton.hidden=!['playing','countdown','ready','between','pause','paused'].includes(phase);
