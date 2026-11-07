@@ -22,6 +22,16 @@ CREATE TABLE IF NOT EXISTS arcade_challenges(code TEXT PRIMARY KEY REFERENCES so
 function install(Store,SocialError){
  const fail=(c,status=400)=>{throw new SocialError(c,status);};
  Object.assign(Store.prototype,{
+  async onlineCosmeticAccess(code,hash){return this.transaction(async db=>{
+   const U=require('./arcade-unlocks.js'),base={rally:['classic'],salvage:['classic'],cloud:['classic']};
+   const account=(await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db))[0];
+   if(!account||!(await this.query('SELECT code FROM social_sessions WHERE code=$1 AND hash=$2 AND expires_at>$3',[code,hash,this.now()],db)).length)return base;
+   const access=await this.playerAccess(code,db);if(access.allLooks)return Object.fromEntries(Object.keys(base).map(game=>[game,U.skins[game].map(s=>s.id)]));
+   if(access.rankingBlocked)return base;
+   const rows=await this.query("SELECT c.definition,b.value FROM arcade_bests_by_trust b JOIN arcade_categories c ON c.id=b.category WHERE b.code=$1 AND b.verification='verified' AND b.source='online-server' AND c.game IN ('rally','salvage')",[code],db);
+   let wins=0;const missions=new Set();for(const row of rows){const c=row.definition;if(!Rules.current(c))continue;if(c.game==='rally'&&c.kind==='wins'&&c.config.mode==='online')wins=Math.max(wins,Number(row.value)||0);if(c.game==='salvage'&&c.config.mode==='challenge')missions.add(c.config.players+':'+c.config.challengeId);}
+   for(const game of ['rally','salvage'])base[game]=U.skins[game].filter(s=>s.goal<=(game==='rally'?wins:missions.size)).map(s=>s.id);return base;
+  });},
   async rankingCategory(game,config,db=this.db){let cat;try{cat=Rules.category(game,config);}catch{fail('invalid_input');}await this.query('INSERT INTO arcade_categories(id,game,definition) VALUES($1,$2,$3::jsonb) ON CONFLICT DO NOTHING',[cat.id,game,JSON.stringify(cat)],db);return cat;},
   async challengeProgress(code,db=this.db){return Challenges.normalizeProgress((await this.query('SELECT progress FROM arcade_challenges WHERE code=$1',[code],db))[0]?.progress);},
   async beginRun(code,hash,game,config){return this.transaction(async db=>{
@@ -76,6 +86,7 @@ function install(Store,SocialError){
     const inserted=await this.query('INSERT INTO arcade_runs(id,code,session_hash,category,started_at,finished_at,response) VALUES($1,$2,$3,$4,$5,$6,\'{}\') ON CONFLICT DO NOTHING RETURNING id',[id,member.code,member.hash,cat.id,this.now()-run.elapsedMs,this.now()],db);if(!inserted.length)continue;
     const raw=run.results[member.slot]||run.results[0];if(blockedTeam||access.get(member.code).rankingBlocked){await this.saveChallengeResult(member.code,cat,raw.challenge,db);continue;}if(run.game==='rally'&&run.config.mode==='online'){const tally=await this.rallyMatch(member.code,raw,run.elapsedMs,db);if(tally)results.push({...tally,code:member.code});}let r;try{r=Rules.result(cat,raw,run.elapsedMs);}catch{continue;}
     await this.saveChallengeResult(member.code,cat,raw.challenge,db);
+    if(run.game!=='arena')await this.query('UPDATE arcade_runs SET response=$2::jsonb WHERE id=$1',[id,JSON.stringify({verification:'verified',challengeCompleted:cat.game==='salvage'&&cat.config.mode==='challenge'&&raw.challenge?.status==='completed',challengeStars:Math.max(0,Math.min(3,Math.floor(Number(raw.challenge?.stars)||0)))})],db);
     if(r){const best=await this.putBest(member.code,cat,r,cat.team?teamCodes:[],run.game==='arena'?'online-host-checked':'online-server',db);if(run.game!=='rally')results.push({...best,code:member.code});}
    }return {ok:true,results};
   });},
@@ -102,15 +113,22 @@ function install(Store,SocialError){
    const own=rows.find(r=>r.code===viewer);const personal=viewer?(await this.query('SELECT value FROM arcade_bests_by_trust WHERE category=$1 AND code=$2 AND verification=$3',[category,viewer,verification]))[0]:null;
    return {category:cat,scope,verification,entries:rows.filter(x=>Number(x.rank)<=10).map(project),neighbors:rows.filter(x=>Number(x.rank)>10).map(project),own:own?project(own):null,personal:personal?{value:Number(personal.value),hidden:!own}:null};
   },
-  async savePass(code,pins){if(!Array.isArray(pins)||pins.length>3||pins.some(id=>typeof id!=='string')||new Set(pins).size!==pins.length)fail('invalid_input');const p=await this.publicProfile(code,true);if(pins.some(id=>!p.achievements.some(a=>a.id===id)))fail('invalid_input');await this.query('INSERT INTO arcade_pass_profile(code,pins) VALUES($1,$2::jsonb) ON CONFLICT(code) DO UPDATE SET pins=EXCLUDED.pins',[code,JSON.stringify(pins)]);return {ok:true};},
+  async savePass(code,pins){if(!Array.isArray(pins)||pins.length>3||pins.some(id=>typeof id!=='string')||new Set(pins).size!==pins.length)fail('invalid_input');const p=await this.publicProfile(code,true);if(pins.some(id=>!p.achievements.some(a=>a.id===id&&a.verification==='verified')))fail('invalid_input');await this.query('INSERT INTO arcade_pass_profile(code,pins) VALUES($1,$2::jsonb) ON CONFLICT(code) DO UPDATE SET pins=EXCLUDED.pins',[code,JSON.stringify(pins)]);return {ok:true};},
   async publicProfile(code,owner=false){const account=await this.account(code);if(!account||!owner&&!account.public_profile)fail('not_found',404);const rows=await this.query('SELECT c.definition,b.value,b.details,b.source,b.verification FROM arcade_bests_by_trust b JOIN arcade_categories c ON c.id=b.category WHERE b.code=$1 AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(b.team) t(code) JOIN social_accounts p ON p.code=t.code WHERE p.public_profile=FALSE) ORDER BY c.game,c.id,b.verification',[code]);const progress=await this.challengeProgress(code);const stats={...(account.share_progress?account.progress?.stats||{}:{})};
    const counts=await this.query('SELECT c.game,COUNT(*) AS n FROM arcade_runs r JOIN arcade_categories c ON c.id=r.category WHERE r.code=$1 AND r.finished_at IS NOT NULL GROUP BY c.game',[code]);
    for(const row of counts)stats[row.game+'_games']=Math.max(Number(stats[row.game+'_games'])||0,Number(row.n));
    stats.hub_rounds=Math.max(Number(stats.hub_rounds)||0,counts.reduce((n,r)=>n+Number(r.n),0));
    for(const row of rows)if(row.definition.kind==='score'){const key=row.definition.game+'_best';stats[key]=Math.max(Number(stats[key])||0,Number(row.value));}
-   const achievements=achievementRequirements.filter(a=>(Number(stats[a.req_key])||0)>=a.req_val).map(a=>({id:a.id,name:a.name,desc:a.desc,req_key:a.req_key,req_val:a.req_val}));
-   achievements.push(...Object.entries(progress.records).filter(([,r])=>r.completions>0).map(([id,r])=>({id:'salvage:'+id,name:'Neon Salvage · '+id,stars:r.stars})));
-   const pins=(await this.query('SELECT pins FROM arcade_pass_profile WHERE code=$1',[code]))[0]?.pins||[];return {showcased:account.share_progress?pins.filter(id=>achievements.some(a=>a.id===id)):[],code,name:account.name,avatar:Number(account.avatar),bests:rows.filter(r=>Rules.current(r.definition)).map(r=>({category:r.definition,value:Number(r.value),source:r.source,verification:r.verification,details:r.details||{}})),achievements};}
+   // Only our online simulation writes verified receipt metadata. Legacy empty
+   // receipts, shared progress, cloud saves and HTTP score reports prove none.
+   const confirmed={},missionProofs=new Map(),confirmedCounts=await this.query("SELECT c.definition,COUNT(*) AS n,MAX(CASE WHEN r.response->>'challengeCompleted'='true' THEN (r.response->>'challengeStars')::int END) AS stars FROM arcade_runs r JOIN arcade_categories c ON c.id=r.category WHERE r.code=$1 AND r.finished_at IS NOT NULL AND r.response->>'verification'='verified' GROUP BY c.definition",[code]);
+   for(const row of confirmedCounts){const c=row.definition;if(!Rules.current(c))continue;confirmed[c.game+'_games']=(confirmed[c.game+'_games']||0)+Number(row.n);if(c.game==='salvage'&&c.config.mode==='challenge'&&row.stars!==null)missionProofs.set(c.config.players+':'+c.config.challengeId,Number(row.stars));}
+   for(const row of rows){const c=row.definition;if(row.verification!=='verified'||row.source!=='online-server'||!Rules.current(c))continue;confirmed[c.game+'_games']=Math.max(1,confirmed[c.game+'_games']||0);if(c.kind==='score')confirmed[c.game+'_best']=Math.max(confirmed[c.game+'_best']||0,Number(row.value));if(c.game==='salvage'&&c.config.mode==='challenge'){const key=c.config.players+':'+c.config.challengeId;missionProofs.set(key,Math.max(missionProofs.get(key)||0,Math.min(3,Number(row.details?.stars)||0)));}}
+   confirmed.hub_rounds=Object.entries(confirmed).filter(([key])=>key.endsWith('_games')).reduce((sum,[,n])=>sum+n,0);
+   for(const [key,n]of Object.entries(confirmed))stats[key]=Math.max(Number(stats[key])||0,n);
+   const achievements=achievementRequirements.filter(a=>(Number(stats[a.req_key])||0)>=a.req_val).map(a=>({id:a.id,name:a.name,desc:a.desc,req_key:a.req_key,req_val:a.req_val,verification:(confirmed[a.req_key]||0)>=a.req_val?'verified':'reported'}));
+   for(const id of new Set([...Object.keys(progress.records),...missionProofs.keys()])){const r=progress.records[id],verified=missionProofs.has(id);if(verified||r?.completions>0)achievements.push({id:'salvage:'+id,name:'Neon Salvage · '+id,stars:verified?missionProofs.get(id):r.stars,verification:verified?'verified':'reported'});}
+   const pins=(await this.query('SELECT pins FROM arcade_pass_profile WHERE code=$1',[code]))[0]?.pins||[];return {showcased:account.share_progress?pins.filter(id=>achievements.some(a=>a.id===id&&a.verification==='verified')):[],code,name:account.name,avatar:Number(account.avatar),bests:rows.filter(r=>Rules.current(r.definition)).map(r=>({category:r.definition,value:Number(r.value),source:r.source,verification:r.verification,details:r.details||{}})),achievements:owner?achievements:achievements.filter(a=>a.verification==='verified')};}
  });
 }
 async function migrate(db){

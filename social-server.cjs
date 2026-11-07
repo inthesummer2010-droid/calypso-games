@@ -115,7 +115,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
   if(req.method==='POST'&&url.pathname==='/social/admin/player'){
    if(Object.keys(body).some(k=>!['code','confirmCode','action','revision','id'].includes(k))||!['unlock-all','restore-unlocks','reset-progress','reset-rankings','block-rankings','allow-rankings'].includes(body.action)||!Number.isSafeInteger(body.revision)||body.revision<0||typeof body.id!=='string'||!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(body.id))fail('invalid_input');
    const code=cleanCode(body.code);if(body.confirmCode!==code)fail('invalid_input');rate('admin-player:'+hash,20,60e3);
-   const result=await store.administerPlayer(code,body.action,body.revision,body.id);if(body.action==='reset-progress')revokeSockets(code,{all:true});return {...result,player:await store.adminPlayer(code)};
+   const result=await store.administerPlayer(code,body.action,body.revision,body.id);if(body.action==='reset-progress')revokeSockets(code,{all:true});rooms?.invalidateCosmetics?.();return {...result,player:await store.adminPlayer(code)};
   }
   if(req.method==='PUT'&&url.pathname==='/social/admin/notice')return store.putNotice(cleanNotice(body,now()));
   if(req.method==='POST'&&url.pathname==='/social/admin/logout'){if(Object.keys(body).length)fail('invalid_input');adminSessions.delete(hash);return {ok:true};}
@@ -209,7 +209,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
     }else if(req.method==='POST'&&url.pathname==='/social/rankings/finish'){
      if(Object.keys(body).some(k=>!['id','result'].includes(k)))fail('invalid_input');value=await store.finishRun(code,sessionHash(token),body.id,body.result);
     }else if(req.method==='PUT'&&url.pathname==='/social/pass'){if(Object.keys(body).some(k=>k!=='pins'))fail('invalid_input');value=await store.savePass(code,body.pins);
-    }else if(req.method==='GET'&&url.pathname==='/social/pass'){value={pins:(await store.query('SELECT pins FROM arcade_pass_profile WHERE code=$1',[code]))[0]?.pins||[],earned:(await store.publicProfile(code,true)).achievements.map(a=>a.id)};
+    }else if(req.method==='GET'&&url.pathname==='/social/pass'){const earned=(await store.publicProfile(code,true)).achievements.filter(a=>a.verification==='verified').map(a=>a.id);value={pins:((await store.query('SELECT pins FROM arcade_pass_profile WHERE code=$1',[code]))[0]?.pins||[]).filter(id=>earned.includes(id)),earned};
     }else if(req.method==='GET'&&url.pathname==='/social/challenges')value={progress:await store.challengeProgress(code)};
     else if(req.method==='GET'&&url.pathname==='/social/me'){
      const lists=await store.lists(code),friends=new Set(lists.friends.map(a=>a.code));value={me:await profile(code,code,account),access:await store.playerAccess(code)};
@@ -224,7 +224,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
      const updated=await store.update(code,fields);if(!updated)fail('unauthorized',401);if(fields.showOnline===false)presence.delete(code);if('publicProfile'in fields||'name'in fields)rooms?.profilePrivacy?.(code,!!updated.public_profile,updated.name);value={me:await profile(code,code,updated)};
     }else if(req.method==='POST'&&url.pathname==='/social/logout'){const hash=sessionHash(token);await store.logout(hash);revokeSockets(code,{hashes:[hash]});presence.delete(code);value={ok:true};}
     else if(req.method==='DELETE'&&url.pathname==='/social/me'){
-     const pass=password(body.password);if(!await passwordJob(()=>verifyPassword(pass,account.password_hash)))fail('wrong_password',401);const hashes=await store.sessionHashes(code);await store.deleteAccount(code,account.password_hash);revokeSockets(code,{hashes,all:true});presence.delete(code);value={ok:true};
+     const pass=password(body.password);if(!await passwordJob(()=>verifyPassword(pass,account.password_hash)))fail('wrong_password',401);const hashes=await store.sessionHashes(code);await store.deleteAccount(code,account.password_hash);revokeSockets(code,{hashes,all:true});rooms?.invalidateCosmetics?.();presence.delete(code);value={ok:true};
     }else if(req.method==='POST'&&url.pathname==='/social/password'){
      const current=password(body.currentPassword),next=password(body.newPassword);if(!await passwordJob(()=>verifyPassword(current,account.password_hash)))fail('wrong_password',401);const hash=await passwordJob(()=>hashPassword(next)),session=freshSession(),hashes=await store.sessionHashes(code),updated=await store.changePassword(code,account.password_hash,hash,session);revokeSockets(code,{hashes,all:true,except:session.hash});value=await sessionResult(updated,session);
     }else if(req.method==='PUT'&&url.pathname==='/social/progress'){await store.putProgress(code,cleanProgress(body));value={ok:true};}
@@ -252,6 +252,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
  async function saveSalvageRun(run){if(!await ensureReady())return {ok:false,reason:configured?'unavailable':'database_required'};try{return await store.saveSalvageRun(run);}catch(error){if(!(error instanceof SocialError))available=false;return {ok:false,reason:'unavailable'};}}
  async function saveOnlineResult(run){if(!await ensureReady())return {ok:false,reason:'unavailable'};try{return await store.onlineResult(run);}catch{return {ok:false,reason:'unavailable'};}}
  async function canStartRoom(ws,room){if(room?.gameType!=='salvage'||room.salvage?.mode!=='challenge')return true;for(const p of room.players.filter(Boolean)){if(!p.ws?.socialCode)continue;if(!await ensureReady())return false;const progress=await store.challengeProgress(p.ws.socialCode);if(!(await store.playerAccess(p.ws.socialCode)).allLooks&&!require('./neon-salvage-challenges.js').isUnlocked(progress,room.salvage.challengeId,room.players.filter(Boolean).length))return false;}return true;}
- return {ready,handle,authenticate,close,saveSalvageRun,saveOnlineResult,canStartRoom,get rankingsAvailable(){return available&&!closed;}};
+ async function cosmeticAccess(ws){if(!ws?.socialCode||!ws.socialTokenHash||!(ws.socialExpiresAt>now()))return null;if(!await ensureReady())throw Error('unavailable');return store.onlineCosmeticAccess(ws.socialCode,ws.socialTokenHash);}
+ return {ready,handle,authenticate,close,saveSalvageRun,saveOnlineResult,canStartRoom,cosmeticAccess,get rankingsAvailable(){return available&&!closed;}};
 }
 module.exports={createSocial,STAT_KEYS,cleanProgress,postgresConfig};
