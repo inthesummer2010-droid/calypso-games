@@ -68,12 +68,15 @@ function install(Store,SocialError){
    // A simulated match proves the score, not that a guest opponent is a
    // different account. Self-play stays playable without public PvP credit.
    if(run.game==='rally'&&cat.config.mode==='online'&&(cat.config.players!==2||run.members.length!==2||members.length!==2||new Set(members.map(m=>m.slot)).size!==2||!members.every(m=>m.slot===0||m.slot===1)))return {ok:true,results:[],reason:'distinct_opponents_required'};
-   await this.query('SELECT code FROM social_accounts WHERE code=ANY($1::text[]) ORDER BY code FOR UPDATE',[members.map(m=>m.code)],db);const results=[],access=new Map();for(const member of members)access.set(member.code,await this.playerAccess(member.code,db));const blockedTeam=cat.team&&members.some(m=>access.get(m.code).rankingBlocked);for(const member of members){
+   // Sessions decide who can receive credit, not who participated. Keep the
+   // server-frozen roster for team bans, privacy and later deletion cleanup.
+   const teamCodes=[...new Set((cat.team?run.members:members).map(m=>m.code))];
+   const accounts=await this.query('SELECT code FROM social_accounts WHERE code=ANY($1::text[]) ORDER BY code FOR UPDATE',[teamCodes],db),results=[],access=new Map();for(const code of teamCodes)access.set(code,await this.playerAccess(code,db));const blockedTeam=cat.team&&(accounts.length!==teamCodes.length||teamCodes.some(code=>access.get(code).rankingBlocked));for(const member of members){
     const id=crypto.createHash('sha256').update(run.id+':'+member.code).digest('hex').slice(0,32).replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/,'$1-$2-$3-$4-$5');
     const inserted=await this.query('INSERT INTO arcade_runs(id,code,session_hash,category,started_at,finished_at,response) VALUES($1,$2,$3,$4,$5,$6,\'{}\') ON CONFLICT DO NOTHING RETURNING id',[id,member.code,member.hash,cat.id,this.now()-run.elapsedMs,this.now()],db);if(!inserted.length)continue;
     const raw=run.results[member.slot]||run.results[0];if(blockedTeam||access.get(member.code).rankingBlocked){await this.saveChallengeResult(member.code,cat,raw.challenge,db);continue;}if(run.game==='rally'&&run.config.mode==='online'){const tally=await this.rallyMatch(member.code,raw,run.elapsedMs,db);if(tally)results.push({...tally,code:member.code});}let r;try{r=Rules.result(cat,raw,run.elapsedMs);}catch{continue;}
     await this.saveChallengeResult(member.code,cat,raw.challenge,db);
-    if(r){const best=await this.putBest(member.code,cat,r,cat.team?members.map(x=>x.code):[],run.game==='arena'?'online-host-checked':'online-server',db);if(run.game!=='rally')results.push({...best,code:member.code});}
+    if(r){const best=await this.putBest(member.code,cat,r,cat.team?teamCodes:[],run.game==='arena'?'online-host-checked':'online-server',db);if(run.game!=='rally')results.push({...best,code:member.code});}
    }return {ok:true,results};
   });},
   async rallyMatch(code,raw,ms,db){
