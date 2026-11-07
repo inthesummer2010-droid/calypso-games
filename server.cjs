@@ -6,11 +6,18 @@ const {createSocial}=require('./social-server.cjs');
 const {Model:SalvageModel}=require('./neon-salvage-model.js');
 const SalvageChallenges=require('./neon-salvage-challenges.js');
 const {isIP}=require('node:net');
+function addressKey(value){
+  if(typeof value!=='string')return 'unknown';
+  const address=value.trim();if(isIP(address)===4)return address;
+  if(isIP(address)===6){const canonical=new URL('http://['+address.split('%')[0]+']/').hostname.slice(1,-1),mapped=canonical.match(/^::ffff:([0-9a-f]+):([0-9a-f]+)$/);if(mapped){const high=parseInt(mapped[1],16),low=parseInt(mapped[2],16);return [high>>8,high&255,low>>8,low&255].join('.');}return canonical;}
+  return 'unknown';
+}
+function capacityLimit(value,fallback){if(value===undefined)return fallback;const limit=Number(value);if(!Number.isSafeInteger(limit)||limit<1)throw new RangeError('Online address capacity must be a positive integer');return limit;}
 // Public Render services are reached through its Cloudflare/load-balancer edge.
 // Trust forwarding data only there; direct/local servers always use the socket.
 function clientAddress(req,trustRender=process.env.RENDER==='true'&&process.env.NODE_ENV==='production'){
-  if(trustRender){const cf=req.headers['cf-connecting-ip'];if(typeof cf==='string'&&isIP(cf.trim()))return cf.trim();const forwarded=req.headers['x-forwarded-for'];if(typeof forwarded==='string'&&forwarded.length<=1024){const last=forwarded.split(',').at(-1).trim();if(isIP(last))return last;}}
-  return req.socket.remoteAddress||'unknown';
+  if(trustRender){const cf=req.headers['cf-connecting-ip'];if(typeof cf==='string'&&isIP(cf.trim()))return addressKey(cf);const forwarded=req.headers['x-forwarded-for'];if(typeof forwarded==='string'&&forwarded.length<=1024){const last=forwarded.split(',').at(-1).trim();if(isIP(last))return addressKey(last);}}
+  return addressKey(req.socket.remoteAddress);
 }
 const CODE=/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/,TOKEN=/^[a-f0-9]{48}$/;
 const alphabet='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -166,8 +173,9 @@ function createGame(type,options={}){if(type==='snake')return new SnakeDuel(opti
 function publicUrl(value,local=false){const u=new URL(value);if(u.username||u.password||u.search||u.hash||!['https:',...(local?['http:']:[])].includes(u.protocol))throw Error('Use an HTTPS public URL without credentials, query or fragment.');return u;}
 
 class Rooms {
-  constructor({now=()=>Date.now(),send=(ws,msg)=>ws.send(JSON.stringify(msg)),maxRooms=100,roomMs=30*60e3,reconnectMs=30e3,siteUrl='https://calypso-games.onrender.com/',rankingsAvailable=()=>false,saveSalvageRun=async()=>({ok:false}),saveOnlineResult=async()=>({ok:false})}={}){
+  constructor({now=()=>Date.now(),send=(ws,msg)=>ws.send(JSON.stringify(msg)),maxRooms=100,maxRoomsPerAddress=8,roomMs=30*60e3,reconnectMs=30e3,siteUrl='https://calypso-games.onrender.com/',rankingsAvailable=()=>false,saveSalvageRun=async()=>({ok:false}),saveOnlineResult=async()=>({ok:false})}={}){
     Object.assign(this,{now,send,maxRooms,roomMs,reconnectMs,siteUrl,rankingsAvailable,saveSalvageRun,saveOnlineResult});this.rooms=new Map();this.members=new Map();this.pendingRankings=new Set();
+    this.maxRoomsPerAddress=capacityLimit(maxRoomsPerAddress,8);
   }
   error(ws,code){this.send(ws,{type:'error',code});}
   player(ws){const at=this.members.get(ws);return at&&{room:at.room,slot:at.slot,p:at.room.players[at.slot]};}
@@ -223,10 +231,12 @@ class Rooms {
   }
   joined(ws,r,slot){const p=r.players[slot];this.members.set(ws,{room:r,slot});const invite=new URL(this.siteUrl);invite.pathname='/room/'+encodeURIComponent(r.code);invite.search='';invite.hash='';this.send(ws,{type:'joined',v:1,code:r.code,game:r.gameType,slot,token:p.token,invite:invite.href,name:p.name});this.broadcast(r);}
   validCapacity(game,capacity){return Number.isInteger(capacity)&&capacity>=(game==='salvage'?1:2)&&capacity<=(game==='minigolf'?4:2);}
-  create(ws,game='rally',options={}){if(this.player(ws))return this.error(ws,'already_joined');if(this.rooms.size>=this.maxRooms)return this.error(ws,'busy');if(!GAME_TYPES.has(game))return this.error(ws,'invalid_game');const capacity=options.capacity??(game==='minigolf'?4:2);if(!this.validCapacity(game,capacity)||options.visibility!==undefined&&!['private','public'].includes(options.visibility))return this.error(ws,'invalid_game');let code;do{code=randomCode();}while(this.rooms.has(code));
+  create(ws,game='rally',options={}){if(this.player(ws))return this.error(ws,'already_joined');const creatorAddress=addressKey(ws.clientAddress);if(this.rooms.size>=this.maxRooms||[...this.rooms.values()].filter(r=>r.creatorAddress===creatorAddress).length>=this.maxRoomsPerAddress)return this.error(ws,'busy');if(!GAME_TYPES.has(game))return this.error(ws,'invalid_game');const capacity=options.capacity??(game==='minigolf'?4:2);if(!this.validCapacity(game,capacity)||options.visibility!==undefined&&!['private','public'].includes(options.visibility))return this.error(ws,'invalid_game');let code;do{code=randomCode();}while(this.rooms.has(code));
     const r={code,gameType:game,capacity,visibility:options.visibility||'private',allowFriendJoin:options.allowFriendJoin===true,requiredPlayers:options.capacity!==undefined||options.visibility==='public'?capacity:null,players:[this.newPlayer(ws,0,game),...Array(game==='minigolf'?3:capacity-1).fill(null)],round:0,phase:'lobby',expires:this.now()+this.roomMs,countdown:0,events:[],eventSeq:0};
     if(game==='salvage'){const mode=options.salvageMode||'arcade',challengeId=options.challengeId??null;if(!['arcade','challenge'].includes(mode)||(mode==='challenge'?!SalvageChallenges.get(challengeId):challengeId!==null))return this.error(ws,'invalid_game');r.salvage={mode,challengeId};r.players[0].salvageVote={...r.salvage};r.players[0].shareResult=options.shareResult===true;r.rankingStatus='private';}r.game=this.createRoomGame(r);
-    this.rooms.set(code,r);this.joined(ws,r,0);
+    // Retained rooms stay charged to their creator through disconnect/resume.
+    // Counting this bounded map also releases the allowance on every destroy path.
+    r.creatorAddress=creatorAddress;this.rooms.set(code,r);this.joined(ws,r,0);
   }
   join(ws,code){if(this.player(ws))return this.error(ws,'already_joined');if(typeof code!=='string'||!CODE.test(code))return this.error(ws,'invalid_code');const r=this.rooms.get(code);if(!r||r.expires<=this.now())return this.error(ws,'not_found');const slot=r.players.findIndex((p,i)=>!p&&i<(r.capacity||r.players.length));if(slot<0)return this.error(ws,'full');if(r.gameType==='minigolf'&&!['lobby','over'].includes(r.phase))return this.error(ws,'already_started');r.players[slot]=this.newPlayer(ws,slot,r.gameType);if(r.gameType==='salvage')r.players[slot].salvageVote={...r.salvage};if(['minigolf','salvage'].includes(r.gameType))r.players.forEach(p=>{if(p)p.ready=false;});this.joined(ws,r,slot);}
   profilePrivacy(code,visible,name){for(const r of this.rooms.values())for(const p of r.players)if(p?.profileCode===code){p.hiddenProfile=!visible;if(name)p.name=name;if(p.ws){p.ws.socialPublic=visible;if(name)p.ws.socialName=name;}}}
@@ -304,9 +314,11 @@ function createServer(options={}){
   const allowed=new Set([site.origin,...(external?[external.origin]:[]),...(options.origins||String(process.env.ALLOWED_ORIGINS||'').split(',').filter(Boolean))]);
   const addresses=new Map(),roomAttempts=new Map(),connections=new Set();
   const maxClients=options.maxClients||200,maxRooms=options.maxRooms||100;
+  const maxClientsPerAddress=capacityLimit(options.maxClientsPerAddress??process.env.ONLINE_MAX_CLIENTS_PER_ADDRESS,32);
+  const maxRoomsPerAddress=capacityLimit(options.maxRoomsPerAddress??process.env.ONLINE_MAX_ROOMS_PER_ADDRESS,8);
   const wss=new WebSocketServer({noServer:true,maxPayload:128*1024,perMessageDeflate:false});
   const safeSend=(ws,msg)=>{if(ws.readyState!==1)return;if(ws.bufferedAmount>128*1024){ws.terminate();return;}ws.send(JSON.stringify(msg));};
-  const rooms=new Rooms({siteUrl:site.href,maxRooms,...options.rooms,send:safeSend});
+  const rooms=new Rooms({siteUrl:site.href,maxRooms,maxRoomsPerAddress,...options.rooms,send:safeSend});
   const base=()=>external?.href||`http://127.0.0.1:${server.address().port}/`;
   const wsUrl=()=>{const u=new URL('/play',base());u.protocol=u.protocol==='https:'?'wss:':'ws:';return u.href;};
   const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));};
@@ -347,7 +359,9 @@ function createServer(options={}){
     let url;try{url=new URL(req.url,'http://internal');}catch{socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');return;}
     if(url.pathname!=='/play'||!originAllowed(req.headers.origin)){socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');return;}
     const ip=clientAddress(req);
-    if(connections.size>=maxClients||!rate(addresses,ip,120,60000)){socket.end('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n');return;}
+    // handleUpgrade is synchronous here (no asynchronous verifyClient). Only its
+    // successful callback inserts a socket; failed handshakes retain no allowance.
+    if(connections.size>=maxClients||[...connections].filter(ws=>ws.clientAddress===ip).length>=maxClientsPerAddress||!rate(addresses,ip,120,60000)){socket.end('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n');return;}
     wss.handleUpgrade(req,socket,head,ws=>{ws.clientAddress=ip;wss.emit('connection',ws,req);});
   });
   wss.on('connection',ws=>{
