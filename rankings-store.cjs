@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS arcade_rally_totals(code TEXT NOT NULL REFERENCES soc
 CREATE TABLE IF NOT EXISTS arcade_categories(id TEXT PRIMARY KEY, game TEXT NOT NULL, definition JSONB NOT NULL);
 CREATE TABLE IF NOT EXISTS arcade_runs(id UUID PRIMARY KEY, code TEXT NOT NULL REFERENCES social_accounts(code) ON DELETE CASCADE, session_hash TEXT NOT NULL, category TEXT NOT NULL REFERENCES arcade_categories(id), started_at BIGINT NOT NULL, finished_at BIGINT, response JSONB);
 CREATE INDEX IF NOT EXISTS arcade_runs_account ON arcade_runs(code,started_at);
+CREATE INDEX IF NOT EXISTS arcade_runs_unfinished_expiry ON arcade_runs(started_at) WHERE finished_at IS NULL;
 CREATE TABLE IF NOT EXISTS arcade_bests(code TEXT NOT NULL REFERENCES social_accounts(code) ON DELETE CASCADE, category TEXT NOT NULL REFERENCES arcade_categories(id), value BIGINT NOT NULL, primary_value BIGINT NOT NULL, secondary_value BIGINT NOT NULL, elapsed_ms BIGINT NOT NULL, achieved_at BIGINT NOT NULL, team JSONB NOT NULL DEFAULT '[]', source TEXT NOT NULL, PRIMARY KEY(code,category));
 ALTER TABLE arcade_bests ADD COLUMN IF NOT EXISTS details JSONB NOT NULL DEFAULT '{}';
 CREATE TABLE IF NOT EXISTS arcade_bests_by_trust(code TEXT NOT NULL REFERENCES social_accounts(code) ON DELETE CASCADE,category TEXT NOT NULL REFERENCES arcade_categories(id),verification TEXT NOT NULL CHECK(verification IN ('verified','reported')),value BIGINT NOT NULL,primary_value BIGINT NOT NULL,secondary_value BIGINT NOT NULL,elapsed_ms BIGINT NOT NULL,achieved_at BIGINT NOT NULL,team JSONB NOT NULL DEFAULT '[]',source TEXT NOT NULL,details JSONB NOT NULL DEFAULT '{}',PRIMARY KEY(code,category,verification));
@@ -64,6 +65,9 @@ function install(Store,SocialError){
   async onlineResult(run){return this.transaction(async db=>{
    const cat=await this.rankingCategory(run.game,run.config,db),members=[];
    for(const member of run.members){const a=(await this.query('SELECT code FROM social_sessions WHERE hash=$1 AND code=$2 AND expires_at>$3',[member.hash,member.code,this.now()],db))[0];if(a&&!members.some(x=>x.code===a.code))members.push(member);}
+   // A simulated match proves the score, not that a guest opponent is a
+   // different account. Self-play stays playable without public PvP credit.
+   if(run.game==='rally'&&cat.config.mode==='online'&&(cat.config.players!==2||run.members.length!==2||members.length!==2||new Set(members.map(m=>m.slot)).size!==2||!members.every(m=>m.slot===0||m.slot===1)))return {ok:true,results:[],reason:'distinct_opponents_required'};
    await this.query('SELECT code FROM social_accounts WHERE code=ANY($1::text[]) ORDER BY code FOR UPDATE',[members.map(m=>m.code)],db);const results=[],access=new Map();for(const member of members)access.set(member.code,await this.playerAccess(member.code,db));const blockedTeam=cat.team&&members.some(m=>access.get(m.code).rankingBlocked);for(const member of members){
     const id=crypto.createHash('sha256').update(run.id+':'+member.code).digest('hex').slice(0,32).replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/,'$1-$2-$3-$4-$5');
     const inserted=await this.query('INSERT INTO arcade_runs(id,code,session_hash,category,started_at,finished_at,response) VALUES($1,$2,$3,$4,$5,$6,\'{}\') ON CONFLICT DO NOTHING RETURNING id',[id,member.code,member.hash,cat.id,this.now()-run.elapsedMs,this.now()],db);if(!inserted.length)continue;

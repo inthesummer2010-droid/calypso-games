@@ -131,7 +131,7 @@ class SocialStore{
   const rows=await this.query('SELECT names,score,elapsed_ms,kills,wave,completed,created_at FROM salvage_ranked_runs WHERE rules_version=2 AND mode=$1 AND players=$2 AND challenge_id=$3 ORDER BY '+order+' LIMIT 20',[mode,players,challengeId||'']);
   return {enabled:true,rulesVersion:2,mode,players,challengeId,entries:rows.map((row,index)=>({rank:index+1,names:row.names,score:Number(row.score),elapsedMs:Number(row.elapsed_ms),kills:Number(row.kills),wave:Number(row.wave),completed:!!row.completed,createdAt:Number(row.created_at)}))};
  }
- async cleanup(){const now=this.now();await this.query('DELETE FROM social_recovery WHERE expires_at<=$1',[now]);await this.query('UPDATE social_email SET pending=NULL,verify_hash=NULL,expires_at=NULL WHERE expires_at<=$1',[now]);await this.query('DELETE FROM social_sessions WHERE expires_at<=$1',[now]);await this.query('DELETE FROM social_invites WHERE expires_at<=$1',[now]);}
+ async cleanup(){const now=this.now();await this.query('DELETE FROM social_recovery WHERE expires_at<=$1',[now]);await this.query('UPDATE social_email SET pending=NULL,verify_hash=NULL,expires_at=NULL WHERE expires_at<=$1',[now]);await this.query('DELETE FROM social_sessions WHERE expires_at<=$1',[now]);await this.query('DELETE FROM social_invites WHERE expires_at<=$1',[now]);await this.query('DELETE FROM arcade_runs WHERE finished_at IS NULL AND started_at<$1',[now-86400000]);}
  async account(code,db=this.db){return (await this.query('SELECT '+ACCOUNT_COLUMNS+' FROM social_accounts WHERE code=$1',[code],db))[0]||null;}
  // Private, password-confirmed data copy. Explicit projections deliberately
  // exclude authentication hashes, recovery material and other users' settings.
