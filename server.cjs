@@ -195,12 +195,12 @@ class Rooms {
   sendPersonalBest(ws){const member=this.player(ws);if(!member||member.room.phase!=='over'||!ws.socialCode||!(ws.socialExpiresAt>this.now()))return;const b=member.room.personalBests?.get(ws.socialCode);if(b)this.send(ws,{type:'personal-best',round:member.room.round,category:b.category,value:b.value,previousValue:b.previousValue,improved:b.improved});}
   ranking(ws,shareResult){const a=this.player(ws);if(!a)return this.error(ws,'not_joined');const r=a.room;
     if(r.gameType!=='salvage'||typeof shareResult!=='boolean'||shareResult&&!['lobby','over'].includes(r.phase))return this.error(ws,'invalid_action');
-    a.p.shareResult=shareResult;if(!shareResult&&r.rankingRun&&!r.rankingRun.submitted)r.rankingRun.sharing[a.slot]=false;
+    r.readyRevision=(r.readyRevision||0)+1;a.p.shareResult=shareResult;if(!shareResult&&r.rankingRun&&!r.rankingRun.submitted)r.rankingRun.sharing[a.slot]=false;
     if(['lobby','over'].includes(r.phase)){r.players.forEach(p=>{if(p)p.ready=false;});r.rankingStatus='private';}this.broadcast(r);
   }
   salvageOptions(ws,mode,challengeId){const a=this.player(ws);if(!a)return this.error(ws,'not_joined');const r=a.room;
     if(r.gameType!=='salvage'||!['lobby','over'].includes(r.phase)||!['arcade','challenge'].includes(mode)||(mode==='challenge'?!SalvageChallenges.get(challengeId):challengeId!==null&&challengeId!==undefined))return this.error(ws,'invalid_action');
-    a.p.salvageVote={mode,challengeId:mode==='challenge'?challengeId:null};r.players.forEach(p=>{if(p)p.ready=false;});
+    r.readyRevision=(r.readyRevision||0)+1;a.p.salvageVote={mode,challengeId:mode==='challenge'?challengeId:null};r.players.forEach(p=>{if(p)p.ready=false;});
     const occupied=r.players.filter(Boolean),v=a.p.salvageVote;
     if(occupied.every(p=>p.ws&&p.salvageVote.mode===v.mode&&p.salvageVote.challengeId===v.challengeId)){
       r.salvage={...v};r.game=this.createRoomGame(r);r.phase='lobby';r.rankingStatus='private';r.rankingRun=null;r.events=[];
@@ -222,6 +222,18 @@ class Rooms {
     if(p.ws){const old=p.ws;this.members.delete(old);this.send(old,{type:'closed',reason:'replaced'});old.close?.(1000,'Session reconnected');if(['playing','countdown'].includes(r.phase)){r.phase='paused';r.game.pause();r.players.forEach(p=>{if(p)p.ready=false;});}}
     p.ws=ws;p.ready=false;p.away=false;p.input={axis:0,target:null,dx:0,dy:0,dir:null,fire:false};p.seq=-1;this.joined(ws,r,slot);
   }
+  readyStamp(r){return [r.game,r.phase,r.round,r.capacity,r.requiredPlayers,r.readyRevision||0,r.salvage?.mode,r.salvage?.challengeId,...r.players.flatMap(p=>[p,p?.ws,p?.vote,p?.salvageVote?.mode,p?.salvageVote?.challengeId,p?.ws?.socialCode,p?.ws?.socialTokenHash,p?.ws?.socialAuthGeneration,p?.ws?.socialAuthPending])];}
+  async requestReady(ws,authorize){
+    const a=this.player(ws);if(!a||ws.readyCheckPending||a.p.ready||!['lobby','paused','over'].includes(a.room.phase))return;
+    const r=a.room,stamp=this.readyStamp(r),current=()=>{const at=this.player(ws),next=this.readyStamp(r);return ws.readyState===1&&at?.room===r&&at.p===a.p&&next.length===stamp.length&&stamp.every((v,i)=>v===next[i]);};
+    // Eligibility must read one immutable room/account snapshot, not a mixture
+    // of identities and options that change while database work is pending.
+    const snapshot={gameType:r.gameType,salvage:r.salvage?{...r.salvage}:null,players:r.players.map(p=>p?{ws:p.ws?{socialCode:p.ws.socialCode}:null}:null)};
+    ws.readyCheckPending=true;
+    try{const allowed=await authorize(ws,snapshot);if(!current())return;if(allowed)this.ready(ws);else this.error(ws,'challenge_locked');}
+    catch{if(current())this.error(ws,'unavailable');}
+    finally{ws.readyCheckPending=false;}
+  }
   ready(ws){const a=this.player(ws);if(!a)return this.error(ws,'not_joined');const {room:r,p}=a;if(!['lobby','paused','over'].includes(r.phase))return;p.ready=true;p.away=false;
     const occupied=r.players.filter(Boolean),required=r.requiredPlayers||(r.gameType==='minigolf'?occupied.length:r.players.length);
     const agreed=r.gameType!=='salvage'||occupied.every(p=>p.salvageVote.mode===r.salvage.mode&&p.salvageVote.challengeId===r.salvage.challengeId);
@@ -230,8 +242,8 @@ class Rooms {
       r.phase='countdown';r.countdown=this.now()+3000;occupied.forEach(p=>{p.input={axis:0,target:null};p.inputAt=0;});
     }this.broadcast(r);
   }
-  profile(ws,name,cosmetics){const a=this.player(ws);if(!a)return this.error(ws,'not_joined');if(typeof name!=='string')return this.error(ws,'invalid_name');const clean=Array.from(name.replace(/[\u0000-\u001f\u007f-\u009f]/g,'').trim()).slice(0,18).join('');if(!clean)return this.error(ws,'invalid_name');a.p.name=clean;if(cosmetics!==undefined)a.p.cosmetics=Unlocks.normalize(cosmetics);a.p.ready=false;a.p.away=false;this.broadcast(a.room);}
-  vote(ws,game){const a=this.player(ws);if(!a)return this.error(ws,'not_joined');const r=a.room;if(!['lobby','paused','over'].includes(r.phase)||!GAME_TYPES.has(game))return this.error(ws,'invalid_game');const occupied=r.players.filter(Boolean);if(r.gameType==='salvage'&&r.capacity===1)return this.error(ws,'invalid_game');if(game!=='minigolf'&&occupied.length>2)return this.error(ws,'too_many_players');a.p.vote=game;a.p.ready=false;a.p.away=false;
+  profile(ws,name,cosmetics){const a=this.player(ws);if(!a)return this.error(ws,'not_joined');if(typeof name!=='string')return this.error(ws,'invalid_name');const clean=Array.from(name.replace(/[\u0000-\u001f\u007f-\u009f]/g,'').trim()).slice(0,18).join('');if(!clean)return this.error(ws,'invalid_name');a.room.readyRevision=(a.room.readyRevision||0)+1;a.p.name=clean;if(cosmetics!==undefined)a.p.cosmetics=Unlocks.normalize(cosmetics);a.p.ready=false;a.p.away=false;this.broadcast(a.room);}
+  vote(ws,game){const a=this.player(ws);if(!a)return this.error(ws,'not_joined');const r=a.room;if(!['lobby','paused','over'].includes(r.phase)||!GAME_TYPES.has(game))return this.error(ws,'invalid_game');const occupied=r.players.filter(Boolean);if(r.gameType==='salvage'&&r.capacity===1)return this.error(ws,'invalid_game');if(game!=='minigolf'&&occupied.length>2)return this.error(ws,'too_many_players');r.readyRevision=(r.readyRevision||0)+1;a.p.vote=game;a.p.ready=false;a.p.away=false;
     const votes=occupied.filter(p=>p.ws).map(p=>p.vote||r.gameType);if(votes.length===occupied.length&&votes.length>=2&&votes.every(v=>v===votes[0])&&votes[0]!==r.gameType){r.gameType=votes[0];r.capacity=r.gameType==='minigolf'?(r.requiredPlayers?Math.max(2,occupied.length):4):2;if(r.requiredPlayers)r.requiredPlayers=r.capacity;r.players=r.gameType==='minigolf'?[...occupied,...Array(4-occupied.length).fill(null)]:[...occupied,...Array(2-occupied.length).fill(null)];r.salvage=r.gameType==='salvage'?{mode:'arcade',challengeId:null}:null;r.players.forEach(p=>{if(p){p.salvageVote={mode:'arcade',challengeId:null};p.shareResult=false;}});r.rankingRun=null;r.rankingStatus='private';r.game=this.createRoomGame(r);r.round=0;r.phase='lobby';r.countdown=0;r.events=[];r.players.forEach(p=>{if(p){p.vote=r.gameType;p.ready=false;}});}this.broadcast(r);}
   pause(ws){const a=this.player(ws);if(!a)return;const r=a.room;
     // Losing focus while the lobby is open must not cancel a player's ready state.
@@ -337,7 +349,7 @@ function createServer(options={}){
         ws.socialCode=null;ws.socialTokenHash=null;ws.socialExpiresAt=0;ws.socialAuthPending=true;ws.socialPendingTokenHash=crypto.createHash('sha256').update(m.token).digest('hex');const generation=ws.socialAuthGeneration=(ws.socialAuthGeneration||0)+1;
         social.authenticate(m.token).then(account=>{if(ws.socialAuthGeneration!==generation||ws.readyState!==1)return;if(account&&rooms.player(ws)){ws.socialCode=account.code;ws.socialTokenHash=ws.socialPendingTokenHash;ws.socialExpiresAt=account.expiresAt;ws.socialPublic=account.publicProfile===true;ws.socialName=account.name;const member=rooms.player(ws)?.p;if(member){member.profileCode=account.code;member.hiddenProfile=!account.publicProfile;member.name=account.name;}}safeSend(ws,{type:'account',ok:!!ws.socialCode});if(ws.socialCode)rooms.sendPersonalBest(ws);}).catch(()=>safeSend(ws,{type:'account',ok:false})).finally(()=>{ws.socialAuthPending=false;ws.socialPendingTokenHash=null;});return;
       }
-       if(m.type==='create')rooms.create(ws,m.game,m);else if(m.type==='matchmake')rooms.matchmake(ws,m.game,m.capacity);else if(m.type==='join')rooms.join(ws,m.code);else if(m.type==='resume')rooms.resume(ws,m.code,m.token);else if(m.type==='profile')rooms.profile(ws,m.name,m.cosmetics);else if(m.type==='vote')rooms.vote(ws,m.game);else if(m.type==='salvage-options')rooms.salvageOptions(ws,m.mode,m.challengeId);else if(m.type==='ranking')rooms.ranking(ws,m.shareResult);else if(m.type==='ready')social.canStartRoom(ws,rooms.player(ws)?.room).then(allowed=>{if(allowed)rooms.ready(ws);else rooms.error(ws,'challenge_locked');}).catch(()=>rooms.error(ws,'unavailable'));else if(m.type==='input')rooms.input(ws,m);else if(m.type==='action')rooms.gameAction(ws,m);else if(m.type==='snapshot')rooms.setSnapshot(ws,m.snapshot);else if(m.type==='pause')rooms.pause(ws);else if(m.type==='leave')rooms.leave(ws);else if(m.type==='ping')safeSend(ws,{type:'pong',at:Number.isFinite(m.at)?m.at:0});else if(m.type==='qr'){
+       if(m.type==='create')rooms.create(ws,m.game,m);else if(m.type==='matchmake')rooms.matchmake(ws,m.game,m.capacity);else if(m.type==='join')rooms.join(ws,m.code);else if(m.type==='resume')rooms.resume(ws,m.code,m.token);else if(m.type==='profile')rooms.profile(ws,m.name,m.cosmetics);else if(m.type==='vote')rooms.vote(ws,m.game);else if(m.type==='salvage-options')rooms.salvageOptions(ws,m.mode,m.challengeId);else if(m.type==='ranking')rooms.ranking(ws,m.shareResult);else if(m.type==='ready')rooms.requestReady(ws,(member,room)=>social.canStartRoom(member,room));else if(m.type==='input')rooms.input(ws,m);else if(m.type==='action')rooms.gameAction(ws,m);else if(m.type==='snapshot')rooms.setSnapshot(ws,m.snapshot);else if(m.type==='pause')rooms.pause(ws);else if(m.type==='leave')rooms.leave(ws);else if(m.type==='ping')safeSend(ws,{type:'pong',at:Number.isFinite(m.at)?m.at:0});else if(m.type==='qr'){
         const a=rooms.player(ws);if(!a||ws.qrPending||ws.qrRoom===a.room.code)return;ws.qrPending=true;const code=a.room.code;
         const invite=new URL(site.href);invite.pathname='/room/'+encodeURIComponent(code);invite.search='';invite.hash='';
         QRCode.toDataURL(invite.href,{errorCorrectionLevel:'M',margin:4,width:296}).then(image=>{if(rooms.player(ws)?.room.code===code){safeSend(ws,{type:'qr',code,image,invite:invite.href});ws.qrRoom=code;}}).catch(()=>rooms.error(ws,'qr')).finally(()=>ws.qrPending=false);
