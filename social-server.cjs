@@ -111,7 +111,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
   if(req.method==='GET'&&url.pathname==='/social/admin/notice')return store.adminNotice();
   if(req.method==='GET'&&url.pathname.startsWith('/social/admin/player/'))return store.adminPlayer(cleanCode(url.pathname.slice('/social/admin/player/'.length)));
   const body=req.method==='GET'?{}:await readBody(req);
-  if(req.method==='POST'&&url.pathname==='/social/admin/recovery'){if(Object.keys(body).some(k=>!['code','confirmCode'].includes(k)))fail('invalid_input');const code=cleanCode(body.code);if(body.confirmCode!==code)fail('invalid_input');rate('recovery-admin:'+code,3,60e3);const token=crypto.randomBytes(32).toString('hex'),result=await store.issueRecovery(code,sessionHash(token));await store.query('INSERT INTO social_admin_audit(id,code,action,created_at) VALUES($1,$2,$3,$4)',[crypto.randomUUID(),code,'recovery-issued',now()]);return {...result,token};}
+  if(req.method==='POST'&&url.pathname==='/social/admin/recovery'){if(Object.keys(body).some(k=>!['code','confirmCode'].includes(k)))fail('invalid_input');const code=cleanCode(body.code);if(body.confirmCode!==code)fail('invalid_input');rate('recovery-admin:'+code,3,60e3);const token=crypto.randomBytes(32).toString('hex'),result=await store.issueRecovery(code,sessionHash(token),{audit:true});return {...result,token};}
   if(req.method==='POST'&&url.pathname==='/social/admin/player'){
    if(Object.keys(body).some(k=>!['code','confirmCode','action','revision','id'].includes(k))||!['unlock-all','restore-unlocks','reset-progress','reset-rankings','block-rankings','allow-rankings'].includes(body.action)||!Number.isSafeInteger(body.revision)||body.revision<0||typeof body.id!=='string'||!/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(body.id))fail('invalid_input');
    const code=cleanCode(body.code);if(body.confirmCode!==code)fail('invalid_input');rate('admin-player:'+hash,20,60e3);
@@ -160,7 +160,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
     if(!await ensureReady())fail(configured?'unavailable':'database_required',503);
     let viewer=null;if(req.headers.authorization)viewer=(await authenticateRequest(req)).account.code;
     if(url.pathname==='/social/rankings/categories'){json(res,200,await store.rankingCategories(url.searchParams.get('game')));return true;}
-    if(url.pathname==='/social/rankings/board'){json(res,200,await store.leaderboard(url.searchParams.get('category'),viewer,url.searchParams.get('scope')||'all'));return true;}
+    if(url.pathname==='/social/rankings/board'){json(res,200,await store.leaderboard(url.searchParams.get('category'),viewer,url.searchParams.get('scope')||'all',url.searchParams.get('verification')));return true;}
     if(url.pathname.startsWith('/social/public/')){const target=cleanCode(url.pathname.slice('/social/public/'.length));if(viewer&&await store.blocked(viewer,target))fail('not_found',404);json(res,200,{profile:await store.publicProfile(target)});return true;}
     fail('not_found',404);
    }

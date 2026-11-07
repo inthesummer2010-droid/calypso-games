@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS arcade_runs(id UUID PRIMARY KEY, code TEXT NOT NULL R
 CREATE INDEX IF NOT EXISTS arcade_runs_account ON arcade_runs(code,started_at);
 CREATE TABLE IF NOT EXISTS arcade_bests(code TEXT NOT NULL REFERENCES social_accounts(code) ON DELETE CASCADE, category TEXT NOT NULL REFERENCES arcade_categories(id), value BIGINT NOT NULL, primary_value BIGINT NOT NULL, secondary_value BIGINT NOT NULL, elapsed_ms BIGINT NOT NULL, achieved_at BIGINT NOT NULL, team JSONB NOT NULL DEFAULT '[]', source TEXT NOT NULL, PRIMARY KEY(code,category));
 ALTER TABLE arcade_bests ADD COLUMN IF NOT EXISTS details JSONB NOT NULL DEFAULT '{}';
+CREATE TABLE IF NOT EXISTS arcade_bests_by_trust(code TEXT NOT NULL REFERENCES social_accounts(code) ON DELETE CASCADE,category TEXT NOT NULL REFERENCES arcade_categories(id),verification TEXT NOT NULL CHECK(verification IN ('verified','reported')),value BIGINT NOT NULL,primary_value BIGINT NOT NULL,secondary_value BIGINT NOT NULL,elapsed_ms BIGINT NOT NULL,achieved_at BIGINT NOT NULL,team JSONB NOT NULL DEFAULT '[]',source TEXT NOT NULL,details JSONB NOT NULL DEFAULT '{}',PRIMARY KEY(code,category,verification));
+CREATE INDEX IF NOT EXISTS arcade_bests_verified_board ON arcade_bests_by_trust(category,verification,primary_value DESC,secondary_value DESC,achieved_at,code);
 CREATE INDEX IF NOT EXISTS arcade_bests_board ON arcade_bests(category,primary_value DESC,secondary_value DESC,achieved_at,code);
 CREATE TABLE IF NOT EXISTS arcade_challenges(code TEXT PRIMARY KEY REFERENCES social_accounts(code) ON DELETE CASCADE, progress JSONB NOT NULL DEFAULT '{"version":1,"records":{}}');
 `;
@@ -48,11 +50,16 @@ function install(Store,SocialError){
    await this.query('UPDATE arcade_challenges SET progress=$2::jsonb WHERE code=$1',[code,JSON.stringify(progress)],db);return progress;
   },
   async putBest(code,cat,r,team,source,db){
+   // Only server-owned simulations can acquire this provenance. HTTP finish
+   // always supplies its own client label; Arena host snapshots are reported.
+   const verification=source==='online-server'?'verified':'reported';
    await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db);
    if((await this.playerAccess(code,db)).rankingBlocked)return {ok:true,ranked:false,improved:false};
-   const previous=(await this.query('SELECT value FROM arcade_bests WHERE code=$1 AND category=$2',[code,cat.id],db))[0];
-   const rows=await this.query(`INSERT INTO arcade_bests(code,category,value,primary_value,secondary_value,elapsed_ms,achieved_at,team,source,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb) ON CONFLICT(code,category) DO UPDATE SET value=EXCLUDED.value,primary_value=EXCLUDED.primary_value,secondary_value=EXCLUDED.secondary_value,elapsed_ms=EXCLUDED.elapsed_ms,achieved_at=EXCLUDED.achieved_at,team=EXCLUDED.team,source=EXCLUDED.source,details=EXCLUDED.details WHERE (EXCLUDED.primary_value,EXCLUDED.secondary_value)>(arcade_bests.primary_value,arcade_bests.secondary_value) RETURNING value`,[code,cat.id,r.value,r.primary,r.secondary,r.elapsedMs,this.now(),JSON.stringify(team),source,JSON.stringify(r.summary||{})],db);
-   return {ok:true,ranked:true,improved:rows.length>0,category:cat,value:r.value,previousValue:previous?Number(previous.value):null};
+   const previous=(await this.query('SELECT value FROM arcade_bests_by_trust WHERE code=$1 AND category=$2 AND verification=$3',[code,cat.id,verification],db))[0];
+   const rows=await this.query(`INSERT INTO arcade_bests_by_trust(code,category,value,primary_value,secondary_value,elapsed_ms,achieved_at,team,source,details,verification) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11) ON CONFLICT(code,category,verification) DO UPDATE SET value=EXCLUDED.value,primary_value=EXCLUDED.primary_value,secondary_value=EXCLUDED.secondary_value,elapsed_ms=EXCLUDED.elapsed_ms,achieved_at=EXCLUDED.achieved_at,team=EXCLUDED.team,source=EXCLUDED.source,details=EXCLUDED.details WHERE (EXCLUDED.primary_value,EXCLUDED.secondary_value)>(arcade_bests_by_trust.primary_value,arcade_bests_by_trust.secondary_value) RETURNING value`,[code,cat.id,r.value,r.primary,r.secondary,r.elapsedMs,this.now(),JSON.stringify(team),source,JSON.stringify(r.summary||{}),verification],db);
+   // Preserve the old conflict target for rolling deploys and application rollback.
+   await this.query(`INSERT INTO arcade_bests(code,category,value,primary_value,secondary_value,elapsed_ms,achieved_at,team,source,details) VALUES($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb) ON CONFLICT(code,category) DO UPDATE SET value=EXCLUDED.value,primary_value=EXCLUDED.primary_value,secondary_value=EXCLUDED.secondary_value,elapsed_ms=EXCLUDED.elapsed_ms,achieved_at=EXCLUDED.achieved_at,team=EXCLUDED.team,source=EXCLUDED.source,details=EXCLUDED.details WHERE (EXCLUDED.primary_value,EXCLUDED.secondary_value)>(arcade_bests.primary_value,arcade_bests.secondary_value)`,[code,cat.id,r.value,r.primary,r.secondary,r.elapsedMs,this.now(),JSON.stringify(team),source,JSON.stringify(r.summary||{})],db);
+   return {ok:true,ranked:true,improved:rows.length>0,category:cat,value:r.value,previousValue:previous?Number(previous.value):null,source,verification};
   },
   async onlineResult(run){return this.transaction(async db=>{
    const cat=await this.rankingCategory(run.game,run.config,db),members=[];
@@ -69,32 +76,68 @@ function install(Store,SocialError){
    if(!raw||!Number.isInteger(raw.score)||!Number.isInteger(raw.opponent)||raw.score<0||raw.opponent<0||Math.max(raw.score,raw.opponent)!==7||raw.score===raw.opponent||ms<100||ms>86400000)return null;
    const won=raw.score===7,cat=await this.rankingCategory('rally',{mode:'online',players:2,metric:'wins'},db);
    const tally=(await this.query(`INSERT INTO arcade_rally_totals(code,category,wins,losses,matches,updated_at) VALUES($1,$2,$3,$4,1,$5) ON CONFLICT(code,category) DO UPDATE SET wins=arcade_rally_totals.wins+EXCLUDED.wins,losses=arcade_rally_totals.losses+EXCLUDED.losses,matches=arcade_rally_totals.matches+1,updated_at=EXCLUDED.updated_at RETURNING *`,[code,cat.id,won?1:0,won?0:1,this.now()],db))[0];
-   if(!won){await this.query('UPDATE arcade_bests SET details=$3::jsonb WHERE code=$1 AND category=$2',[code,cat.id,JSON.stringify({matches:Number(tally.matches),losses:Number(tally.losses)})],db);return null;}
+   if(!won){await this.query('UPDATE arcade_bests_by_trust SET details=$3::jsonb WHERE code=$1 AND category=$2',[code,cat.id,JSON.stringify({matches:Number(tally.matches),losses:Number(tally.losses)})],db);return null;}
    return this.putBest(code,cat,{value:Number(tally.wins),primary:Number(tally.wins),secondary:0,elapsedMs:ms,summary:{matches:Number(tally.matches),losses:Number(tally.losses)}},[],'online-server',db);
   },
   async rankingCategories(game){if(!Object.hasOwn(Rules.games,game))fail('invalid_input');const rows=await this.query('SELECT definition FROM arcade_categories WHERE game=$1 ORDER BY id',[game]);return {categories:rows.map(x=>x.definition).filter(Rules.current)};},
-  async leaderboard(category,viewer,scope='all'){
+  async leaderboard(category,viewer,scope='all',verification=null){
    if(!['all','friends'].includes(scope))fail('invalid_input');if(scope==='friends'&&!viewer)fail('unauthorized',401);
+   if(verification!==null&&!['verified','reported'].includes(verification))fail('invalid_input');
    const cat=(await this.query('SELECT definition FROM arcade_categories WHERE id=$1',[category]))[0]?.definition;if(!cat||!Rules.current(cat))fail('not_found',404);
+   if(verification===null)verification=await this.count("SELECT COUNT(*) AS n FROM arcade_bests_by_trust WHERE category=$1 AND verification='verified'",[category])?'verified':'reported';
    // Privacy is evaluated for every read; no stale materialized public names.
-   const cte=`WITH ranked AS (SELECT b.*,a.name,a.avatar,ROW_NUMBER() OVER(ORDER BY primary_value DESC,secondary_value DESC,achieved_at ASC,b.code ASC) AS rank FROM arcade_bests b JOIN social_accounts a ON a.code=b.code WHERE b.category=$1 AND a.public_profile=TRUE AND NOT EXISTS(SELECT 1 FROM social_player_access pa WHERE pa.code=b.code AND pa.ranking_blocked=TRUE)
+   const cte=`WITH ranked AS (SELECT b.*,a.name,a.avatar,ROW_NUMBER() OVER(ORDER BY primary_value DESC,secondary_value DESC,achieved_at ASC,b.code ASC) AS rank FROM arcade_bests_by_trust b JOIN social_accounts a ON a.code=b.code WHERE b.category=$1 AND b.verification=$4 AND a.public_profile=TRUE AND NOT EXISTS(SELECT 1 FROM social_player_access pa WHERE pa.code=b.code AND pa.ranking_blocked=TRUE)
     AND ($3='all' OR b.code=$2 OR EXISTS(SELECT 1 FROM social_friends f WHERE (f.first_code=$2 AND f.second_code=b.code) OR (f.second_code=$2 AND f.first_code=b.code)))
     AND NOT EXISTS(SELECT 1 FROM social_blocks x WHERE (x.sender=$2 AND x.recipient=b.code) OR (x.recipient=$2 AND x.sender=b.code))
     AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(b.team) t(code) JOIN social_accounts p ON p.code=t.code WHERE p.public_profile=FALSE OR EXISTS(SELECT 1 FROM social_blocks x WHERE (x.sender=$2 AND x.recipient=p.code) OR (x.recipient=$2 AND x.sender=p.code)))) `;
-   const rows=await this.query(cte+'SELECT * FROM ranked WHERE rank<=10 OR code=$2 OR rank BETWEEN (SELECT rank-1 FROM ranked WHERE code=$2) AND (SELECT rank+1 FROM ranked WHERE code=$2) ORDER BY rank',[category,viewer||'',scope]);
-   const project=r=>({rank:Number(r.rank),code:r.code,name:r.name,avatar:Number(r.avatar),value:Number(r.value),own:r.code===viewer,team:cat.team,source:r.source,details:r.details||{}});
-   const own=rows.find(r=>r.code===viewer);const personal=viewer?(await this.query('SELECT value FROM arcade_bests WHERE category=$1 AND code=$2',[category,viewer]))[0]:null;
-   return {category:cat,scope,entries:rows.filter(x=>Number(x.rank)<=10).map(project),neighbors:rows.filter(x=>Number(x.rank)>10).map(project),own:own?project(own):null,personal:personal?{value:Number(personal.value),hidden:!own}:null};
+   const rows=await this.query(cte+'SELECT * FROM ranked WHERE rank<=10 OR code=$2 OR rank BETWEEN (SELECT rank-1 FROM ranked WHERE code=$2) AND (SELECT rank+1 FROM ranked WHERE code=$2) ORDER BY rank',[category,viewer||'',scope,verification]);
+   const project=r=>({rank:Number(r.rank),code:r.code,name:r.name,avatar:Number(r.avatar),value:Number(r.value),own:r.code===viewer,team:cat.team,source:r.source,verification:r.verification,details:r.details||{}});
+   const own=rows.find(r=>r.code===viewer);const personal=viewer?(await this.query('SELECT value FROM arcade_bests_by_trust WHERE category=$1 AND code=$2 AND verification=$3',[category,viewer,verification]))[0]:null;
+   return {category:cat,scope,verification,entries:rows.filter(x=>Number(x.rank)<=10).map(project),neighbors:rows.filter(x=>Number(x.rank)>10).map(project),own:own?project(own):null,personal:personal?{value:Number(personal.value),hidden:!own}:null};
   },
   async savePass(code,pins){if(!Array.isArray(pins)||pins.length>3||pins.some(id=>typeof id!=='string')||new Set(pins).size!==pins.length)fail('invalid_input');const p=await this.publicProfile(code,true);if(pins.some(id=>!p.achievements.some(a=>a.id===id)))fail('invalid_input');await this.query('INSERT INTO arcade_pass_profile(code,pins) VALUES($1,$2::jsonb) ON CONFLICT(code) DO UPDATE SET pins=EXCLUDED.pins',[code,JSON.stringify(pins)]);return {ok:true};},
-  async publicProfile(code,owner=false){const account=await this.account(code);if(!account||!owner&&!account.public_profile)fail('not_found',404);const rows=await this.query('SELECT c.definition,b.value,b.details FROM arcade_bests b JOIN arcade_categories c ON c.id=b.category WHERE b.code=$1 AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(b.team) t(code) JOIN social_accounts p ON p.code=t.code WHERE p.public_profile=FALSE) ORDER BY c.game,c.id',[code]);const progress=await this.challengeProgress(code);const stats={...(account.share_progress?account.progress?.stats||{}:{})};
+  async publicProfile(code,owner=false){const account=await this.account(code);if(!account||!owner&&!account.public_profile)fail('not_found',404);const rows=await this.query('SELECT c.definition,b.value,b.details,b.source,b.verification FROM arcade_bests_by_trust b JOIN arcade_categories c ON c.id=b.category WHERE b.code=$1 AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(b.team) t(code) JOIN social_accounts p ON p.code=t.code WHERE p.public_profile=FALSE) ORDER BY c.game,c.id,b.verification',[code]);const progress=await this.challengeProgress(code);const stats={...(account.share_progress?account.progress?.stats||{}:{})};
    const counts=await this.query('SELECT c.game,COUNT(*) AS n FROM arcade_runs r JOIN arcade_categories c ON c.id=r.category WHERE r.code=$1 AND r.finished_at IS NOT NULL GROUP BY c.game',[code]);
    for(const row of counts)stats[row.game+'_games']=Math.max(Number(stats[row.game+'_games'])||0,Number(row.n));
    stats.hub_rounds=Math.max(Number(stats.hub_rounds)||0,counts.reduce((n,r)=>n+Number(r.n),0));
    for(const row of rows)if(row.definition.kind==='score'){const key=row.definition.game+'_best';stats[key]=Math.max(Number(stats[key])||0,Number(row.value));}
    const achievements=achievementRequirements.filter(a=>(Number(stats[a.req_key])||0)>=a.req_val).map(a=>({id:a.id,name:a.name,desc:a.desc,req_key:a.req_key,req_val:a.req_val}));
    achievements.push(...Object.entries(progress.records).filter(([,r])=>r.completions>0).map(([id,r])=>({id:'salvage:'+id,name:'Neon Salvage · '+id,stars:r.stars})));
-   const pins=(await this.query('SELECT pins FROM arcade_pass_profile WHERE code=$1',[code]))[0]?.pins||[];return {showcased:account.share_progress?pins.filter(id=>achievements.some(a=>a.id===id)):[],code,name:account.name,avatar:Number(account.avatar),bests:rows.filter(r=>Rules.current(r.definition)).map(r=>({category:r.definition,value:Number(r.value),details:r.details||{}})),achievements};}
+   const pins=(await this.query('SELECT pins FROM arcade_pass_profile WHERE code=$1',[code]))[0]?.pins||[];return {showcased:account.share_progress?pins.filter(id=>achievements.some(a=>a.id===id)):[],code,name:account.name,avatar:Number(account.avatar),bests:rows.filter(r=>Rules.current(r.definition)).map(r=>({category:r.definition,value:Number(r.value),source:r.source,verification:r.verification,details:r.details||{}})),achievements};}
  });
 }
-module.exports={SCHEMA,install};
+async function migrate(db){
+ // The legacy table and (code,category) key stay usable by the previous server.
+ // Its writes acquire provenance here; they never merge two trust tiers.
+ await db.query(`CREATE OR REPLACE FUNCTION arcade_sync_legacy_best() RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER AS $$
+ BEGIN
+  IF TG_OP='DELETE' THEN
+   DELETE FROM arcade_bests_by_trust WHERE code=OLD.code AND category=OLD.category AND verification=CASE WHEN OLD.source='online-server' THEN 'verified' ELSE 'reported' END;
+   RETURN OLD;
+  END IF;
+  INSERT INTO arcade_bests_by_trust(code,category,verification,value,primary_value,secondary_value,elapsed_ms,achieved_at,team,source,details)
+  VALUES(NEW.code,NEW.category,CASE WHEN NEW.source='online-server' THEN 'verified' ELSE 'reported' END,NEW.value,NEW.primary_value,NEW.secondary_value,NEW.elapsed_ms,NEW.achieved_at,NEW.team,NEW.source,NEW.details)
+  ON CONFLICT(code,category,verification) DO UPDATE SET value=EXCLUDED.value,primary_value=EXCLUDED.primary_value,secondary_value=EXCLUDED.secondary_value,elapsed_ms=EXCLUDED.elapsed_ms,achieved_at=EXCLUDED.achieved_at,team=EXCLUDED.team,source=EXCLUDED.source,details=EXCLUDED.details
+  WHERE (EXCLUDED.primary_value,EXCLUDED.secondary_value)>(arcade_bests_by_trust.primary_value,arcade_bests_by_trust.secondary_value);
+  RETURN NEW;
+ END $$`);
+ await db.query('CREATE OR REPLACE TRIGGER arcade_sync_legacy_best AFTER INSERT OR UPDATE OR DELETE ON arcade_bests FOR EACH ROW EXECUTE FUNCTION arcade_sync_legacy_best()');
+ await db.query(`CREATE OR REPLACE FUNCTION arcade_cleanup_trust_bests() RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER AS $$
+ DECLARE target_code TEXT;
+ BEGIN
+  IF TG_TABLE_NAME='social_accounts' THEN target_code=OLD.code;
+  ELSE
+   IF NEW.action NOT IN ('reset-progress','reset-rankings','block-rankings') THEN RETURN NEW; END IF;
+   target_code=NEW.code;
+  END IF;
+  DELETE FROM arcade_bests_by_trust WHERE code=target_code OR team @> jsonb_build_array(target_code);
+  IF TG_OP='DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+ END $$`);
+ await db.query('CREATE OR REPLACE TRIGGER arcade_cleanup_trust_account AFTER DELETE ON social_accounts FOR EACH ROW EXECUTE FUNCTION arcade_cleanup_trust_bests()');
+ await db.query('CREATE OR REPLACE TRIGGER arcade_cleanup_trust_admin AFTER INSERT ON social_admin_audit FOR EACH ROW EXECUTE FUNCTION arcade_cleanup_trust_bests()');
+ await db.query(`INSERT INTO arcade_bests_by_trust(code,category,verification,value,primary_value,secondary_value,elapsed_ms,achieved_at,team,source,details)
+ SELECT code,category,CASE WHEN source='online-server' THEN 'verified' ELSE 'reported' END,value,primary_value,secondary_value,elapsed_ms,achieved_at,team,source,details FROM arcade_bests
+ ON CONFLICT(code,category,verification) DO NOTHING`);
+}
+module.exports={SCHEMA,install,migrate};

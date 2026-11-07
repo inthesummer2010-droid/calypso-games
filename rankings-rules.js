@@ -3,17 +3,21 @@
  const games={arena:'Ultimate Arena',snake:'Snake',breaker:'Neon Breaker',rally:'Neon Rally',orbit:'Orbit Dash',prism:'Prism Merge',cloud:'Cloud Hop',tower:'Tower Bastion',crystalrun:'Crystal Run 3D',newyork:'New York Rush',minigolf:'Minigolf Cup',salvage:'Neon Salvage',royal:'Royal Cards'};
  const keys=['mode','players','difficulty','map','event','mission','challengeId','endless','timeAttack','holes','speed','obstacles','walls','bonus','metric'];
  const allowed={arena:['mode','players','difficulty','map','event'],snake:['mode','players','speed','walls','obstacles','bonus'],breaker:['players'],rally:['mode','players','difficulty','metric'],orbit:['players'],prism:['timeAttack','players'],cloud:['players'],tower:['map','challengeId','endless','players','mode'],crystalrun:['mission','players','metric'],newyork:['difficulty','players'],minigolf:['holes','players','mode'],salvage:['mode','players','challengeId']};
+ const choices={arena:{mode:[0,1,2,3,4,'0','1','2','3','4','arena-catch','arena-zombie','arena-boss'],difficulty:[0,1,2],map:[0,1,2,3,4,5,6,7],event:['off','double_points','supply','boss_rush']},snake:{mode:['classic','speedrun','maze','survival','mirror','fruit_frenzy','online'],speed:[0,1,2,3,4,5],walls:[0,1],obstacles:[0,1,2,3,4],bonus:[0,1]},rally:{mode:['computer','local','online'],difficulty:[0,1,2],metric:['wins']},prism:{timeAttack:[false,true]},tower:{map:['meadow','pine','canyon','frostline','skybridge'],challengeId:['balanced','siege','bounty','boss_rush'],endless:[false,true],mode:['local','online']},crystalrun:{mission:['collector','distance','clean'],metric:['gems']},newyork:{difficulty:['normal','hard']},minigolf:{holes:[3,6,9],mode:['local','online']},salvage:{mode:['survival','salvage','challenge']}};
  const error=()=>{throw Error('invalid_input');};
  function category(game,raw={}){
   if(game==='royal')return {id:'royal:local:v1',game,config:{players:1},kind:'local',team:false,localOnly:true};
   if(!Object.hasOwn(games,game)||!raw||typeof raw!=='object'||Array.isArray(raw)||Object.keys(raw).some(k=>!allowed[game].includes(k)))error();
   const config={};for(const key of keys){const v=raw[key];if(v===undefined||v===null||v==='')continue;if(typeof v==='boolean')config[key]=v;else if(Number.isInteger(v)&&v>=0&&v<=100)config[key]=v;else if(typeof v==='string'&&/^[a-zA-Z0-9_-]{1,32}$/.test(v))config[key]=v;else error();}
+  for(const [key,values]of Object.entries(choices[game]||{}))if(config[key]!==undefined&&!values.includes(config[key]))error();
   config.players=config.players??1;if(![1,2,3,4].includes(config.players)||config.players>2&&game!=='minigolf')error();
+  if(['breaker','orbit','prism','cloud','crystalrun','newyork'].includes(game)&&config.players!==1)error();
   if(game==='salvage'&&config.mode&&!['survival','salvage','challenge'].includes(config.mode))error();
   if(game==='minigolf'&&config.holes!==undefined&&![3,6,9].includes(config.holes))error();
   if(game==='arena'&&config.mode!==undefined&&!['0','1','2','3','4','arena-catch','arena-zombie','arena-boss'].includes(String(config.mode)))error();
   if(config.difficulty!==undefined&&![0,1,2,'normal','hard'].includes(config.difficulty))error();
   if(game==='salvage'&&config.mode==='challenge'&&!/^c(0[1-9]|[12][0-9]|30)$/.test(config.challengeId||''))error();
+  if(config.challengeId!==undefined&&game==='salvage'&&config.mode!=='challenge')error();
   if(config.metric!==undefined&&!((game==='crystalrun'&&config.metric==='gems')||(game==='rally'&&config.metric==='wins')))error();if(game==='rally'&&config.metric==='wins'){if(!['computer','local','online'].includes(config.mode))error();if(config.mode==='computer'){if(config.players!==1)error();config.difficulty=config.difficulty??1;}else{if(config.players!==2)error();delete config.difficulty;}}
   const team=config.players>1&&(['salvage','tower'].includes(game)||game==='arena'&&['2','4','arena-zombie','arena-boss'].includes(String(config.mode)));
   const timedFinish=game==='tower'&&!config.endless||game==='breaker'||game==='prism'&&!config.timeAttack;
@@ -25,17 +29,17 @@
   return {id,game,config,kind,team,orderHelp,label:label.replace(/ · $/,'')};
  }
  function result(cat,raw,elapsedMs){if(cat.localOnly)return null;
-  if(!raw||typeof raw!=='object'||!Number.isFinite(elapsedMs)||elapsedMs<100||elapsedMs>86400000)error();
+  if(!raw||typeof raw!=='object'||Array.isArray(raw)||!Number.isFinite(elapsedMs)||elapsedMs<100||elapsedMs>86400000)error();
   const ms=Math.round(elapsedMs),number=(value,max=1e9)=>{if(!Number.isFinite(value)||value<0||value>max)error();return Math.floor(value);};
   if(cat.game==='crystalrun'&&Number(raw.gems)>10+ms/100)error();
   let value,secondary=cat.game==='salvage'&&cat.config.mode==='survival'?ms:-ms,completed=true;
   if(cat.kind==='wins'){return null;}else if(cat.kind==='gems'){value=number(raw.gems,100000);if(value===0)return null;secondary=number(raw.score);
   }else if(cat.kind==='margin'){const score=number(raw.score,7),opponent=number(raw.opponent,7);if(Math.max(score,opponent)!==7)error();if(score!==7||opponent===7)return null;value=score-opponent;secondary=-ms;
   }else if(cat.kind==='strokes'){
-   if(!Array.isArray(raw.strokes)||raw.strokes.length!==cat.config.players||raw.holes!==(cat.config.holes||9))error();
+   if(!Array.isArray(raw.strokes)||raw.strokes.length!==cat.config.players||!raw.strokes.every(n=>Number.isSafeInteger(n)&&n>=raw.holes&&n<=1000)||raw.holes!==(cat.config.holes||9)||raw.playerIndex!==undefined&&(!Number.isInteger(raw.playerIndex)||raw.playerIndex<0||raw.playerIndex>=cat.config.players))error();
    value=number(raw.strokes[raw.playerIndex||0],1000);if(value<raw.holes)error();
   }else if(cat.kind==='time'){
-   if(['tower','breaker','prism'].includes(cat.game)){if(raw.won!==true)return null;if(cat.game==='tower'&&raw.waves!==12||cat.game==='breaker'&&raw.level!==5||cat.game==='prism'&&raw.tile<2048)error();value=Math.round(Number(raw.elapsed)*1000);if(!Number.isFinite(value)||value<100||value>ms+3000)error();secondary=number(raw.score);
+   if(['tower','breaker','prism'].includes(cat.game)){if(raw.won!==true)return null;if(cat.game==='tower'&&raw.waves!==12||cat.game==='breaker'&&raw.level!==5||cat.game==='prism'&&(!Number.isSafeInteger(raw.tile)||raw.tile<2048||raw.tile>2**30||!Number.isInteger(Math.log2(raw.tile))))error();if(typeof raw.elapsed!=='number')error();value=Math.round(raw.elapsed*1000);if(!Number.isFinite(value)||value<100||value>ms+3000)error();secondary=number(raw.score);
     }else if(cat.game==='arena'){if(raw.won!==true)return null;value=number(raw.seconds,86400)*1000;secondary=number(raw.score);if(value>ms+3000)error();return {value,primary:-value,secondary,elapsedMs:ms,completed:true,summary:{score:Number(raw.score)||0}};}
    else {const c=raw.challenge;if(!c||c.id!==cat.config.challengeId||c.status!=='completed'||!Number.isFinite(c.elapsed))return null;if(c.players!==cat.config.players)error();
    value=Math.round(c.elapsed*1000);secondary=number(raw.score);if(value>ms+3000)error();}
