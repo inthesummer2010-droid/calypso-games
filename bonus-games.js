@@ -774,6 +774,7 @@
     secretTap(){const now=performance.now();if(now-this.secretTapAt>1250)this.secretTaps=0;this.secretTapAt=now;this.secretTaps++;if(this.secretTaps>=5){this.secretTaps=0;this.secretUntil=now+5000;this.options.audio?.play('secret');}}
     draw(){const motion=this.options.motion?.()!==false,time=motion?performance.now()/1000:0;this.ctx.save();if(this.kind==='tower')this.ctx.setTransform(this.canvas.width/TD_W,0,0,this.canvas.height/TD_H,0,0);render(this.ctx,this.model,this.kind,time,motion,k=>this.tr(k),this.best);this.ctx.restore();if(this.previewCanvas){const c=this.previewCanvas.getContext('2d');preview(c,this.kind,600,230,time,this.currentWorld().id);if(this.model.phase==='menu'&&performance.now()<this.secretUntil)drawSecretPreview(c,this.kind,time);}}
   }
-  const api={Prism,Cloud,TowerDefense,towerResolution,View,COPY,WORLDS:CLOUD_WORLDS,PRISM_WORLDS,worldIsUnlocked,worldName:cloudWorldName,render,preview,drawFox:fox,drawSecretPreview,open:(kind,options)=>new View(kind,options)};
+  const towerText=(key,language='en')=>tdFusionName(key,language)||COPY[language]?.[key]||TOWER_COPY[language]?.[key]||COPY.en[key]||TOWER_COPY.en[key]||key;
+  const api={Prism,Cloud,TowerDefense,towerResolution,towerText,View,COPY,WORLDS:CLOUD_WORLDS,PRISM_WORLDS,worldIsUnlocked,worldName:cloudWorldName,render,preview,drawFox:fox,drawSecretPreview,open:(kind,options)=>new View(kind,options)};
   if(typeof module==='object'&&module.exports)module.exports=api;else root.BonusGames=api;
 })(typeof window==='object'?window:globalThis);
