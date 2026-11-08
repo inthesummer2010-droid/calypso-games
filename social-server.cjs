@@ -222,6 +222,10 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
      if('visibility'in body){if(!['friends','public','private'].includes(body.visibility))fail('invalid_input');fields.visibility=body.visibility;}
      for(const key of ['shareProgress','showOnline','publicProfile'])if(key in body){if(typeof body[key]!=='boolean')fail('invalid_input');fields[key]=body[key];}
      const updated=await store.update(code,fields);if(!updated)fail('unauthorized',401);if(fields.showOnline===false)presence.delete(code);if('publicProfile'in fields||'name'in fields)rooms?.profilePrivacy?.(code,!!updated.public_profile,updated.name);value={me:await profile(code,code,updated)};
+    }else if(req.method==='POST'&&url.pathname==='/social/logout-others'){
+     rate('logout-others:'+code,5,15*60e3);if(Object.keys(body).some(k=>k!=='password'))fail('invalid_input');
+     if(!await passwordJob(()=>verifyPassword(password(body.password),account.password_hash)))fail('wrong_password',401);
+     const hashes=await store.logoutOthers(code,sessionHash(token),account.password_hash);revokeSockets(code,{hashes});value={ok:true,revoked:hashes.length};
     }else if(req.method==='POST'&&url.pathname==='/social/logout'){const hash=sessionHash(token);await store.logout(hash);revokeSockets(code,{hashes:[hash]});presence.delete(code);value={ok:true};}
     else if(req.method==='DELETE'&&url.pathname==='/social/me'){
      const pass=password(body.password);if(!await passwordJob(()=>verifyPassword(pass,account.password_hash)))fail('wrong_password',401);const hashes=await store.sessionHashes(code);await store.deleteAccount(code,account.password_hash);revokeSockets(code,{hashes,all:true});rooms?.invalidateCosmetics?.();presence.delete(code);value={ok:true};

@@ -230,6 +230,12 @@ class SocialStore{
  });}
  async session(hash){return (await this.query('SELECT a.'+ACCOUNT_COLUMNS.split(',').join(',a.')+',s.expires_at FROM social_sessions s JOIN social_accounts a ON a.code=s.code WHERE s.hash=$1 AND s.expires_at>$2',[hash,this.now()]))[0]||null;}
  async logout(hash){await this.query('DELETE FROM social_sessions WHERE hash=$1',[hash]);}
+ async logoutOthers(code,currentHash,expectedPasswordHash){return this.transaction(async db=>{
+  await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db);
+  const account=await this.account(code,db);
+  if(!account||account.password_hash!==expectedPasswordHash||!(await this.query('SELECT 1 FROM social_sessions WHERE code=$1 AND hash=$2 AND expires_at>$3',[code,currentHash,this.now()],db)).length)fail('unauthorized',401);
+  return (await this.query('DELETE FROM social_sessions WHERE code=$1 AND hash<>$2 RETURNING hash',[code,currentHash],db)).map(row=>row.hash);
+ });}
  async adPolicy(code){
   const row=(await this.query("SELECT ads_disabled FROM social_ad_policy WHERE key='global'"))[0];if(!row)throw new Error('Missing advertising policy');
   const result={adsDisabled:!!row.ads_disabled};
