@@ -227,6 +227,17 @@ class SocialStore{
   if(!rows.length)return null;await this.insertSession(db,code,session);return rows[0];
  });}
  async googleState(code){return {linked:(await this.query('SELECT 1 FROM social_google WHERE code=$1',[code])).length===1};}
+ async registerGoogle({code,name,avatar,passwordHash,publicProfile=false,username,subjectHash},session){return this.transaction(async db=>{
+  await this.query("SELECT key FROM social_meta WHERE key='accounts' FOR UPDATE",[],db);
+  if((await this.query('SELECT 1 FROM social_google WHERE subject_hash=$1',[subjectHash],db)).length)fail('google_already_linked',409);
+  if(await this.count('SELECT COUNT(*) AS n FROM social_accounts',[],db)>=this.limits.accounts)fail('rate',429);
+  if((await this.query('SELECT 1 FROM social_accounts WHERE lower(username)=lower($1)',[code],db)).length)return null;
+  if((await this.query('SELECT 1 FROM social_accounts WHERE lower(username)=$1 OR code=upper($1)',[username],db)).length)fail('username_taken',409);
+  const rows=await this.query('INSERT INTO social_accounts(code,name,avatar,password_hash,created_at,public_profile,username) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(code) DO NOTHING RETURNING '+ACCOUNT_COLUMNS,[code,name,avatar,passwordHash,this.now(),publicProfile,username],db);
+  if(!rows.length)return null;
+  await this.query('INSERT INTO social_google(code,subject_hash,created_at) VALUES($1,$2,$3)',[code,subjectHash,this.now()],db);
+  await this.insertSession(db,code,session);return rows[0];
+ });}
  async linkGoogle(code,passwordHash,currentHash,subjectHash){return this.transaction(async db=>{
   await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db);
   if(!(await this.query('SELECT 1 FROM social_accounts a JOIN social_sessions s ON s.code=a.code WHERE a.code=$1 AND a.password_hash=$2 AND s.hash=$3 AND s.expires_at>$4',[code,passwordHash,currentHash,this.now()],db)).length)fail('unauthorized',401);

@@ -63,7 +63,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
   if(url.pathname==='/social/google/state'&&req.method==='GET'){const {account}=await authenticateRequest(req);return store.googleState(account.code);}
   if(url.pathname==='/social/google/challenge'&&req.method==='POST'){
    if(Object.keys(body).some(k=>!['mode','password'].includes(k))||!['login','link'].includes(body.mode))fail('invalid_input');
-   let owner=null;if(body.mode==='link'){const {account,token}=await authenticateRequest(req);if(!await passwordJob(()=>verifyPassword(password(body.password),account.password_hash)))fail('wrong_password',401);owner={code:account.code,hash:sessionHash(token),passwordHash:account.password_hash};}
+   let owner=null;if(body.mode==='link'){const {account,token}=await authenticateRequest(req);if(body.password!==undefined&&!await passwordJob(()=>verifyPassword(password(body.password),account.password_hash)))fail('wrong_password',401);owner={code:account.code,hash:sessionHash(token),passwordHash:account.password_hash,passwordConfirmed:body.password!==undefined};}
    else if(req.headers.authorization||body.password!==undefined)fail('invalid_input');
    if(googleChallenges.size>=1000)fail('rate',429);
    const nonce=crypto.randomBytes(32).toString('hex'),binding=crypto.randomBytes(32).toString('hex');
@@ -71,19 +71,41 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
    res.setHeader('Set-Cookie',cookieHeader(binding,600));return {nonce,clientId:googleAuth.clientId};
   }
   if(url.pathname==='/social/google/complete'&&req.method==='POST'){
-   if(Object.keys(body).some(k=>!['nonce','credential'].includes(k))||!TOKEN.test(body.nonce||'')||typeof body.credential!=='string'||body.credential.length>8192)fail('invalid_input');
+   if(Object.keys(body).some(k=>!['nonce','credential','password'].includes(k))||!TOKEN.test(body.nonce||'')||typeof body.credential!=='string'||body.credential.length>8192)fail('invalid_input');
    const key=sessionHash(body.nonce),challenge=googleChallenges.get(key);
-   if(!cookie||!challenge||challenge.until<=now()||challenge.binding!==sessionHash(cookie))fail('google_invalid',401);
+   if(!cookie||!challenge||!['login','link'].includes(challenge.mode)||challenge.until<=now()||challenge.binding!==sessionHash(cookie))fail('google_invalid',401);
    // Consume before network/database work so parallel callbacks cannot replay.
-   googleChallenges.delete(key);res.setHeader('Set-Cookie',cookieHeader('',0));
+   googleChallenges.delete(key);
    const identity=await googleAuth.verify(body.credential,body.nonce),subjectHash=sessionHash('google:'+identity.subject);
    if(challenge.mode==='link'){
     const {account,token}=await authenticateRequest(req),owner=challenge.owner;
     if(account.code!==owner.code||sessionHash(token)!==owner.hash||account.password_hash!==owner.passwordHash)fail('unauthorized',401);
+    if(!owner.passwordConfirmed&&!await passwordJob(()=>verifyPassword(password(body.password),account.password_hash)))fail('wrong_password',401);
+    res.setHeader('Set-Cookie',cookieHeader('',0));
     return store.linkGoogle(owner.code,owner.passwordHash,owner.hash,subjectHash);
    }
    if(req.headers.authorization)fail('invalid_input');
-   const session=freshSession(),account=await store.loginGoogle(subjectHash,session);return sessionResult(account,session);
+   const session=freshSession();let account;
+   try{account=await store.loginGoogle(subjectHash,session);}catch(error){
+    if(!(error instanceof SocialError)||error.code!=='google_unlinked')throw error;
+    if(googleChallenges.size>=1000)fail('rate',429);
+    const registrationToken=crypto.randomBytes(32).toString('hex');
+    googleChallenges.set(sessionHash(registrationToken),{mode:'register',binding:challenge.binding,subjectHash,until:challenge.until,inFlight:false});
+    return {registrationRequired:true,registrationToken};
+   }
+   res.setHeader('Set-Cookie',cookieHeader('',0));return sessionResult(account,session);
+  }
+  if(url.pathname==='/social/google/register'&&req.method==='POST'){
+   if(req.headers.authorization||Object.keys(body).some(k=>!['registrationToken','name','username','password','avatar','publicProfile'].includes(k))||!TOKEN.test(body.registrationToken||'')||'publicProfile'in body&&typeof body.publicProfile!=='boolean')fail('invalid_input');
+   const key=sessionHash(body.registrationToken),pending=googleChallenges.get(key);
+   if(!cookie||!pending||pending.mode!=='register'||pending.until<=now()||pending.binding!==sessionHash(cookie))fail('google_invalid',401);
+   if(pending.inFlight)fail('rate',429);
+   const name=cleanName(body.name),loginName=username(body.username),pass=password(body.password),icon=avatar(body.avatar??0);if(Array.from(name).length>16)fail('invalid_input');
+   rate('google-register:'+ip,5,3600000);pending.inFlight=true;
+   try{const hash=await passwordJob(()=>hashPassword(pass)),session=freshSession();let account=null;
+    for(let i=0;i<8&&!account;i++){const code=Array.from({length:8},()=>ALPHABET[crypto.randomInt(ALPHABET.length)]).join('');account=await store.registerGoogle({code,name,username:loginName,avatar:icon,passwordHash:hash,publicProfile:body.publicProfile===true,subjectHash:pending.subjectHash},session);}
+    if(!account)fail('conflict',409);googleChallenges.delete(key);res.setHeader('Set-Cookie',cookieHeader('',0));return sessionResult(account,session);
+   }finally{pending.inFlight=false;}
   }
   if(url.pathname==='/social/google/unlink'&&req.method==='POST'){
    if(Object.keys(body).some(k=>k!=='password'))fail('invalid_input');const {account,token}=await authenticateRequest(req);
