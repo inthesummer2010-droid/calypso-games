@@ -62,8 +62,9 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
   const cookieHeader=(value,age)=>'calypso_google='+value+'; HttpOnly; SameSite=Strict; Path=/social/google; Max-Age='+age+(req.headers.origin.startsWith('https:')?'; Secure':'');
   if(url.pathname==='/social/google/state'&&req.method==='GET'){const {account}=await authenticateRequest(req);return store.googleState(account.code);}
   if(url.pathname==='/social/google/challenge'&&req.method==='POST'){
-   if(Object.keys(body).some(k=>!['mode','password'].includes(k))||!['login','link'].includes(body.mode))fail('invalid_input');
+   if(Object.keys(body).some(k=>!['mode','password'].includes(k))||!['login','link','password'].includes(body.mode))fail('invalid_input');
    let owner=null;if(body.mode==='link'){const {account,token}=await authenticateRequest(req);if(body.password!==undefined&&!await passwordJob(()=>verifyPassword(password(body.password),account.password_hash)))fail('wrong_password',401);owner={code:account.code,hash:sessionHash(token),passwordHash:account.password_hash,passwordConfirmed:body.password!==undefined};}
+   else if(body.mode==='password'){const {account,token}=await authenticateRequest(req);if(!account.password_hash.startsWith('google-only:')||body.password!==undefined)fail('invalid_input');owner={code:account.code,hash:sessionHash(token),passwordHash:account.password_hash};}
    else if(req.headers.authorization||body.password!==undefined)fail('invalid_input');
    if(googleChallenges.size>=1000)fail('rate',429);
    const nonce=crypto.randomBytes(32).toString('hex'),binding=cookie||crypto.randomBytes(32).toString('hex');
@@ -71,12 +72,20 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
    res.setHeader('Set-Cookie',cookieHeader(binding,600));return {nonce,clientId:googleAuth.clientId};
   }
   if(url.pathname==='/social/google/complete'&&req.method==='POST'){
-   if(Object.keys(body).some(k=>!['nonce','credential','password'].includes(k))||!TOKEN.test(body.nonce||'')||typeof body.credential!=='string'||body.credential.length>8192)fail('invalid_input');
+   if(Object.keys(body).some(k=>!['nonce','credential','password','newPassword'].includes(k))||!TOKEN.test(body.nonce||'')||typeof body.credential!=='string'||body.credential.length>8192)fail('invalid_input');
    const key=sessionHash(body.nonce),challenge=googleChallenges.get(key);
-   if(!cookie||!challenge||!['login','link'].includes(challenge.mode)||challenge.until<=now()||challenge.binding!==sessionHash(cookie))fail('google_invalid',401);
+   if(!cookie||!challenge||!['login','link','password'].includes(challenge.mode)||challenge.until<=now()||challenge.binding!==sessionHash(cookie))fail('google_invalid',401);
    // Consume before network/database work so parallel callbacks cannot replay.
    googleChallenges.delete(key);
    const identity=await googleAuth.verify(body.credential,body.nonce),subjectHash=sessionHash('google:'+identity.subject);
+   if(challenge.mode==='password'){
+    const {account,token}=await authenticateRequest(req),owner=challenge.owner;
+    if(account.code!==owner.code||sessionHash(token)!==owner.hash||account.password_hash!==owner.passwordHash||!account.password_hash.startsWith('google-only:'))fail('unauthorized',401);
+    const mapping=(await store.query('SELECT subject_hash FROM social_google WHERE code=$1',[account.code]))[0];if(mapping?.subject_hash!==subjectHash)fail('google_invalid',401);
+    const next=password(body.newPassword),hash=await passwordJob(()=>hashPassword(next)),session=freshSession(),hashes=await store.sessionHashes(account.code),updated=await store.changePassword(account.code,account.password_hash,hash,session);
+    revokeSockets(account.code,{hashes,all:true,except:session.hash});return sessionResult(updated,session);
+   }
+   if(body.newPassword!==undefined)fail('invalid_input');
    if(challenge.mode==='link'){
     const {account,token}=await authenticateRequest(req),owner=challenge.owner;
     if(account.code!==owner.code||sessionHash(token)!==owner.hash||account.password_hash!==owner.passwordHash)fail('unauthorized',401);
@@ -87,10 +96,13 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
    const session=freshSession();let account;
    try{account=await store.loginGoogle(subjectHash,session);}catch(error){
     if(!(error instanceof SocialError)||error.code!=='google_unlinked')throw error;
-    if(googleChallenges.size>=1000)fail('rate',429);
-    const registrationToken=crypto.randomBytes(32).toString('hex');
-    googleChallenges.set(sessionHash(registrationToken),{mode:'register',binding:challenge.binding,subjectHash,until:challenge.until,inFlight:false});
-    return {registrationRequired:true,registrationToken};
+    rate('google-register:'+ip,5,3600000);
+    for(let i=0;i<8&&!account;i++){
+     const code=Array.from({length:8},()=>ALPHABET[crypto.randomInt(ALPHABET.length)]).join('');
+     try{account=await store.registerGoogle({code,name:identity.name||'Arcade Player',username:'player.'+crypto.randomBytes(4).toString('hex'),avatar:0,passwordHash:'google-only:'+crypto.randomBytes(32).toString('hex'),subjectHash,verifiedEmail:identity.verifiedEmail||null},session);}
+     catch(createError){if(createError.code==='username_taken')continue;if(createError.code!=='google_already_linked')throw createError;account=await store.loginGoogle(subjectHash,session);}
+    }
+    if(!account)fail('conflict',409);
    }
    return sessionResult(account,session);
   }
@@ -159,7 +171,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
   const account=known||await store.account(target);if(!account)fail('not_found',404);const relationship=await store.relation(viewer,target);if(relationship.blocked)fail('blocked',403);
   if(viewer!==target&&!account.public_profile&&!relationship.friend)fail('not_found',404);
   const own=viewer===target,details=own||account.visibility==='public'||account.visibility==='friends'&&relationship.friend,progress=own||account.share_progress&&details?account.progress:null;
-  const result={...person(account,viewer,relationship.friend,relationship.friend),publicProfile:!!account.public_profile,visibility:account.visibility,shareProgress:!!account.share_progress,showOnline:!!account.show_online,progress:progress||null,relationship,counts:details?await store.counts(target):{friends:0,followers:0,following:0},mutualFriends:details&&!own?(await store.mutual(viewer,target)).map(a=>person(a,viewer,true)):[]};if(own)result.username=account.username||null;return result;
+  const result={...person(account,viewer,relationship.friend,relationship.friend),publicProfile:!!account.public_profile,visibility:account.visibility,shareProgress:!!account.share_progress,showOnline:!!account.show_online,progress:progress||null,relationship,counts:details?await store.counts(target):{friends:0,followers:0,following:0},mutualFriends:details&&!own?(await store.mutual(viewer,target)).map(a=>person(a,viewer,true)):[]};if(own){result.username=account.username||null;result.hasPassword=!account.password_hash.startsWith('google-only:');}return result;
  }
  async function authenticate(token){if(!TOKEN.test(token||'')||!await ensureReady())return null;try{const hash=sessionHash(token);for(let attempt=0;attempt<3;attempt++){const generation=authGeneration,account=await store.session(hash);if(generation!==authGeneration)continue;return account?{code:account.code,name:account.name,avatar:Number(account.avatar),publicProfile:!!account.public_profile,expiresAt:Number(account.expires_at)}:null;}return null;}catch{available=false;return null;}}
  async function authenticateRequest(req){const token=bearer(req);if(!token)fail('unauthorized',401);const hash=sessionHash(token),account=await store.session(hash);if(!account)fail((displacedSessions.get(hash)||0)>now()?'played_elsewhere':'unauthorized',401);presence.set(account.code,now()+PRESENCE_MS);return {account,token};}

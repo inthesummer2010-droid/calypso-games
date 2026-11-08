@@ -235,7 +235,7 @@ class SocialStore{
   if(!inserted.length&&(!own||own.subject_hash!==subjectHash))fail('google_already_linked',409);
   await this.insertSession(db,code,session);return account;
  });}
- async registerGoogle({code,name,avatar,passwordHash,publicProfile=false,username,subjectHash},session){return this.transaction(async db=>{
+ async registerGoogle({code,name,avatar,passwordHash,publicProfile=false,username,subjectHash,verifiedEmail=null},session){return this.transaction(async db=>{
   await this.query("SELECT key FROM social_meta WHERE key='accounts' FOR UPDATE",[],db);
   if((await this.query('SELECT 1 FROM social_google WHERE subject_hash=$1',[subjectHash],db)).length)fail('google_already_linked',409);
   if(await this.count('SELECT COUNT(*) AS n FROM social_accounts',[],db)>=this.limits.accounts)fail('rate',429);
@@ -244,6 +244,7 @@ class SocialStore{
   const rows=await this.query('INSERT INTO social_accounts(code,name,avatar,password_hash,created_at,public_profile,username) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(code) DO NOTHING RETURNING '+ACCOUNT_COLUMNS,[code,name,avatar,passwordHash,this.now(),publicProfile,username],db);
   if(!rows.length)return null;
   await this.query('INSERT INTO social_google(code,subject_hash,created_at) VALUES($1,$2,$3)',[code,subjectHash,this.now()],db);
+  if(verifiedEmail)await this.query('INSERT INTO social_email(code,address) VALUES($1,$2)',[code,verifiedEmail],db);
   await this.insertSession(db,code,session);return rows[0];
  });}
  async linkGoogle(code,passwordHash,currentHash,subjectHash){return this.transaction(async db=>{
@@ -257,7 +258,8 @@ class SocialStore{
   const target=(await this.query('SELECT code FROM social_google WHERE subject_hash=$1',[subjectHash],db))[0];if(!target)fail('google_unlinked',409);
   await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[target.code],db);
   if(!(await this.query('SELECT 1 FROM social_google WHERE code=$1 AND subject_hash=$2',[target.code,subjectHash],db)).length)fail('google_unlinked',409);
-  const account=await this.account(target.code,db);if(!account)fail('google_unlinked',409);await this.insertSession(db,target.code,session);return account;
+  const account=await this.account(target.code,db);if(!account)fail('google_unlinked',409);
+  await this.insertSession(db,target.code,session);return account;
  });}
  async unlinkGoogle(code,passwordHash,currentHash){return this.transaction(async db=>{
   await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db);

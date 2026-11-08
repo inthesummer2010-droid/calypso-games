@@ -33,7 +33,12 @@ function createGoogleAuth({clientId=process.env.GOOGLE_CLIENT_ID||'',fetcher=glo
   const seconds=now()/1000;
   if(!['accounts.google.com','https://accounts.google.com'].includes(claims.iss)||claims.aud!==clientId||claims.azp!==undefined&&claims.azp!==clientId||!Number.isSafeInteger(claims.exp)||claims.exp<=seconds||!Number.isSafeInteger(claims.iat)||claims.iat>seconds+60||claims.iat<seconds-7200||claims.exp<=claims.iat||claims.nbf!==undefined&&(!Number.isSafeInteger(claims.nbf)||claims.nbf>seconds)||claims.nonce!==nonce||typeof claims.sub!=='string'||!/^\d{1,255}$/.test(claims.sub))fail();
   // sub, never an email address or display name, identifies the Google account.
-  return {subject:claims.sub};
+  const email=typeof claims.email==='string'&&claims.email.length<=254&&/^[-a-zA-Z0-9.!#$%&'*+/=?^_`{|}~]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,63}$/.test(claims.email)?claims.email.toLowerCase():null;
+  // Google is authoritative for Gmail and verified Workspace addresses, but
+  // not for a third-party mailbox merely used to create a Google account.
+  const verifiedEmail=email&&claims.email_verified===true&&(email.endsWith('@gmail.com')||typeof claims.hd==='string'&&claims.hd.length>0)?email:null;
+  const name=typeof claims.name==='string'?Array.from(claims.name.replace(/[\u0000-\u001f\u007f-\u009f]/g,'').trim()).slice(0,16).join(''):'';
+  return {subject:claims.sub,name:name||'Arcade Player',verifiedEmail};
  }
  return {enabled,clientId:enabled?clientId:null,verify};
 }
