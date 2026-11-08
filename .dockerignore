@@ -12,6 +12,7 @@
 !index.html
 !Dockerfile
 !social-server.cjs
+!google-auth.cjs
 !social-store.cjs
 !rankings-rules.js
 !rankings-store.cjs

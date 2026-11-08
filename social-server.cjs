@@ -52,7 +52,46 @@ function postgresConfig(connectionString,{allowInsecureLocalDb=false,mailer=requ
  const local=['localhost','127.0.0.1','[::1]'].includes(url.hostname.toLowerCase());
  return {connectionString:url.href,ssl:allowInsecureLocalDb===true&&local&&process.env.NODE_ENV!=='production'?false:{rejectUnauthorized:true},enableChannelBinding:true,max:4,connectionTimeoutMillis:3500,idleTimeoutMillis:30000,query_timeout:5000,statement_timeout:5000};
 }
-function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHash=process.env.ADMIN_PASSWORD_HASH,db,rooms,originAllowed=()=>false,clientAddress=req=>req.socket?.remoteAddress||'unknown',now=Date.now,limits={},retryMs=10000,cleanupMs=10000,allowInsecureLocalDb=false,mailer=require('./account-mail.cjs').createMailer()}={}){
+function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHash=process.env.ADMIN_PASSWORD_HASH,db,rooms,originAllowed=()=>false,clientAddress=req=>req.socket?.remoteAddress||'unknown',now=Date.now,limits={},retryMs=10000,cleanupMs=10000,allowInsecureLocalDb=false,mailer=require('./account-mail.cjs').createMailer(),googleAuth=require('./google-auth.cjs').createGoogleAuth({now})}={}){
+ const googleChallenges=new Map();
+ function pruneGoogle(){for(const [key,value]of googleChallenges)if(value.until<=now())googleChallenges.delete(key);}
+ async function googleRequest(req,res,url,ip,body){
+  if(!googleAuth.enabled)fail('google_unavailable',503);
+  rate('google:'+ip,20,60e3);rate('google-global',300,60e3);pruneGoogle();
+  const cookie=(String(req.headers.cookie||'').match(/(?:^|;\s*)calypso_google=([a-f0-9]{64})(?:;|$)/)||[])[1];
+  const cookieHeader=(value,age)=>'calypso_google='+value+'; HttpOnly; SameSite=Strict; Path=/social/google; Max-Age='+age+(req.headers.origin.startsWith('https:')?'; Secure':'');
+  if(url.pathname==='/social/google/state'&&req.method==='GET'){const {account}=await authenticateRequest(req);return store.googleState(account.code);}
+  if(url.pathname==='/social/google/challenge'&&req.method==='POST'){
+   if(Object.keys(body).some(k=>!['mode','password'].includes(k))||!['login','link'].includes(body.mode))fail('invalid_input');
+   let owner=null;if(body.mode==='link'){const {account,token}=await authenticateRequest(req);if(!await passwordJob(()=>verifyPassword(password(body.password),account.password_hash)))fail('wrong_password',401);owner={code:account.code,hash:sessionHash(token),passwordHash:account.password_hash};}
+   else if(req.headers.authorization||body.password!==undefined)fail('invalid_input');
+   if(googleChallenges.size>=1000)fail('rate',429);
+   const nonce=crypto.randomBytes(32).toString('hex'),binding=crypto.randomBytes(32).toString('hex');
+   googleChallenges.set(sessionHash(nonce),{binding:sessionHash(binding),owner,mode:body.mode,until:now()+600000});
+   res.setHeader('Set-Cookie',cookieHeader(binding,600));return {nonce,clientId:googleAuth.clientId};
+  }
+  if(url.pathname==='/social/google/complete'&&req.method==='POST'){
+   if(Object.keys(body).some(k=>!['nonce','credential'].includes(k))||!TOKEN.test(body.nonce||'')||typeof body.credential!=='string'||body.credential.length>8192)fail('invalid_input');
+   const key=sessionHash(body.nonce),challenge=googleChallenges.get(key);
+   if(!cookie||!challenge||challenge.until<=now()||challenge.binding!==sessionHash(cookie))fail('google_invalid',401);
+   // Consume before network/database work so parallel callbacks cannot replay.
+   googleChallenges.delete(key);res.setHeader('Set-Cookie',cookieHeader('',0));
+   const identity=await googleAuth.verify(body.credential,body.nonce),subjectHash=sessionHash('google:'+identity.subject);
+   if(challenge.mode==='link'){
+    const {account,token}=await authenticateRequest(req),owner=challenge.owner;
+    if(account.code!==owner.code||sessionHash(token)!==owner.hash||account.password_hash!==owner.passwordHash)fail('unauthorized',401);
+    return store.linkGoogle(owner.code,owner.passwordHash,owner.hash,subjectHash);
+   }
+   if(req.headers.authorization)fail('invalid_input');
+   const session=freshSession(),account=await store.loginGoogle(subjectHash,session);return sessionResult(account,session);
+  }
+  if(url.pathname==='/social/google/unlink'&&req.method==='POST'){
+   if(Object.keys(body).some(k=>k!=='password'))fail('invalid_input');const {account,token}=await authenticateRequest(req);
+   if(!await passwordJob(()=>verifyPassword(password(body.password),account.password_hash)))fail('wrong_password',401);
+   const hashes=await store.unlinkGoogle(account.code,account.password_hash,sessionHash(token));revokeSockets(account.code,{hashes});return {linked:false};
+  }
+  fail('not_found',404);
+ }
  let pool=null,store=null,available=false,closed=false,initializing=null,lastAttempt=-Infinity,passwordJobs=0,authGeneration=0;
  const configured=!!db||typeof connectionString==='string'&&!!connectionString.trim(),adminConfigured=configured&&validPasswordHash(adminPasswordHash),rates=new Map(),presence=new Map(),adminSessions=new Map(),displacedSessions=new Map();
  async function initialize(){
@@ -163,7 +202,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
    if(req.method==='OPTIONS'){if(!allowed)fail('forbidden',403);res.setHeader('Access-Control-Allow-Methods','GET,POST,PATCH,PUT,DELETE,OPTIONS');res.setHeader('Access-Control-Allow-Headers','Authorization,Content-Type');res.setHeader('Access-Control-Max-Age','600');json(res,200,{ok:true});return true;}
    if(req.method!=='GET'&&!allowed)fail('forbidden',403);
    const ip=String(clientAddress(req)||'unknown');rate('all:'+ip,600,60e3);
-   if(url.pathname==='/social/config'&&req.method==='GET'){const enabled=await ensureReady();json(res,200,{enabled,adminConfigured,emailEnabled:mailer.enabled===true,...(!enabled?{reason:configured?'unavailable':'database_required'}:{})});return true;}
+   if(url.pathname==='/social/config'&&req.method==='GET'){const enabled=await ensureReady();json(res,200,{enabled,adminConfigured,emailEnabled:mailer.enabled===true,...(googleAuth.enabled?{googleClientId:googleAuth.clientId}:{}),...(!enabled?{reason:configured?'unavailable':'database_required'}:{})});return true;}
    if(req.method==='GET'&&(url.pathname.startsWith('/social/rankings/')||url.pathname.startsWith('/social/public/'))){
     if(!await ensureReady())fail(configured?'unavailable':'database_required',503);
     let viewer=null;if(req.headers.authorization)viewer=(await authenticateRequest(req)).account.code;
@@ -181,6 +220,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
     json(res,200,{enabled:true,rulesVersion:3,mode,players,challengeId,entries:[],profileRankings:true});return true;
    }
    if(!await ensureReady())fail(configured?'unavailable':'database_required',503);
+   if(url.pathname.startsWith('/social/google/')){json(res,200,await googleRequest(req,res,url,ip,req.method==='GET'?{}:await readBody(req,12288)));return true;}
    if(url.pathname.startsWith('/social/admin/')){json(res,200,await adminRequest(req,url,ip));return true;}
    if(url.pathname==='/social/notice'&&req.method==='GET'){json(res,200,await store.publicNotice());return true;}
    if(url.pathname==='/social/ad-policy'&&req.method==='GET'){let code;if(req.headers.authorization){const auth=await authenticateRequest(req);code=auth.account.code;}json(res,200,await store.adPolicy(code));return true;}
@@ -264,7 +304,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
   }catch(error){const fallback=url.pathname==='/social/ad-policy'?{adsDisabled:true,exempt:false}:url.pathname==='/social/notice'?{active:false,messages:{de:'',en:'',fr:'',es:''},until:null,updatedAt:0}:url.pathname==='/social/salvage/leaderboard'?{enabled:false}:{};if(error instanceof SocialError)json(res,error.status,{error:error.code,...fallback});else{available=false;json(res,503,{error:'unavailable',...fallback});}}
   return true;
  }
- async function close(){closed=true;clearInterval(timer);rates.clear();presence.clear();adminSessions.clear();displacedSessions.clear();await initializing?.catch(()=>{});if(pool)await pool.end();}
+ async function close(){closed=true;clearInterval(timer);rates.clear();presence.clear();adminSessions.clear();displacedSessions.clear();googleChallenges.clear();await initializing?.catch(()=>{});if(pool)await pool.end();}
  async function saveSalvageRun(run){if(!await ensureReady())return {ok:false,reason:configured?'unavailable':'database_required'};try{return await store.saveSalvageRun(run);}catch(error){if(!(error instanceof SocialError))available=false;return {ok:false,reason:'unavailable'};}}
  async function saveOnlineResult(run){if(!await ensureReady())return {ok:false,reason:'unavailable'};try{return await store.onlineResult(run);}catch{return {ok:false,reason:'unavailable'};}}
  async function canStartRoom(ws,room){if(room?.gameType!=='salvage'||room.salvage?.mode!=='challenge')return true;for(const p of room.players.filter(Boolean)){if(!p.ws?.socialCode)continue;if(!await ensureReady())return false;const progress=await store.challengeProgress(p.ws.socialCode);if(!(await store.playerAccess(p.ws.socialCode)).allLooks&&!require('./neon-salvage-challenges.js').isUnlocked(progress,room.salvage.challengeId,room.players.filter(Boolean).length))return false;}return true;}

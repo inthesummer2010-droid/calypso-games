@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS social_accounts (
 ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS username TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS social_username_unique ON social_accounts(lower(username)) WHERE username IS NOT NULL;
 CREATE TABLE IF NOT EXISTS social_email(code TEXT PRIMARY KEY REFERENCES social_accounts(code) ON DELETE CASCADE, address TEXT, pending TEXT, verify_hash TEXT, expires_at BIGINT);
+CREATE TABLE IF NOT EXISTS social_google(code TEXT PRIMARY KEY REFERENCES social_accounts(code) ON DELETE CASCADE, subject_hash TEXT NOT NULL UNIQUE, created_at BIGINT NOT NULL);
 CREATE TABLE IF NOT EXISTS social_recovery(code TEXT PRIMARY KEY REFERENCES social_accounts(code) ON DELETE CASCADE, token_hash TEXT NOT NULL UNIQUE, expires_at BIGINT NOT NULL);
 CREATE TABLE IF NOT EXISTS social_sessions (
  hash TEXT PRIMARY KEY CHECK (hash ~ '^[a-f0-9]{64}$'),
@@ -148,6 +149,7 @@ class SocialStore{
   const data={schema:1,generatedAt:this.now(),account};
   const projections={
    email:'SELECT address,pending,expires_at FROM social_email WHERE code=$1',
+   google:'SELECT created_at FROM social_google WHERE code=$1',
    sessions:'SELECT created_at,expires_at FROM social_sessions WHERE code=$1 ORDER BY created_at',
    activePlay:'SELECT p.expires_at FROM social_play_leases p JOIN social_sessions s ON s.hash=p.session_hash WHERE s.code=$1 ORDER BY p.expires_at',
    friends:'SELECT first_code,second_code,created_at FROM social_friends WHERE first_code=$1 OR second_code=$1',
@@ -223,6 +225,26 @@ class SocialStore{
   if(username&&(await this.query('SELECT 1 FROM social_accounts WHERE lower(username)=$1 OR code=upper($1)',[username],db)).length)fail('username_taken',409);
   const rows=await this.query('INSERT INTO social_accounts(code,name,avatar,password_hash,created_at,public_profile,username) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(code) DO NOTHING RETURNING '+ACCOUNT_COLUMNS,[code,name,avatar,passwordHash,this.now(),publicProfile,username],db);
   if(!rows.length)return null;await this.insertSession(db,code,session);return rows[0];
+ });}
+ async googleState(code){return {linked:(await this.query('SELECT 1 FROM social_google WHERE code=$1',[code])).length===1};}
+ async linkGoogle(code,passwordHash,currentHash,subjectHash){return this.transaction(async db=>{
+  await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db);
+  if(!(await this.query('SELECT 1 FROM social_accounts a JOIN social_sessions s ON s.code=a.code WHERE a.code=$1 AND a.password_hash=$2 AND s.hash=$3 AND s.expires_at>$4',[code,passwordHash,currentHash,this.now()],db)).length)fail('unauthorized',401);
+  const own=(await this.query('SELECT subject_hash FROM social_google WHERE code=$1',[code],db))[0];if(own&&own.subject_hash!==subjectHash)fail('google_already_linked',409);
+  const rows=await this.query('INSERT INTO social_google(code,subject_hash,created_at) VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING code',[code,subjectHash,this.now()],db);
+  if(!rows.length&&!own)fail('google_already_linked',409);return {linked:true};
+ });}
+ async loginGoogle(subjectHash,session){return this.transaction(async db=>{
+  const target=(await this.query('SELECT code FROM social_google WHERE subject_hash=$1',[subjectHash],db))[0];if(!target)fail('google_unlinked',409);
+  await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[target.code],db);
+  if(!(await this.query('SELECT 1 FROM social_google WHERE code=$1 AND subject_hash=$2',[target.code,subjectHash],db)).length)fail('google_unlinked',409);
+  const account=await this.account(target.code,db);if(!account)fail('google_unlinked',409);await this.insertSession(db,target.code,session);return account;
+ });}
+ async unlinkGoogle(code,passwordHash,currentHash){return this.transaction(async db=>{
+  await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db);
+  if(!(await this.query('SELECT 1 FROM social_accounts a JOIN social_sessions s ON s.code=a.code WHERE a.code=$1 AND a.password_hash=$2 AND s.hash=$3 AND s.expires_at>$4',[code,passwordHash,currentHash,this.now()],db)).length)fail('unauthorized',401);
+  await this.query('DELETE FROM social_google WHERE code=$1',[code],db);
+  return (await this.query('DELETE FROM social_sessions WHERE code=$1 AND hash<>$2 RETURNING hash',[code,currentHash],db)).map(r=>r.hash);
  });}
  async emailState(code){const r=(await this.query('SELECT address,pending,expires_at FROM social_email WHERE code=$1',[code]))[0];return {address:r?.address||null,pending:r?.pending&&Number(r.expires_at)>this.now()?r.pending:null};}
  async pendingEmail(code,address,hash){await this.query('INSERT INTO social_email(code,pending,verify_hash,expires_at) VALUES($1,$2,$3,$4) ON CONFLICT(code) DO UPDATE SET pending=EXCLUDED.pending,verify_hash=EXCLUDED.verify_hash,expires_at=EXCLUDED.expires_at',[code,address,hash,this.now()+30*60e3]);}
