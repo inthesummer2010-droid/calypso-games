@@ -54,7 +54,7 @@ function postgresConfig(connectionString,{allowInsecureLocalDb=false,mailer=requ
 }
 function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHash=process.env.ADMIN_PASSWORD_HASH,db,rooms,originAllowed=()=>false,clientAddress=req=>req.socket?.remoteAddress||'unknown',now=Date.now,limits={},retryMs=10000,cleanupMs=10000,allowInsecureLocalDb=false,mailer=require('./account-mail.cjs').createMailer()}={}){
  let pool=null,store=null,available=false,closed=false,initializing=null,lastAttempt=-Infinity,passwordJobs=0,authGeneration=0;
- const configured=!!db||typeof connectionString==='string'&&!!connectionString.trim(),adminConfigured=configured&&validPasswordHash(adminPasswordHash),rates=new Map(),presence=new Map(),adminSessions=new Map();
+ const configured=!!db||typeof connectionString==='string'&&!!connectionString.trim(),adminConfigured=configured&&validPasswordHash(adminPasswordHash),rates=new Map(),presence=new Map(),adminSessions=new Map(),displacedSessions=new Map();
  async function initialize(){
   if(!configured||closed)return false;if(initializing)return initializing;
   lastAttempt=now();initializing=(async()=>{try{
@@ -64,7 +64,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
  }
  const ready=configured?initialize():Promise.resolve(false);
  async function ensureReady(){if(!configured||closed)return false;if(available)return true;if(initializing)return initializing;if(now()-lastAttempt>=retryMs)return initialize();return false;}
- function prune(){const time=now();for(const [key,value]of rates)if(value.end<=time)rates.delete(key);for(const [code,until]of presence)if(until<=time)presence.delete(code);for(const [hash,expiresAt]of adminSessions)if(expiresAt<=time)adminSessions.delete(hash);}
+ function prune(){const time=now();for(const [hash,until]of displacedSessions)if(until<=time)displacedSessions.delete(hash);for(const [key,value]of rates)if(value.end<=time)rates.delete(key);for(const [code,until]of presence)if(until<=time)presence.delete(code);for(const [hash,expiresAt]of adminSessions)if(expiresAt<=time)adminSessions.delete(hash);}
  function rate(key,limit,window){const time=now();let row=rates.get(key);if(!row||row.end<=time){if(rates.size>=10000){prune();if(rates.size>=10000)fail('rate',429);}row={n:0,end:time+window};rates.set(key,row);}if(++row.n>limit)fail('rate',429);}
  function* sockets(){const seen=new Set();for(const room of rooms?.rooms?.values?.()||[])for(const p of room.players||[])if(p?.ws&&!seen.has(p.ws)){seen.add(p.ws);yield p.ws;}}
  function unbind(ws){ws.socialAuthGeneration=(ws.socialAuthGeneration||0)+1;ws.socialCode=null;ws.socialTokenHash=null;ws.socialPendingTokenHash=null;ws.socialExpiresAt=null;if(ws.readyState===1&&typeof ws.send==='function')try{ws.send(JSON.stringify({type:'account',ok:false}));}catch{}}
@@ -93,7 +93,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
   const result={...person(account,viewer,relationship.friend,relationship.friend),publicProfile:!!account.public_profile,visibility:account.visibility,shareProgress:!!account.share_progress,showOnline:!!account.show_online,progress:progress||null,relationship,counts:details?await store.counts(target):{friends:0,followers:0,following:0},mutualFriends:details&&!own?(await store.mutual(viewer,target)).map(a=>person(a,viewer,true)):[]};if(own)result.username=account.username||null;return result;
  }
  async function authenticate(token){if(!TOKEN.test(token||'')||!await ensureReady())return null;try{const hash=sessionHash(token);for(let attempt=0;attempt<3;attempt++){const generation=authGeneration,account=await store.session(hash);if(generation!==authGeneration)continue;return account?{code:account.code,name:account.name,avatar:Number(account.avatar),publicProfile:!!account.public_profile,expiresAt:Number(account.expires_at)}:null;}return null;}catch{available=false;return null;}}
- async function authenticateRequest(req){const token=bearer(req);if(!token)fail('unauthorized',401);const account=await store.session(sessionHash(token));if(!account)fail('unauthorized',401);presence.set(account.code,now()+PRESENCE_MS);return {account,token};}
+ async function authenticateRequest(req){const token=bearer(req);if(!token)fail('unauthorized',401);const hash=sessionHash(token),account=await store.session(hash);if(!account)fail((displacedSessions.get(hash)||0)>now()?'played_elsewhere':'unauthorized',401);presence.set(account.code,now()+PRESENCE_MS);return {account,token};}
  function authenticateAdmin(req){const token=bearer(req),hash=token&&sessionHash(token),expiresAt=hash&&adminSessions.get(hash);if(!expiresAt||expiresAt<=now()){if(hash)adminSessions.delete(hash);fail('unauthorized',401);}return hash;}
  async function adminOverview(){
   const counts=await store.adminOverviewCounts(),activeRooms=[];
@@ -199,7 +199,11 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
    }else if(url.pathname==='/social/recover'&&req.method==='POST'){rate('recover:'+ip,5,60e3);rate('account-code-global',300,60e3);if(Object.keys(body).some(k=>!['token','password'].includes(k)))fail('invalid_recovery');const recoveryCode=accountCode(body.token);const hash=await passwordJob(()=>hashPassword(password(body.password))),code=await store.recover(sessionHash(recoveryCode),hash);revokeSockets(code,{all:true});value={ok:true};
    }else{
     const {account,token}=await authenticateRequest(req),code=account.code;
-    if(req.method==='POST'&&url.pathname==='/social/me/export'){
+    if(req.method==='POST'&&url.pathname==='/social/play'){
+     if(Object.keys(body).some(k=>!['device','tab','active'].includes(k))||!TOKEN.test(body.device||'')||!TOKEN.test(body.tab||'')||typeof body.active!=='boolean')fail('invalid_input');rate('play:'+code,120,60e3);
+     const hashes=await store.playSession(code,sessionHash(token),sessionHash(body.device),sessionHash(body.tab),body.active);prune();for(const h of hashes){if(displacedSessions.size>=10000)break;displacedSessions.set(h,now()+30*60e3);}if(hashes.length)revokeSockets(code,{hashes});value={ok:true};
+    }
+    else if(req.method==='POST'&&url.pathname==='/social/me/export'){
      rate('export:'+code,3,3600e3);
      if(Object.keys(body).some(k=>k!=='password'))fail('invalid_input');
      if(!await passwordJob(()=>verifyPassword(password(body.password),account.password_hash)))fail('wrong_password',401);
@@ -260,7 +264,7 @@ function createSocial({connectionString=process.env.DATABASE_URL,adminPasswordHa
   }catch(error){const fallback=url.pathname==='/social/ad-policy'?{adsDisabled:true,exempt:false}:url.pathname==='/social/notice'?{active:false,messages:{de:'',en:'',fr:'',es:''},until:null,updatedAt:0}:url.pathname==='/social/salvage/leaderboard'?{enabled:false}:{};if(error instanceof SocialError)json(res,error.status,{error:error.code,...fallback});else{available=false;json(res,503,{error:'unavailable',...fallback});}}
   return true;
  }
- async function close(){closed=true;clearInterval(timer);rates.clear();presence.clear();adminSessions.clear();await initializing?.catch(()=>{});if(pool)await pool.end();}
+ async function close(){closed=true;clearInterval(timer);rates.clear();presence.clear();adminSessions.clear();displacedSessions.clear();await initializing?.catch(()=>{});if(pool)await pool.end();}
  async function saveSalvageRun(run){if(!await ensureReady())return {ok:false,reason:configured?'unavailable':'database_required'};try{return await store.saveSalvageRun(run);}catch(error){if(!(error instanceof SocialError))available=false;return {ok:false,reason:'unavailable'};}}
  async function saveOnlineResult(run){if(!await ensureReady())return {ok:false,reason:'unavailable'};try{return await store.onlineResult(run);}catch{return {ok:false,reason:'unavailable'};}}
  async function canStartRoom(ws,room){if(room?.gameType!=='salvage'||room.salvage?.mode!=='challenge')return true;for(const p of room.players.filter(Boolean)){if(!p.ws?.socialCode)continue;if(!await ensureReady())return false;const progress=await store.challengeProgress(p.ws.socialCode);if(!(await store.playerAccess(p.ws.socialCode)).allLooks&&!require('./neon-salvage-challenges.js').isUnlocked(progress,room.salvage.challengeId,room.players.filter(Boolean).length))return false;}return true;}

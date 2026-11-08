@@ -1,7 +1,7 @@
 'use strict';
 const crypto=require('node:crypto');
 
-const LIMITS=Object.freeze({accounts:10000,friends:200,follows:300,requests:100,blocks:200,invites:100,sessions:5,adExemptions:1000});
+const LIMITS=Object.freeze({accounts:10000,friends:200,follows:300,requests:100,blocks:200,invites:100,sessions:20,adExemptions:1000});
 class SocialError extends Error{constructor(code,status=400){super(code);this.code=code;this.status=status;}}
 const fail=(code,status)=>{throw new SocialError(code,status);};
 const pair=(a,b)=>a<b?[a,b]:[b,a];
@@ -31,6 +31,13 @@ CREATE TABLE IF NOT EXISTS social_sessions (
 );
 CREATE INDEX IF NOT EXISTS social_sessions_code ON social_sessions(code);
 CREATE INDEX IF NOT EXISTS social_sessions_expiry ON social_sessions(expires_at);
+ALTER TABLE social_sessions ADD COLUMN IF NOT EXISTS device_hash TEXT;
+CREATE TABLE IF NOT EXISTS social_play_leases (
+ session_hash TEXT NOT NULL REFERENCES social_sessions(hash) ON DELETE CASCADE,
+ tab_hash TEXT NOT NULL, expires_at BIGINT NOT NULL,
+ PRIMARY KEY(session_hash,tab_hash)
+);
+CREATE INDEX IF NOT EXISTS social_play_expiry ON social_play_leases(expires_at);
 CREATE TABLE IF NOT EXISTS social_requests (
  sender TEXT NOT NULL REFERENCES social_accounts(code) ON DELETE CASCADE,
  recipient TEXT NOT NULL REFERENCES social_accounts(code) ON DELETE CASCADE,
@@ -131,7 +138,7 @@ class SocialStore{
   const rows=await this.query('SELECT names,score,elapsed_ms,kills,wave,completed,created_at FROM salvage_ranked_runs WHERE rules_version=2 AND mode=$1 AND players=$2 AND challenge_id=$3 ORDER BY '+order+' LIMIT 20',[mode,players,challengeId||'']);
   return {enabled:true,rulesVersion:2,mode,players,challengeId,entries:rows.map((row,index)=>({rank:index+1,names:row.names,score:Number(row.score),elapsedMs:Number(row.elapsed_ms),kills:Number(row.kills),wave:Number(row.wave),completed:!!row.completed,createdAt:Number(row.created_at)}))};
  }
- async cleanup(){const now=this.now();await this.query('DELETE FROM social_recovery WHERE expires_at<=$1',[now]);await this.query('UPDATE social_email SET pending=NULL,verify_hash=NULL,expires_at=NULL WHERE expires_at<=$1',[now]);await this.query('DELETE FROM social_sessions WHERE expires_at<=$1',[now]);await this.query('DELETE FROM social_invites WHERE expires_at<=$1',[now]);await this.query('DELETE FROM arcade_runs WHERE finished_at IS NULL AND started_at<$1',[now-86400000]);}
+ async cleanup(){const now=this.now();await this.query('DELETE FROM social_play_leases WHERE expires_at<=$1',[now]);await this.query('DELETE FROM social_recovery WHERE expires_at<=$1',[now]);await this.query('UPDATE social_email SET pending=NULL,verify_hash=NULL,expires_at=NULL WHERE expires_at<=$1',[now]);await this.query('DELETE FROM social_sessions WHERE expires_at<=$1',[now]);await this.query('DELETE FROM social_invites WHERE expires_at<=$1',[now]);await this.query('DELETE FROM arcade_runs WHERE finished_at IS NULL AND started_at<$1',[now-86400000]);}
  async account(code,db=this.db){return (await this.query('SELECT '+ACCOUNT_COLUMNS+' FROM social_accounts WHERE code=$1',[code],db))[0]||null;}
  // Private, password-confirmed data copy. Explicit projections deliberately
  // exclude authentication hashes, recovery material and other users' settings.
@@ -142,6 +149,7 @@ class SocialStore{
   const projections={
    email:'SELECT address,pending,expires_at FROM social_email WHERE code=$1',
    sessions:'SELECT created_at,expires_at FROM social_sessions WHERE code=$1 ORDER BY created_at',
+   activePlay:'SELECT p.expires_at FROM social_play_leases p JOIN social_sessions s ON s.hash=p.session_hash WHERE s.code=$1 ORDER BY p.expires_at',
    friends:'SELECT first_code,second_code,created_at FROM social_friends WHERE first_code=$1 OR second_code=$1',
    outgoingRequests:'SELECT recipient,created_at FROM social_requests WHERE sender=$1',
    outgoingFollows:'SELECT recipient,created_at FROM social_follows WHERE sender=$1',
@@ -203,9 +211,10 @@ class SocialStore{
  async count(sql,params,db=this.db){return Number((await this.query(sql,params,db))[0]?.n)||0;}
  async insertSession(db,code,session){
   await this.query('DELETE FROM social_sessions WHERE code=$1 AND expires_at<=$2',[code,this.now()],db);
+  if(await this.count('SELECT count(*) AS n FROM social_sessions WHERE code=$1',[code],db)>=this.limits.sessions)fail('session_limit',429);
   const last=await this.count('SELECT COALESCE(MAX(created_at),0) AS n FROM social_sessions WHERE code=$1',[code],db),createdAt=Math.max(this.now(),last+1);
   await this.query('INSERT INTO social_sessions(hash,code,created_at,expires_at) VALUES($1,$2,$3,$4)',[session.hash,code,createdAt,session.expiresAt],db);
-  await this.query('DELETE FROM social_sessions WHERE hash IN (SELECT hash FROM social_sessions WHERE code=$1 AND hash<>$2 ORDER BY created_at DESC,hash LIMIT 10000 OFFSET $3)',[code,session.hash,this.limits.sessions-1],db);
+
  }
  async register({code,name,avatar,passwordHash,publicProfile=false,username=null},session){return this.transaction(async db=>{
   await this.query("SELECT key FROM social_meta WHERE key='accounts' FOR UPDATE",[],db);
@@ -230,6 +239,18 @@ class SocialStore{
  });}
  async session(hash){return (await this.query('SELECT a.'+ACCOUNT_COLUMNS.split(',').join(',a.')+',s.expires_at FROM social_sessions s JOIN social_accounts a ON a.code=s.code WHERE s.hash=$1 AND s.expires_at>$2',[hash,this.now()]))[0]||null;}
  async logout(hash){await this.query('DELETE FROM social_sessions WHERE hash=$1',[hash]);}
+ async playSession(code,hash,deviceHash,tabHash,active){return this.transaction(async db=>{
+  await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db);
+  const session=(await this.query('SELECT device_hash FROM social_sessions WHERE code=$1 AND hash=$2 AND expires_at>$3',[code,hash,this.now()],db))[0];if(!session)fail('unauthorized',401);
+  await this.query('DELETE FROM social_play_leases WHERE expires_at<=$1',[this.now()],db);
+  if(!active){await this.query('DELETE FROM social_play_leases WHERE session_hash=$1 AND tab_hash=$2',[hash,tabHash],db);return [];}
+  const device=session.device_hash||deviceHash;await this.query('UPDATE social_sessions SET device_hash=$2 WHERE hash=$1',[hash,device],db);
+  const conflicts=await this.query('SELECT DISTINCT COALESCE(s.device_hash,s.hash) AS device FROM social_sessions s JOIN social_play_leases p ON p.session_hash=s.hash WHERE s.code=$1 AND s.expires_at>$2 AND p.expires_at>$2 AND COALESCE(s.device_hash,s.hash)<>$3',[code,this.now(),device],db);
+  const revoked=[];for(const row of conflicts)revoked.push(...await this.query('DELETE FROM social_sessions WHERE code=$1 AND COALESCE(device_hash,hash)=$2 AND hash<>$3 RETURNING hash',[code,row.device,hash],db));
+  if(await this.count('SELECT count(*) AS n FROM social_play_leases p JOIN social_sessions s ON s.hash=p.session_hash WHERE s.code=$1',[code],db)>=64&&!(await this.query('SELECT 1 FROM social_play_leases WHERE session_hash=$1 AND tab_hash=$2',[hash,tabHash],db)).length)fail('rate',429);
+  await this.query('INSERT INTO social_play_leases(session_hash,tab_hash,expires_at) VALUES($1,$2,$3) ON CONFLICT(session_hash,tab_hash) DO UPDATE SET expires_at=EXCLUDED.expires_at',[hash,tabHash,this.now()+45000],db);
+  return revoked.map(row=>row.hash);
+ });}
  async logoutOthers(code,currentHash,expectedPasswordHash){return this.transaction(async db=>{
   await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db);
   const account=await this.account(code,db);
