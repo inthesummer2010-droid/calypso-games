@@ -227,6 +227,14 @@ class SocialStore{
   if(!rows.length)return null;await this.insertSession(db,code,session);return rows[0];
  });}
  async googleState(code){return {linked:(await this.query('SELECT 1 FROM social_google WHERE code=$1',[code])).length===1};}
+ async loginAndLinkGoogle(code,expectedHash,subjectHash,session){return this.transaction(async db=>{
+  const account=(await this.query('SELECT '+ACCOUNT_COLUMNS+' FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db))[0];
+  if(!account||account.password_hash!==expectedHash)fail('wrong_password',401);
+  const own=(await this.query('SELECT subject_hash FROM social_google WHERE code=$1',[code],db))[0];if(own&&own.subject_hash!==subjectHash)fail('google_already_linked',409);
+  const inserted=await this.query('INSERT INTO social_google(code,subject_hash,created_at) VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING code',[code,subjectHash,this.now()],db);
+  if(!inserted.length&&(!own||own.subject_hash!==subjectHash))fail('google_already_linked',409);
+  await this.insertSession(db,code,session);return account;
+ });}
  async registerGoogle({code,name,avatar,passwordHash,publicProfile=false,username,subjectHash},session){return this.transaction(async db=>{
   await this.query("SELECT key FROM social_meta WHERE key='accounts' FOR UPDATE",[],db);
   if((await this.query('SELECT 1 FROM social_google WHERE subject_hash=$1',[subjectHash],db)).length)fail('google_already_linked',409);
