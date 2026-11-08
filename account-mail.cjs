@@ -3,6 +3,7 @@
 const escape=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function template(kind,token,username,site='https://calypso-games.onrender.com/'){
  if(!['verify','reset'].includes(kind))throw Error('invalid_mail_kind');
+ token=String(token);if(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{12}$/.test(token))token=token.match(/.{4}/g).join('-');
  const verify=kind==='verify',title=verify?'Bestätige deine E-Mail-Adresse':'Wieder Zugriff auf deine Arcade',minutes=30;
  const intro=verify?'Mit dieser Adresse kannst du dein Calypso-Konto später wiederherstellen. Bestätige sie mit dem folgenden Einmalcode.':'Du hast eine Passwort-Wiederherstellung angefordert. Gib diesen Code in Calypso Arcade unter „Zugang wiederherstellen“ ein und wähle dort dein neues Passwort.';
  const subject='Calypso Arcade · '+(verify?'E-Mail bestätigen':'Passwort zurücksetzen');
