@@ -322,8 +322,15 @@ function createServer(options={}){
   const base=()=>external?.href||`http://127.0.0.1:${server.address().port}/`;
   const wsUrl=()=>{const u=new URL('/play',base());u.protocol=u.protocol==='https:'?'wss:':'ws:';return u.href;};
   const json=(res,status,value)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(value));};
+  const monitor=require('./service-monitor.cjs').createMonitor();
   const server=http.createServer((req,res)=>{
+    monitor.observe(req,res);
     let url;try{url=new URL(req.url,'http://internal');}catch{json(res,400,{error:'Invalid URL'});return;}
+    if(url.pathname==='/diagnostics'){
+      const origin=req.headers.origin;if(req.method!=='POST'||!origin||!originAllowed(origin)){json(res,403,{error:'forbidden'});return;}
+      if(!monitor.allowReport(clientAddress(req))){json(res,429,{error:'rate'});return;}if(!String(req.headers['content-type']||'').startsWith('application/json')){json(res,400,{error:'invalid_input'});return;}
+      let raw='',size=0,done=false;req.on('data',chunk=>{size+=chunk.length;if(size>256){if(!done){done=true;json(res,413,{error:'invalid_input'});}return;}raw+=chunk;});req.on('error',()=>{done=true;});req.on('end',()=>{if(done)return;try{const body=JSON.parse(raw);if(!body||Object.keys(body).length!==1||!['browser_runtime','browser_rejection'].includes(body.category))throw Error();monitor.record(body.category);json(res,200,{ok:true});}catch{json(res,400,{error:'invalid_input'});}});return;
+    }
     if(url.pathname.startsWith('/social/')){social.handle(req,res,url).catch(()=>{if(!res.headersSent)json(res,503,{error:'unavailable'});else res.end();});return;}
     if(url.pathname==='/rooms/public'){
       const origin=req.headers.origin;if(origin&&!originAllowed(origin)){json(res,403,{error:'forbidden'});return;}
@@ -349,7 +356,7 @@ function createServer(options={}){
     }json(res,404,{error:'Not found'});
   });
   function originAllowed(origin){if(allowed.has(origin))return true;if(local){try{const u=new URL(origin);return u.protocol==='http:'&&['localhost','127.0.0.1','[::1]'].includes(u.hostname)&&u.port===String(server.address().port);}catch{}}return false;}
-  const social=createSocial({connectionString:options.databaseUrl??process.env.DATABASE_URL,db:options.socialDb,mailer:options.socialMailer,rooms,originAllowed,clientAddress,now:options.socialNow||Date.now});
+  const social=createSocial({connectionString:options.databaseUrl??process.env.DATABASE_URL,db:options.socialDb,mailer:options.socialMailer,rooms,originAllowed,clientAddress,monitor,now:options.socialNow||Date.now,...(options.oauthProviders?{oauthProviders:options.oauthProviders}:{})});
   rooms.resolveCosmeticAccess=ws=>social.cosmeticAccess(ws);rooms.rankingsAvailable=()=>social.rankingsAvailable;rooms.saveSalvageRun=run=>social.saveSalvageRun(run);rooms.saveOnlineResult=run=>social.saveOnlineResult(run);
   function rate(map,key,max,windowMs){const now=Date.now(),old=map.get(key);if(!old||now>=old.end){if(map.size>10000){for(const [k,v]of map)if(now>=v.end)map.delete(k);if(map.size>10000)return false;}map.set(key,{count:1,end:now+windowMs});return true;}return ++old.count<=max;}
   // Expired connection-address counters must not wait for another request or
@@ -393,7 +400,7 @@ function createServer(options={}){
   // Render routes traffic to the container network interface. Keep local tests
   // on loopback, but never let a production process bind only to localhost.
   const defaultHost=process.env.HOST||(process.env.NODE_ENV==='production'?'0.0.0.0':'127.0.0.1');
-  return {server,rooms,wss,social,listen:(port=Number(process.env.PORT)||8080,host=defaultHost)=>new Promise(resolve=>server.listen(port,host,()=>resolve(server.address()))),close:async()=>{clearInterval(loop);clearInterval(heartbeat);addresses.clear();roomAttempts.clear();for(const ws of connections)ws.terminate();wss.close();await new Promise(resolve=>server.close(resolve));await Promise.allSettled([...rooms.pendingRankings]);await social.close();}};
+  return {server,rooms,wss,social,monitor,listen:(port=Number(process.env.PORT)||8080,host=defaultHost)=>new Promise(resolve=>server.listen(port,host,()=>resolve(server.address()))),close:async()=>{clearInterval(loop);clearInterval(heartbeat);addresses.clear();roomAttempts.clear();for(const ws of connections)ws.terminate();wss.close();await new Promise(resolve=>server.close(resolve));await Promise.allSettled([...rooms.pendingRankings]);await social.close();monitor.close();}};
 }
 if(require.main===module){const app=createServer();app.listen().then(a=>console.log(`Arcade room server listening on port ${a.port}`));for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>app.close().then(()=>process.exit(0)));}
 module.exports={Rooms,createServer,SnakeDuel,TowerCoop,MinigolfDuel,SalvageCoop,OriginalArenaRelay,clientAddress};

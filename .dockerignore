@@ -29,3 +29,7 @@
 !arcade-logo.svg
 !cloud-achievements.js
 !cloud-achievements-store.cjs
+
+!oauth-providers.cjs
+!oauth-flows.cjs
+!service-monitor.cjs

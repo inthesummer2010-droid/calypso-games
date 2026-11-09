@@ -24,6 +24,7 @@ ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS username TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS social_username_unique ON social_accounts(lower(username)) WHERE username IS NOT NULL;
 CREATE TABLE IF NOT EXISTS social_email(code TEXT PRIMARY KEY REFERENCES social_accounts(code) ON DELETE CASCADE, address TEXT, pending TEXT, verify_hash TEXT, expires_at BIGINT);
 CREATE TABLE IF NOT EXISTS social_google(code TEXT PRIMARY KEY REFERENCES social_accounts(code) ON DELETE CASCADE, subject_hash TEXT NOT NULL UNIQUE, created_at BIGINT NOT NULL);
+CREATE TABLE IF NOT EXISTS social_oauth(code TEXT NOT NULL REFERENCES social_accounts(code) ON DELETE CASCADE, provider TEXT NOT NULL CHECK(provider IN ('microsoft','discord')), subject_hash TEXT NOT NULL, created_at BIGINT NOT NULL, PRIMARY KEY(code,provider), UNIQUE(provider,subject_hash));
 CREATE TABLE IF NOT EXISTS social_recovery(code TEXT PRIMARY KEY REFERENCES social_accounts(code) ON DELETE CASCADE, token_hash TEXT NOT NULL UNIQUE, expires_at BIGINT NOT NULL);
 CREATE TABLE IF NOT EXISTS social_sessions (
  hash TEXT PRIMARY KEY CHECK (hash ~ '^[a-f0-9]{64}$'),
@@ -150,6 +151,7 @@ class SocialStore{
   const projections={
    email:'SELECT address,pending,expires_at FROM social_email WHERE code=$1',
    google:'SELECT created_at FROM social_google WHERE code=$1',
+   providers:'SELECT provider,created_at FROM social_oauth WHERE code=$1',
    sessions:'SELECT created_at,expires_at FROM social_sessions WHERE code=$1 ORDER BY created_at',
    activePlay:'SELECT p.expires_at FROM social_play_leases p JOIN social_sessions s ON s.hash=p.session_hash WHERE s.code=$1 ORDER BY p.expires_at',
    friends:'SELECT first_code,second_code,created_at FROM social_friends WHERE first_code=$1 OR second_code=$1',
@@ -267,6 +269,34 @@ class SocialStore{
   await this.query('DELETE FROM social_google WHERE code=$1',[code],db);
   return (await this.query('DELETE FROM social_sessions WHERE code=$1 AND hash<>$2 RETURNING hash',[code,currentHash],db)).map(r=>r.hash);
  });}
+ async providerState(code){const rows=await this.query('SELECT provider FROM social_oauth WHERE code=$1',[code]);return {microsoft:rows.some(r=>r.provider==='microsoft'),discord:rows.some(r=>r.provider==='discord')};}
+ async loginProvider(provider,subjectHash,session){return this.transaction(async db=>{
+  const target=(await this.query('SELECT code FROM social_oauth WHERE provider=$1 AND subject_hash=$2',[provider,subjectHash],db))[0];if(!target)fail('oauth_unlinked',409);
+  await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[target.code],db);
+  if(!(await this.query('SELECT 1 FROM social_oauth WHERE code=$1 AND provider=$2 AND subject_hash=$3',[target.code,provider,subjectHash],db)).length)fail('oauth_unlinked',409);
+  const account=await this.account(target.code,db);if(!account)fail('oauth_unlinked',409);await this.insertSession(db,target.code,session);return account;
+ });}
+ async registerProvider({code,name,username,provider,subjectHash,passwordHash},session){return this.transaction(async db=>{
+  await this.query("SELECT key FROM social_meta WHERE key='accounts' FOR UPDATE",[],db);
+  if((await this.query('SELECT 1 FROM social_oauth WHERE provider=$1 AND subject_hash=$2',[provider,subjectHash],db)).length)fail('oauth_already_linked',409);
+  if(await this.count('SELECT COUNT(*) AS n FROM social_accounts',[],db)>=this.limits.accounts)fail('rate',429);
+  if((await this.query('SELECT 1 FROM social_accounts WHERE lower(username)=lower($1) OR code=upper($1)',[username],db)).length)fail('username_taken',409);
+  if((await this.query('SELECT 1 FROM social_accounts WHERE lower(username)=lower($1)',[code],db)).length)return null;
+  const rows=await this.query('INSERT INTO social_accounts(code,name,avatar,password_hash,created_at,public_profile,username) VALUES($1,$2,0,$3,$4,FALSE,$5) ON CONFLICT(code) DO NOTHING RETURNING '+ACCOUNT_COLUMNS,[code,name,passwordHash,this.now(),username],db);if(!rows.length)return null;
+  await this.query('INSERT INTO social_oauth(code,provider,subject_hash,created_at) VALUES($1,$2,$3,$4)',[code,provider,subjectHash,this.now()],db);await this.insertSession(db,code,session);return rows[0];
+ });}
+ async linkProvider(code,expectedHash,currentHash,provider,subjectHash){return this.transaction(async db=>{
+  await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db);
+  if(!(await this.query('SELECT 1 FROM social_accounts a JOIN social_sessions s ON s.code=a.code WHERE a.code=$1 AND a.password_hash=$2 AND s.hash=$3 AND s.expires_at>$4',[code,expectedHash,currentHash,this.now()],db)).length)fail('unauthorized',401);
+  const own=(await this.query('SELECT subject_hash FROM social_oauth WHERE code=$1 AND provider=$2',[code,provider],db))[0];if(own&&own.subject_hash!==subjectHash)fail('oauth_already_linked',409);
+  const inserted=await this.query('INSERT INTO social_oauth(code,provider,subject_hash,created_at) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING code',[code,provider,subjectHash,this.now()],db);if(!inserted.length&&!own)fail('oauth_already_linked',409);return {linked:true};
+ });}
+ async unlinkProvider(code,expectedHash,currentHash,provider){return this.transaction(async db=>{
+  await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[code],db);
+  if(!(await this.query('SELECT 1 FROM social_accounts a JOIN social_sessions s ON s.code=a.code WHERE a.code=$1 AND a.password_hash=$2 AND s.hash=$3 AND s.expires_at>$4',[code,expectedHash,currentHash,this.now()],db)).length)fail('unauthorized',401);
+  await this.query('DELETE FROM social_oauth WHERE code=$1 AND provider=$2',[code,provider],db);return (await this.query('DELETE FROM social_sessions WHERE code=$1 AND hash<>$2 RETURNING hash',[code,currentHash],db)).map(r=>r.hash);
+ });}
+ async providerOwns(code,provider,subjectHash){return (await this.query('SELECT 1 FROM social_oauth WHERE code=$1 AND provider=$2 AND subject_hash=$3',[code,provider,subjectHash])).length===1;}
  async emailState(code){const r=(await this.query('SELECT address,pending,expires_at FROM social_email WHERE code=$1',[code]))[0];return {address:r?.address||null,pending:r?.pending&&Number(r.expires_at)>this.now()?r.pending:null};}
  async pendingEmail(code,address,hash){await this.query('INSERT INTO social_email(code,pending,verify_hash,expires_at) VALUES($1,$2,$3,$4) ON CONFLICT(code) DO UPDATE SET pending=EXCLUDED.pending,verify_hash=EXCLUDED.verify_hash,expires_at=EXCLUDED.expires_at',[code,address,hash,this.now()+30*60e3]);}
  async verifyEmail(hash){return this.transaction(async db=>{const r=(await this.query('SELECT code FROM social_email WHERE verify_hash=$1 AND expires_at>$2',[hash,this.now()],db))[0];if(!r)fail('invalid_recovery');await this.query('SELECT code FROM social_accounts WHERE code=$1 FOR UPDATE',[r.code],db);const rows=await this.query('UPDATE social_email SET address=pending,pending=NULL,verify_hash=NULL,expires_at=NULL WHERE code=$1 AND verify_hash=$2 AND expires_at>$3 RETURNING code',[r.code,hash,this.now()],db);if(!rows.length)fail('invalid_recovery');await this.query('DELETE FROM social_recovery WHERE code=$1',[r.code],db);return {ok:true};});}
